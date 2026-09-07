@@ -7,6 +7,14 @@ const KEY = 'applications'
 
 export const STATUSES = ['待投递', '已投递', '已沟通', '已面试', '已offer', '已拒绝', '已淘汰']
 
+/**
+ * 单次投递「结果」（applypilot 五态结果机）：
+ * 与 STATUSES 的「求职流程阶段」是正交的两个维度——
+ * STATUSES 回答「这单推进到哪一步了」，RESULTS 回答「这一次投递到底成没成」。
+ * 自动化/半自动投递后，只有看到「已确认提交」才算真的投出去了。
+ */
+export const RESULTS = ['待处理', '已确认提交', '跳过', '被拦截', '需用户']
+
 function sanitize(input = {}) {
   return {
     id: randomUUID(),
@@ -19,6 +27,7 @@ function sanitize(input = {}) {
     coverLetter: String(input.coverLetter || '').slice(0, 6000),
     tailoredResume: String(input.tailoredResume || '').slice(0, 12000),
     status: STATUSES.includes(input.status) ? input.status : '待投递',
+    result: RESULTS.includes(input.result) ? input.result : '待处理',
     note: String(input.note || '').slice(0, 3000),
     appliedAt: input.appliedAt || '',
     createdAt: new Date().toISOString(),

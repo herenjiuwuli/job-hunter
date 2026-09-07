@@ -9,7 +9,7 @@ import pytest
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'server', 'data')
 
 # 运行时数据文件（可清）；jobs.json 是知识库，绝不删
-RUNTIME_FILES = ('resumes.json', 'applications.json', 'records.json')
+RUNTIME_FILES = ('resumes.json', 'applications.json', 'records.json', 'profile.json')
 
 
 def _clear():

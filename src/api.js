@@ -25,6 +25,10 @@ export const api = {
     update: (id, data) => request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     remove: (id) => request(`/applications/${id}`, { method: 'DELETE' }),
   },
+  profile: {
+    get: () => request('/profile'),
+    save: (data) => request('/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  },
   tailor: (data) => request('/tailor', { method: 'POST', body: JSON.stringify(data) }),
   match: (resumeId) => request(`/match?resumeId=${encodeURIComponent(resumeId)}`),
 }

@@ -3,6 +3,14 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api.js'
 
 const STATUSES = ['待投递', '已投递', '已沟通', '已面试', '已offer', '已拒绝', '已淘汰']
+const RESULTS = ['待处理', '已确认提交', '跳过', '被拦截', '需用户']
+const RESULT_CLASS = {
+  '待处理': 'res-pending',
+  '已确认提交': 'res-submitted',
+  '跳过': 'res-skipped',
+  '被拦截': 'res-blocked',
+  '需用户': 'res-needs-user',
+}
 const PLATFORMS = ['实习僧', 'BOSS直聘', '拉勾', '牛客网', '智联招聘', '前程无忧', '猎聘', '其他']
 
 const apps = ref([])
@@ -74,6 +82,7 @@ function openEdit(a) {
     jd: a.jd,
     greeting: a.greeting,
     status: a.status,
+    result: a.result || '待处理',
     note: a.note,
     appliedAt: a.appliedAt ? a.appliedAt.slice(0, 10) : '',
   })
@@ -202,6 +211,7 @@ onMounted(load)
         <thead>
           <tr>
             <th>状态</th>
+            <th>投递结果</th>
             <th>公司</th>
             <th>岗位</th>
             <th>平台</th>
@@ -351,6 +361,13 @@ onMounted(load)
   padding: 4px 6px;
   font-size: 12px;
 }
+
+/* 投递结果徽章（applypilot 五态） */
+.res-pending { background: #f3f4f6; color: #6b7280; }
+.res-submitted { background: #f0fdf4; color: #16a34a; }
+.res-skipped { background: #eff6ff; color: #2563eb; }
+.res-blocked { background: #fef2f2; color: #dc2626; }
+.res-needs-user { background: #fef4e6; color: #c47d10; }
 
 .match-points {
   background: #f0fdf4;

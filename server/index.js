@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import resumesRouter from './routes/resumes.js'
 import applicationsRouter from './routes/applications.js'
+import profileRouter from './routes/profile.js'
 import tailorRouter from './routes/tailor.js'
 import matchRouter from './routes/match.js'
 // 面试准备板块（自 resume-interview 合并）
@@ -22,6 +23,7 @@ export function createApp() {
 
   app.use(resumesRouter)
   app.use(applicationsRouter)
+  app.use(profileRouter)
   app.use(tailorRouter)
   app.use(matchRouter)
   app.use(analyzeRouter)

@@ -4,7 +4,7 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：46 个 pytest 接口用例（`tests/`，详见 [`TESTING.md`](TESTING.md)）
+- **测试**：49 个 pytest 接口用例（`tests/`，详见 [`TESTING.md`](TESTING.md)）
 
 ## 一、它解决什么
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | 一份简历海投，命中率低 | **简历库 + AI 定制** | 结构化维护母版简历，一键按 JD 生成针对性简历 / 打招呼语 / 求职信 |
 | 海投没重点，不知道先投谁 | **匹配排序** | 关键词权重给所有 JD 打分，优先投匹配度高的 |
-| 投了没下文，进度全忘 | **投递追踪** | 7 状态流转（待投递→已投递→已沟通→已面试→offer/拒绝/淘汰） |
+| 投了没下文，进度全忘 | **投递追踪** | 7 状态流转（待投递→已投递→已沟通→已面试→offer/拒绝/淘汰）+ 5 结果机（确认提交/跳过/被拦截/需用户/待处理） |
 | 面试心里没底 | **面试准备** | 简历分析、AI 模拟面试（技术/HR/行为面）、报告复盘、错题本、薪资谈判 |
 
 ## 二、功能总览（三大板块）
@@ -98,8 +98,8 @@ job-hunter/
 │   ├── api.js              # 后端 API 封装
 │   ├── store.js            # 面试全局状态
 │   └── style.css           # 统一设计变量 + 组件样式
-├── server/                 # Express 后端（12 路由）
-│   ├── routes/             # resumes/applications/tailor/match/analyze/interview/…
+├── server/                 # Express 后端（13 路由）
+│   ├── routes/             # resumes/applications/profile/tailor/match/analyze/interview/…
 │   ├── lib/                # ai.js（DeepSeek）/ store.js（JSON 存储）/ jobs.js（岗位库）/ matcher.js（打分）
 │   └── data/jobs.json      # 岗位知识库（进 Git）
 ├── extension/              # Chrome MV3 半自动投递扩展

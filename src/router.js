@@ -20,6 +20,7 @@ export default createRouter({
     { path: '/', redirect: '/applications' },
     // 求职执行
     { path: '/applications', component: Applications },
+    { path: '/profile', component: Profile },
     { path: '/match', component: Match },
     { path: '/resumes', component: Resumes },
     // 简历工作台

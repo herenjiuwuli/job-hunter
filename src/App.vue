@@ -19,6 +19,9 @@ const active = computed(() => route.path)
           <router-link to="/applications" class="nav-item" :class="{ active: active === '/applications' }">
             投递追踪
           </router-link>
+          <router-link to="/profile" class="nav-item" :class="{ active: active === '/profile' }">
+            候选人画像
+          </router-link>
           <router-link to="/match" class="nav-item" :class="{ active: active === '/match' }">
             匹配排序
           </router-link>

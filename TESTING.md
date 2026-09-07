@@ -32,16 +32,17 @@ DEEPSEEK_API_KEY=sk-test DEEPSEEK_BASE_URL=http://127.0.0.1:9999 PORT=3100 node 
 | test_resume.py | /api/resume/generate | 3 | 缺姓名/空技能项目 400，正路多版本 |
 | test_resumes.py | /api/resumes | 6 | 简历库 CRUD + content 字段 + 404 |
 | test_applications.py | /api/applications | 7 | 投递 CRUD + 状态流转 + 非法状态兜底 |
+| test_profile.py | /api/profile | 3 | 默认模板 + 保存读回 + 增量合并（未传字段保留旧值） |
 | test_tailor.py | /api/tailor | 4 | 缺参数校验 + 正路四件套 |
 | test_match.py | /api/match | 5 | 缺参数/404 + 排序 + 技能×2 权重 + 过滤 |
 
-**合计 46 用例**。
+**合计 49 用例**。
 
 > 岗位已全面放开：interview / apply / salary / prep / intro 均不再对「未知岗位」报 400，而是按「自定义岗位 + 可选自定义 JD」生成；analyze 的岗位推荐也不再限定知识库岗位名。
 
 ## 数据隔离
 
-`conftest.py` 用 autouse fixture 在每个测试函数前后清空 `server/data/{resumes,applications,records}.json`，**保留 `jobs.json`**（岗位知识库，apply/interview 依赖它）。
+`conftest.py` 用 autouse fixture 在每个测试函数前后清空 `server/data/{resumes,applications,records,profile}.json`，**保留 `jobs.json`**（岗位知识库，apply/interview 依赖它）。
 
 ## mock 注意事项
 
