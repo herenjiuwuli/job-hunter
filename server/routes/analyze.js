@@ -12,17 +12,18 @@ router.post('/api/analyze', async (req, res) => {
   }
   const questionCount = Math.min(8, Math.max(3, Number(questions) || 5))
 
-  // 岗位知识库是唯一真相源：岗位名、JD、技能点都从 jobs.json 来，不再硬编码
-  let jobs
+  // 岗位知识库仅作参考（提供部分常见岗位的 JD + 技能点，帮助 AI 判断匹配度）；
+  // 即使知识库缺失，也照样能基于简历自由推荐岗位，不因岗位库而失败。
+  let jobs = []
   try {
     jobs = await listJobs()
   } catch (err) {
-    console.error('[analyze] jobs load failed:', err.message)
-    return res.status(500).json({ error: '岗位知识库加载失败，请检查服务配置' })
+    console.warn('[analyze] jobs load failed, continue without job base:', err.message)
   }
-  const jobNames = jobs.map((j) => j.name)
-  // 分析阶段不需要题目池（40 题全塞进去太长），只给 JD + 技能点作为打分依据
   const jobBrief = jobs.map((j) => describeJob(j, { withQuestions: false })).join('\n\n---\n\n')
+  const jobRef = jobBrief
+    ? `\n以下是部分常见岗位及其职责要求，仅作为你判断岗位匹配度的参考，你也可以根据简历推荐更贴合的其他岗位：\n${jobBrief}\n`
+    : ''
 
   const systemPrompt = `你是一位资深 HR 兼技术面试官。请分析用户提供的简历，并输出严格 JSON（不要输出任何 JSON 以外的内容），字段要求：
 {
@@ -32,15 +33,12 @@ router.post('/api/analyze', async (req, res) => {
   "predictedQuestions": ["基于这份简历，面试官最可能问的问题（真实、具体）"],
   "recommendJobs": [{ "name": "岗位名", "score": 0-100 的整数, "reason": "推荐理由（一句话）" }]
 }
-
-以下是候选岗位及其职责要求，作为你判断岗位匹配度的依据：
-${jobBrief}
-
+${jobRef}
 要求：
 1. matchScores 给 4 个维度
 2. predictedQuestions 给 ${questionCount} 个问题
-3. recommendJobs 给全部 ${jobNames.length} 个岗位并分别打分排序（分数高的在前），name 必须严格使用以下岗位名之一：${jobNames.join('、')}
-4. 打分必须基于上方各岗位的"岗位职责与要求"与"核心考察技能"，结合简历中的实际经历，不要凭印象给分
+3. recommendJobs 给 4-6 个与简历最匹配的岗位，按匹配度降序排列；name 为岗位名称（可用常见岗位名，也可推荐你认为更贴合简历的任意岗位）；score 为该岗位与简历的匹配分（0-100 整数）；reason 为一句推荐理由
+4. 打分必须结合简历中的实际经历，不要凭印象给分
 5. 所有内容使用简体中文`
 
   try {
@@ -54,7 +52,14 @@ ${jobBrief}
       highlights: data.highlights || [],
       weaknesses: data.weaknesses || [],
       predictedQuestions: data.predictedQuestions || [],
-      recommendJobs: (data.recommendJobs || []).filter((j) => jobNames.includes(j.name)),
+      recommendJobs: (data.recommendJobs || [])
+        .filter((j) => j && String(j.name).trim())
+        .map((j) => ({
+          name: String(j.name).trim(),
+          score: Math.max(0, Math.min(100, Math.round(Number(j.score) || 0))),
+          reason: String(j.reason || ''),
+        }))
+        .slice(0, 8),
     })
   } catch (err) {
     console.error('[analyze] failed:', err.message)

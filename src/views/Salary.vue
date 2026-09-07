@@ -5,10 +5,11 @@
       <div class="card-title">薪资谈判模拟</div>
       <p class="tip">AI 扮演 HR 与你进行一轮真实的薪资谈判（最多 6 轮），每轮点评你的回应策略，结束后给出复盘报告。谈判素材不会用于任何真实沟通。</p>
       <div class="form-row">
-        <label>目标岗位
-          <select v-model="job">
-            <option v-for="j in allJobs" :key="j" :value="j">{{ j }}</option>
-          </select>
+        <label>目标岗位（任意岗位，可直接输入）
+          <input v-model="job" list="salary-jobs" placeholder="输入岗位名，如：前端开发 / UI 设计师" />
+          <datalist id="salary-jobs">
+            <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
+          </datalist>
         </label>
         <label>城市（可选）
           <input v-model="city" type="text" placeholder="如：上海" />
@@ -114,10 +115,9 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
 import { appState } from '../store.js'
+import { COMMON_JOBS } from '../jobs.js'
 
-const allJobs = ['前端开发', '自动化测试', '后端开发', '产品运营', '数据分析']
-
-const job = ref(appState.selectedJob || '前端开发')
+const job = ref(appState.selectedJob || '')
 const city = ref('')
 const expectSalary = ref('')
 const resume = ref(appState.resume || '')
@@ -139,7 +139,7 @@ const reply = ref('')
 const chatBox = ref(null)
 
 onMounted(() => {
-  if (!job.value || !allJobs.includes(job.value)) job.value = '前端开发'
+  if (!job.value) job.value = appState.selectedJob || ''
 })
 
 function scrollToBottom() {

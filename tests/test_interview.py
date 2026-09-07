@@ -21,11 +21,16 @@ def test_start_missing_job():
     assert r.status_code == 400
 
 
-def test_start_unknown_job():
-    """未知岗位 → 400"""
+def test_start_custom_job():
+    """任意岗位（不在知识库）→ 200，按自定义岗位出题"""
     r = requests.post(f"{BASE}/api/interview/start",
-                      json={"resume": SAMPLE_RESUME, "job": "不存在的岗位"}, timeout=10)
-    assert r.status_code == 400
+                      json={"resume": SAMPLE_RESUME, "job": "UI 设计师",
+                            "jd": "负责产品界面设计", "questions": 4}, timeout=30)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["firstQuestion"]
+    assert data["total"] == 4
+    assert data["job"] == "UI 设计师"
 
 
 def test_start_normal():

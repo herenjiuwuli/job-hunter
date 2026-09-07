@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { chatJSON } from '../lib/ai.js'
-import { getJob } from '../lib/jobs.js'
+import { resolveJob } from '../lib/jobs.js'
 
 const router = Router()
 
@@ -14,13 +14,11 @@ router.post('/api/prep/checklist', async (req, res) => {
     return res.status(400).json({ error: '缺少简历内容' })
   }
   if (!job) {
-    return res.status(400).json({ error: '请先选择岗位' })
+    return res.status(400).json({ error: '请先填写岗位' })
   }
 
-  const jobInfo = await getJob(job)
-  if (!jobInfo) {
-    return res.status(400).json({ error: `未知的岗位：${job}` })
-  }
+  // 岗位不限：命中知识库用知识库 JD，否则按自定义岗位 + 自定义 JD
+  const jobInfo = await resolveJob(job, jd)
 
   const systemPrompt = `你是一位资深求职教练。候选人在准备「${job}」岗位面试，请为其生成一份面试前准备清单。
 
@@ -28,7 +26,7 @@ router.post('/api/prep/checklist', async (req, res) => {
 ${String(resume).slice(0, 5000)}
 
 岗位 JD：
-${jd ? String(jd).slice(0, 2000) : jobInfo.jd.slice(0, 2000)}
+${jobInfo.jd ? String(jobInfo.jd).slice(0, 2000) : `目标岗位：${jobInfo.name}（未提供 JD，请基于岗位名称与简历生成）`}
 
 严格输出 JSON：
 {

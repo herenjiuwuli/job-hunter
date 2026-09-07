@@ -35,11 +35,15 @@
         <label class="span2">项目经历要点<textarea v-model="form.projects" rows="4" placeholder="一行一个项目或要点，例如：&#10;电商后台管理系统：负责订单模块和权限模块开发，使用 Vue3 + Element Plus&#10;校园二手交易平台：独立完成前后端开发"></textarea></label>
       </div>
       <div class="jobs-select">
-        <span class="qlabel">目标岗位（生成对应的优化版本）</span>
+        <span class="qlabel">目标岗位（可多选，生成对应的优化版本；任意岗位都可选）</span>
         <div class="job-checks">
-          <label v-for="j in allJobs" :key="j" class="check-item" :class="{ checked: form.targetJobs.includes(j) }">
+          <label v-for="j in COMMON_JOBS" :key="j" class="check-item" :class="{ checked: form.targetJobs.includes(j) }">
             <input type="checkbox" :value="j" v-model="form.targetJobs" />{{ j }}
           </label>
+        </div>
+        <div class="job-add">
+          <input v-model="customJob" type="text" placeholder="自定义岗位，如「UI 设计师」，回车添加" @keydown.enter.prevent="addCustomJob" />
+          <button class="btn btn-ghost btn-sm" :disabled="!customJob.trim()" @click="addCustomJob">添加</button>
         </div>
       </div>
       <div class="tpl-select">
@@ -175,8 +179,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api.js'
-
-const allJobs = ['前端开发', '自动化测试', '后端开发', '产品运营', '数据分析']
+import { COMMON_JOBS } from '../jobs.js'
 
 // 可选的简历版式
 const TEMPLATE_LIST = [
@@ -203,6 +206,15 @@ const form = reactive({
   projects: '',
   targetJobs: [],
 })
+
+// 自定义目标岗位：任意岗位名都支持，回车/点击加入 targetJobs
+const customJob = ref('')
+function addCustomJob() {
+  const v = customJob.value.trim()
+  if (!v) return
+  if (!form.targetJobs.includes(v)) form.targetJobs.push(v)
+  customJob.value = ''
+}
 
 /* ---------- 简历库联动（深度接入：简历库 ⇄ 简历编辑器） ---------- */
 const route = useRoute()
@@ -731,6 +743,24 @@ async function copyCurrent() {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
+}
+.job-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.job-add input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+}
+.job-add input:focus {
+  border-color: var(--primary);
 }
 .check-item {
   padding: 6px 14px;

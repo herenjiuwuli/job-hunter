@@ -96,6 +96,14 @@
           已选中岗位：<b>{{ selectedJob }}</b>
           <button class="btn" @click="goInterview">进入模拟面试</button>
         </div>
+        <div class="custom-job">
+          <div class="custom-job-title">想面试其他岗位？直接输入（任意岗位）</div>
+          <div class="custom-job-row">
+            <input v-model="customJobName" placeholder="岗位名，如：UI 设计师" />
+            <input v-model="customJobJd" class="grow" placeholder="可选：粘贴该岗位 JD，问题会更贴合" />
+            <button class="btn" :disabled="!customJobName.trim()" @click="selectCustomJob">选中并面试</button>
+          </div>
+        </div>
       </div>
     </template>
   </div>
@@ -115,6 +123,9 @@ const loading = ref(false)
 const error = ref('')
 const result = computed(() => appState.analysis)
 const selectedJob = computed(() => appState.selectedJob)
+// 自定义岗位入口：任意岗位名 + 可选 JD
+const customJobName = ref('')
+const customJobJd = ref('')
 
 function scoreClass(score) {
   if (score >= 80) return 'high'
@@ -124,6 +135,13 @@ function scoreClass(score) {
 
 function goInterview() {
   router.push('/interview')
+}
+
+function selectCustomJob() {
+  const name = customJobName.value.trim()
+  if (!name) return
+  selectJob(name, customJobJd.value.trim())
+  goInterview()
 }
 
 async function analyze() {
@@ -274,6 +292,48 @@ async function analyze() {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.custom-job {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.custom-job-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.custom-job-row {
+  display: flex;
+  gap: 8px;
+}
+.custom-job-row input {
+  flex: 1;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+}
+.custom-job-row input.grow {
+  max-width: none;
+}
+.custom-job-row input:focus {
+  border-color: var(--primary);
+}
+.custom-job-row .btn {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .custom-job-row {
+    flex-direction: column;
+  }
+  .custom-job-row input {
+    max-width: none;
+  }
 }
 @media (max-width: 640px) {
   .cols {

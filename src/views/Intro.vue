@@ -4,10 +4,11 @@
       <div class="card-title">自我介绍专项练习</div>
       <p class="tip">写下你的面试自我介绍，AI 从内容相关性、结构、亮点、篇幅四个角度逐句点评，并给出同场景更优示例。</p>
       <div class="form-row">
-        <label>目标岗位
-          <select v-model="job">
-            <option v-for="j in allJobs" :key="j" :value="j">{{ j }}</option>
-          </select>
+        <label>目标岗位（任意岗位，可直接输入）
+          <input v-model="job" list="intro-jobs" placeholder="输入岗位名，如：前端开发 / 新媒体运营" />
+          <datalist id="intro-jobs">
+            <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
+          </datalist>
         </label>
         <label>时长
           <select v-model="duration">
@@ -77,10 +78,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { appState } from '../store.js'
+import { COMMON_JOBS } from '../jobs.js'
 
-const allJobs = ['前端开发', '自动化测试', '后端开发', '产品运营', '数据分析']
-
-const job = ref(appState.selectedJob || '前端开发')
+const job = ref(appState.selectedJob || '')
 const duration = ref(60)
 const resume = ref(appState.resume || '')
 const intro = ref('')
@@ -100,7 +100,7 @@ const wordCountClass = computed(() => {
 })
 
 onMounted(() => {
-  if (!job.value || !allJobs.includes(job.value)) job.value = '前端开发'
+  if (!job.value) job.value = appState.selectedJob || ''
 })
 
 async function submit() {

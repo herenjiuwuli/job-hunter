@@ -1,10 +1,7 @@
 import { Router } from 'express'
-import { readFile } from 'node:fs/promises'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { chatJSON } from '../lib/ai.js'
+import { resolveJob } from '../lib/jobs.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 const router = Router()
 
 router.post('/api/apply/assist', async (req, res) => {
@@ -14,14 +11,11 @@ router.post('/api/apply/assist', async (req, res) => {
     return res.status(400).json({ error: '缺少简历内容' })
   }
   if (!job) {
-    return res.status(400).json({ error: '请先选择岗位' })
+    return res.status(400).json({ error: '请先填写岗位' })
   }
 
-  const raw = await readFile(join(__dirname, '..', 'data', 'jobs.json'), 'utf-8')
-  const jobInfo = JSON.parse(raw).find((j) => j.name === job)
-  if (!jobInfo) {
-    return res.status(400).json({ error: `未知的岗位：${job}` })
-  }
+  // 岗位不限：命中知识库用知识库 JD，否则按「自定义岗位 + 用户粘贴的 JD」生成
+  const jobInfo = await resolveJob(job, jd)
 
   const systemPrompt = `你是一位专业的求职顾问。候选人正在投递「${jobInfo.name}」岗位，请基于候选人简历、岗位 JD 和用户粘贴的真实 JD（如有），生成投递辅助素材，严格输出 JSON：
 {
@@ -37,9 +31,8 @@ router.post('/api/apply/assist', async (req, res) => {
   const userContent = `候选人简历：
 ${String(resume).slice(0, 6000)}
 
-岗位 JD（知识库）：
-${jobInfo.jd}
-${String(jd).trim() ? `\n用户粘贴的真实 JD：\n${String(jd).slice(0, 3000)}` : ''}
+岗位 JD：
+${jobInfo.jd || `目标岗位：${jobInfo.name}（未提供 JD，请基于岗位名称生成）`}
 
 请生成投递辅助素材，严格输出 JSON。`
 

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { chatJSON } from '../lib/ai.js'
-import { getJob } from '../lib/jobs.js'
+import { resolveJob } from '../lib/jobs.js'
 
 const router = Router()
 
@@ -59,7 +59,17 @@ const INTERVIEWER_TYPES = {
 function buildSystemPrompt(jobInfo, resume, round, total, difficulty = 'medium', allowFollowUp = true, interviewerType = 'tech') {
   const type = INTERVIEWER_TYPES[interviewerType] || INTERVIEWER_TYPES.tech
   const pool = (jobInfo && (jobInfo[type.poolKey] || jobInfo.questions)) || []
-  const jd = jobInfo ? `岗位 JD：\n${jobInfo.jd}\n\n题目池参考：\n${pool.join('\n')}` : ''
+  let jd = ''
+  if (jobInfo) {
+    const parts = []
+    if (jobInfo.jd) {
+      parts.push(`岗位 JD：\n${jobInfo.jd}`)
+    } else {
+      parts.push(`目标岗位：${jobInfo.name}（用户未提供 JD，请基于岗位名称与候选人简历内容自行出题）`)
+    }
+    if (pool.length) parts.push(`题目池参考：\n${pool.join('\n')}`)
+    jd = parts.join('\n\n')
+  }
   const diff = DIFFICULTIES[difficulty] || DIFFICULTIES.medium
   const followRule = allowFollowUp
     ? `5. 候选人回答后，若回答中有值得深挖的点，可以对本题追问一次：此时 nextQuestion 输出追问问题，并把 isFollowUp 设为 true（追问不算新的一题，不计入总题数）；若无需追问则 isFollowUp 为 false`
@@ -85,22 +95,20 @@ ${followRule}
 }
 
 router.post('/api/interview/start', async (req, res) => {
-  const { resume, job, questions = 5, difficulty = 'medium', interviewerType = 'tech' } = req.body || {}
+  const { resume, job, jd = '', questions = 5, difficulty = 'medium', interviewerType = 'tech' } = req.body || {}
 
   if (!resume || !String(resume).trim()) {
     return res.status(400).json({ error: '缺少简历内容' })
   }
   if (!job) {
-    return res.status(400).json({ error: '请先选择岗位' })
+    return res.status(400).json({ error: '请先填写岗位' })
   }
   const total = Math.min(8, Math.max(3, Number(questions) || 5))
   const diff = DIFFICULTIES[difficulty] ? difficulty : 'medium'
   const type = INTERVIEWER_TYPES[interviewerType] ? interviewerType : 'tech'
 
-  const jobInfo = await getJob(job)
-  if (!jobInfo) {
-    return res.status(400).json({ error: `未知的岗位：${job}` })
-  }
+  // 岗位不限：命中知识库用题库，否则按「自定义岗位 + 自定义 JD」出题
+  const jobInfo = await resolveJob(job, jd)
 
   try {
     const data = await chatJSON([
@@ -123,7 +131,7 @@ router.post('/api/interview/start', async (req, res) => {
 })
 
 router.post('/api/interview/answer', async (req, res) => {
-  const { history = [], answer, resume = '', job, total = 5, difficulty = 'medium', current, followUpUsed = false, interviewerType = 'tech' } = req.body || {}
+  const { history = [], answer, resume = '', job, jd = '', total = 5, difficulty = 'medium', current, followUpUsed = false, interviewerType = 'tech' } = req.body || {}
 
   if (!answer || !String(answer).trim()) {
     return res.status(400).json({ error: '回答内容不能为空' })
@@ -148,7 +156,7 @@ router.post('/api/interview/answer', async (req, res) => {
 
   let jobInfo = null
   if (job) {
-    jobInfo = await getJob(job)
+    jobInfo = await resolveJob(job, jd)
   }
 
   // 将对话历史拼接为单条 user 消息（该模型对「多轮 assistant 历史 + json_object」存在兼容问题）
@@ -206,7 +214,7 @@ router.post('/api/interview/answer', async (req, res) => {
 })
 
 router.post('/api/interview/report', async (req, res) => {
-  const { history = [], job } = req.body || {}
+  const { history = [], job, jd = '' } = req.body || {}
 
   if (!Array.isArray(history) || history.length < 2) {
     return res.status(400).json({ error: '对话历史不完整，无法生成报告' })
@@ -222,7 +230,7 @@ router.post('/api/interview/report', async (req, res) => {
 
   let jobInfo = null
   if (job) {
-    jobInfo = await getJob(job)
+    jobInfo = await resolveJob(job, jd)
   }
 
   const systemPrompt = `你是一位资深面试官，刚刚完成了一场「${jobInfo?.name || '技术'}」岗位的模拟面试。请根据以下完整对话记录，对候选人的表现生成一份复盘报告，严格输出 JSON：

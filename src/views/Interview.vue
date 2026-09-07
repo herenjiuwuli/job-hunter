@@ -195,6 +195,7 @@ function saveProgress() {
       JSON.stringify({
         resume: appState.resume,
         job: appState.selectedJob || job.value,
+        jd: appState.selectedJobJd,
         difficulty: difficulty.value,
         interviewerType: interviewerType.value,
         total: total.value,
@@ -222,6 +223,7 @@ function clearProgress() {
 function restoreProgress(saved) {
   appState.resume = saved.resume
   appState.selectedJob = saved.job
+  appState.selectedJobJd = saved.jd || ''
   appState.difficulty = saved.difficulty || 'medium'
   appState.interviewerType = saved.interviewerType || 'tech'
   appState.interviewTotal = saved.total
@@ -251,6 +253,7 @@ async function startInterview() {
       body: JSON.stringify({
         resume: appState.resume,
         job: appState.selectedJob,
+        jd: appState.selectedJobJd,
         questions: appState.questionCount,
         difficulty: difficulty.value,
         interviewerType: interviewerType.value,
@@ -304,6 +307,7 @@ async function send() {
         answer: text,
         resume: appState.resume,
         job: appState.selectedJob,
+        jd: appState.selectedJobJd,
         total: total.value,
         difficulty: difficulty.value,
         interviewerType: interviewerType.value,

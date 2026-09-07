@@ -26,9 +26,9 @@ DEEPSEEK_API_KEY=sk-test DEEPSEEK_BASE_URL=http://127.0.0.1:9999 PORT=3100 node 
 
 | 文件 | 路由 | 用例数 | 覆盖点 |
 |---|---|---|---|
-| test_analyze.py | /api/analyze | 4 | 空/缺简历 400，正路 4 维度 + 岗位推荐 |
-| test_apply.py | /api/apply/assist | 4 | 缺简历/缺岗位/未知岗位 400，正路三件套 |
-| test_interview.py | /api/interview/* | 13 | start/answer/report 校验 + 正路 + 追问 + 评分 |
+| test_analyze.py | /api/analyze | 4 | 空/缺简历 400，正路 4 维度 + 岗位推荐（推荐不限知识库） |
+| test_apply.py | /api/apply/assist | 4 | 缺简历/缺岗位 400，正路三件套 + 自定义岗位 200 |
+| test_interview.py | /api/interview/* | 13 | start/answer/report 校验 + 正路 + 自定义岗位 + 追问 + 评分 |
 | test_resume.py | /api/resume/generate | 3 | 缺姓名/空技能项目 400，正路多版本 |
 | test_resumes.py | /api/resumes | 6 | 简历库 CRUD + content 字段 + 404 |
 | test_applications.py | /api/applications | 7 | 投递 CRUD + 状态流转 + 非法状态兜底 |
@@ -36,6 +36,8 @@ DEEPSEEK_API_KEY=sk-test DEEPSEEK_BASE_URL=http://127.0.0.1:9999 PORT=3100 node 
 | test_match.py | /api/match | 5 | 缺参数/404 + 排序 + 技能×2 权重 + 过滤 |
 
 **合计 46 用例**。
+
+> 岗位已全面放开：interview / apply / salary / prep / intro 均不再对「未知岗位」报 400，而是按「自定义岗位 + 可选自定义 JD」生成；analyze 的岗位推荐也不再限定知识库岗位名。
 
 ## 数据隔离
 

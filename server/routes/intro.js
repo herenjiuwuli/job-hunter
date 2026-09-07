@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { chatJSON } from '../lib/ai.js'
-import { getJob } from '../lib/jobs.js'
+import { resolveJob } from '../lib/jobs.js'
 
 const router = Router()
 
 router.post('/api/intro/practice', async (req, res) => {
-  const { resume, job, duration = 60, intro } = req.body || {}
+  const { resume, job, jd = '', duration = 60, intro } = req.body || {}
 
   if (!intro || !String(intro).trim()) {
     return res.status(400).json({ error: '请先填写自我介绍内容' })
@@ -14,19 +14,17 @@ router.post('/api/intro/practice', async (req, res) => {
     return res.status(400).json({ error: '缺少简历内容' })
   }
   if (!job) {
-    return res.status(400).json({ error: '请先选择岗位' })
+    return res.status(400).json({ error: '请先填写岗位' })
   }
   const dur = Number(duration) === 180 ? 180 : 60
   const wordTip = dur === 180 ? '600-800 字' : '200-260 字'
 
-  const jobInfo = await getJob(job)
-  if (!jobInfo) {
-    return res.status(400).json({ error: `未知的岗位：${job}` })
-  }
+  // 岗位不限：命中知识库用知识库 JD，否则按自定义岗位 + 自定义 JD
+  const jobInfo = await resolveJob(job, jd)
 
   const systemPrompt = `你是一位资深的求职辅导教练，擅长打磨面试自我介绍。候选人正在准备「${jobInfo?.name || '目标'}」岗位的面试，练习一段 ${dur === 180 ? '3 分钟' : '1 分钟'}的自我介绍（该时长合理的篇幅约 ${wordTip}）。候选人简历：
 ${String(resume).slice(0, 5000)}
-${jobInfo ? `\n岗位 JD：\n${jobInfo.jd.slice(0, 1000)}` : ''}
+${jobInfo ? (jobInfo.jd ? `\n岗位 JD：\n${jobInfo.jd.slice(0, 1000)}` : `\n目标岗位：${jobInfo.name}`) : ''}
 
 候选人提交的自我介绍：
 ${String(intro).slice(0, 5000)}

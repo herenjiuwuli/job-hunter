@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { chatJSON } from '../lib/ai.js'
-import { getJob } from '../lib/jobs.js'
+import { resolveJob } from '../lib/jobs.js'
 
 const router = Router()
 
@@ -11,7 +11,7 @@ function hrSystemPrompt(jobInfo, resume, city, expectSalary) {
 
 候选人简历（节选）：
 ${String(resume || '').slice(0, 4000)}
-${jobInfo ? `\n岗位 JD：\n${jobInfo.jd}` : ''}
+${jobInfo ? (jobInfo.jd ? `\n岗位 JD：\n${jobInfo.jd}` : `\n目标岗位：${jobInfo.name}`) : ''}
 ${city ? `\n工作城市：${city}` : ''}
 ${expectSalary ? `\n候选人登记的期望薪资：${expectSalary}` : ''}
 
@@ -26,19 +26,17 @@ ${expectSalary ? `\n候选人登记的期望薪资：${expectSalary}` : ''}
 }
 
 router.post('/api/salary/start', async (req, res) => {
-  const { resume, job, city = '', expectSalary = '' } = req.body || {}
+  const { resume, job, jd = '', city = '', expectSalary = '' } = req.body || {}
 
   if (!resume || !String(resume).trim()) {
     return res.status(400).json({ error: '缺少简历内容' })
   }
   if (!job) {
-    return res.status(400).json({ error: '请先选择岗位' })
+    return res.status(400).json({ error: '请先填写岗位' })
   }
 
-  const jobInfo = await getJob(job)
-  if (!jobInfo) {
-    return res.status(400).json({ error: `未知的岗位：${job}` })
-  }
+  // 岗位不限：命中知识库用知识库 JD，否则按自定义岗位 + 自定义 JD
+  const jobInfo = await resolveJob(job, jd)
 
   try {
     const data = await chatJSON([
@@ -58,7 +56,7 @@ router.post('/api/salary/start', async (req, res) => {
 })
 
 router.post('/api/salary/answer', async (req, res) => {
-  const { history = [], answer, resume = '', job, round = 1, city = '', expectSalary = '' } = req.body || {}
+  const { history = [], answer, resume = '', job, jd = '', round = 1, city = '', expectSalary = '' } = req.body || {}
 
   if (!answer || !String(answer).trim()) {
     return res.status(400).json({ error: '回应内容不能为空' })
@@ -74,7 +72,7 @@ router.post('/api/salary/answer', async (req, res) => {
   const roundNum = Math.max(1, Math.min(MAX_ROUNDS, Number(round) || 1))
   let jobInfo = null
   if (job) {
-    jobInfo = await getJob(job)
+    jobInfo = await resolveJob(job, jd)
   }
 
   // 对话历史拼接为单条 user 消息（模型兼容性处理，与 interview 一致）
@@ -108,7 +106,7 @@ router.post('/api/salary/answer', async (req, res) => {
 })
 
 router.post('/api/salary/report', async (req, res) => {
-  const { history = [], job } = req.body || {}
+  const { history = [], job, jd = '' } = req.body || {}
 
   if (!Array.isArray(history) || history.length < 2) {
     return res.status(400).json({ error: '对话历史不完整，无法生成复盘' })
@@ -121,7 +119,7 @@ router.post('/api/salary/report', async (req, res) => {
 
   let jobInfo = null
   if (job) {
-    jobInfo = await getJob(job)
+    jobInfo = await resolveJob(job, jd)
   }
 
   const systemPrompt = `你是一位资深薪酬谈判教练。以下是候选人模拟「${jobInfo?.name || '目标'}」岗位薪资谈判的完整对话记录，请从候选人视角复盘表现，严格输出 JSON：

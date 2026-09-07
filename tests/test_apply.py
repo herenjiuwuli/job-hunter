@@ -19,11 +19,15 @@ def test_assist_missing_job():
     assert r.status_code == 400
 
 
-def test_assist_unknown_job():
-    """未知岗位 → 400"""
+def test_assist_custom_job():
+    """任意岗位（不在知识库）→ 200，按自定义岗位生成素材"""
     r = requests.post(f"{BASE}/api/apply/assist",
-                      json={"resume": SAMPLE_RESUME, "job": "不存在的岗位"}, timeout=10)
-    assert r.status_code == 400
+                      json={"resume": SAMPLE_RESUME, "job": "新媒体运营",
+                            "jd": "负责小红书内容运营"}, timeout=30)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["greeting"]
+    assert data["coverLetter"]
 
 
 def test_assist_normal():

@@ -26,10 +26,9 @@ def test_analyze_normal():
     data = r.json()
     assert len(data["matchScores"]) == 4          # 固定 4 个维度
     assert len(data["recommendJobs"]) > 0          # 有岗位推荐
-    # 岗位名必须来自知识库
-    valid_names = {"前端开发", "自动化测试", "后端开发", "产品运营", "数据分析"}
+    # 岗位推荐不限知识库：name 非空、分数在 0-100 即可
     for job in data["recommendJobs"]:
-        assert job["name"] in valid_names
+        assert job["name"]
         assert 0 <= job["score"] <= 100
 
 

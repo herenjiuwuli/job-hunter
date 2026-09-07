@@ -8,6 +8,7 @@ export const appState = reactive({
   interviewerType: 'tech',
   analysis: null,
   selectedJob: '',
+  selectedJobJd: '', // 自定义岗位的 JD（知识库岗位为空，面试时带上）
   // 阶段2/3：面试对话与报告
   interviewHistory: [],
   interviewTotal: 5,
@@ -15,6 +16,7 @@ export const appState = reactive({
   report: null,
 })
 
-export function selectJob(name) {
+export function selectJob(name, jd = '') {
   appState.selectedJob = name
+  appState.selectedJobJd = jd || ''
 }

@@ -43,6 +43,28 @@ export async function getJob(name) {
 }
 
 /**
+ * 解析岗位信息：岗位名不再被知识库限制。
+ * - 命中知识库 → 返回知识库岗位（含 JD + 面试题库），isCustom=false
+ * - 未命中 → 返回「自定义岗位」（name 为用户输入，jd 为用户粘贴的 JD，题库为空，AI 自行出题），isCustom=true
+ * - name 为空 → 返回 null（调用方判空处理）
+ * 这是「所有岗位都可以写/面/投」的关键入口：interview / apply 都走这里，不再对未知岗位报 400。
+ */
+export async function resolveJob(name, customJd = '') {
+  const known = await getJob(name)
+  if (known) return { ...known, isCustom: false }
+  if (!name || typeof name !== 'string' || !name.trim()) return null
+  return {
+    name: name.trim(),
+    jd: String(customJd || '').trim(),
+    skills: [],
+    questions: [],
+    hrQuestions: [],
+    starQuestions: [],
+    isCustom: true,
+  }
+}
+
+/**
  * 把岗位信息压成一段给 LLM 看的上下文。
  * 阶段 2 的面试官系统提示词、阶段 6 的投递助手都用它，避免各写一遍。
  */

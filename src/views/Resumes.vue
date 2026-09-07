@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api.js'
+import { COMMON_JOBS } from '../jobs.js'
 
 const router = useRouter()
 const resumes = ref([])
@@ -10,12 +11,10 @@ const saving = ref(false)
 const message = ref('')
 const messageError = ref(false)
 
-const TARGETS = ['全栈开发', '前端开发', '测试/运维', '二次元/ACG 达人运营', '其他']
-
 const emptyForm = () => ({
   id: '',
   title: '',
-  target: '全栈开发',
+  target: '',
   basic: { name: '', phone: '', email: '', city: '', school: '', major: '', education: '', graduationYear: '' },
   skillsText: '',
   experiences: [],
@@ -157,10 +156,11 @@ onMounted(load)
         </div>
 
         <div class="field">
-          <label class="label">求职方向</label>
-          <select v-model="form.target" class="select">
-            <option v-for="t in TARGETS" :key="t" :value="t">{{ t }}</option>
-          </select>
+          <label class="label">求职方向（任意岗位，可直接输入）</label>
+          <input v-model="form.target" class="input" list="target-options" placeholder="如：前端开发 / 新媒体运营 / 任意岗位" />
+          <datalist id="target-options">
+            <option v-for="t in COMMON_JOBS" :key="t" :value="t" />
+          </datalist>
         </div>
 
         <div class="field">

@@ -5,10 +5,11 @@
       <div class="card-title">投递助手</div>
       <p class="tip">根据简历与岗位生成投递清单、打招呼语和求职信，复制后自行投递（不做任何自动投递操作）。</p>
       <div class="form-row">
-        <label>目标岗位
-          <select v-model="job">
-            <option v-for="j in allJobs" :key="j" :value="j">{{ j }}</option>
-          </select>
+        <label>目标岗位（任意岗位，可直接输入）
+          <input v-model="job" list="apply-jobs" placeholder="输入岗位名，如：前端开发 / UI 设计师" />
+          <datalist id="apply-jobs">
+            <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
+          </datalist>
         </label>
         <label class="grow">粘贴真实 JD（可选，命中后素材更贴合）
           <input v-model="jd" type="text" placeholder="从招聘网站复制 JD 原文粘贴到这里" />
@@ -67,10 +68,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { appState } from '../store.js'
+import { COMMON_JOBS } from '../jobs.js'
 
-const allJobs = ['前端开发', '自动化测试', '后端开发', '产品运营', '数据分析']
-
-const job = ref(appState.selectedJob || '前端开发')
+const job = ref(appState.selectedJob || '')
 const jd = ref('')
 const resume = ref(appState.resume || '')
 const loading = ref(false)
@@ -79,7 +79,7 @@ const result = ref(null)
 const copied = reactive({ g: false, c: false })
 
 onMounted(() => {
-  if (!job.value || !allJobs.includes(job.value)) job.value = '前端开发'
+  if (!job.value) job.value = appState.selectedJob || ''
 })
 
 async function generate() {
