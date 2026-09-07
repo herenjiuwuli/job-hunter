@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+*.local
+
+# 运行时数据（含个人简历 / 投递记录 / 面试记录，敏感，不提交）
+server/data/resumes.json
+server/data/applications.json
+server/data/records.json
+
+# Python 测试栈（pytest）
+.venv/
+.pytest_cache/
+__pycache__/

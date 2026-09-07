@@ -1,0 +1,500 @@
+/* ============ 求职助手 统一样式（job-hunter + resume-interview 合并） ============ */
+
+:root {
+  /* 主色（沿用 job-hunter 紫） */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-weak: #eef2ff;
+  /* 语义色 */
+  --success: #18a058;
+  --warning: #f59e0b;
+  --danger: #dc2626;
+  /* 文本 */
+  --text: #1f2937;
+  --text-secondary: #6b7280; /* resume-interview 用 */
+  --text-dim: #6b7280;        /* job-hunter 用（与 --text-secondary 同值） */
+  --text-faint: #9ca3af;
+  /* 表面 */
+  --border: #e5e7eb;
+  --bg: #f5f6f8;
+  --card: #ffffff;  /* resume-interview 用 */
+  --panel: #ffffff; /* job-hunter 用（与 --card 同值） */
+  --radius: 10px;
+  --sidebar-w: 220px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ============ 布局：侧边栏（job-hunter） ============ */
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 4px 8px 18px;
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-group {
+  margin-top: 14px;
+}
+
+.nav-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.05em;
+  padding: 0 12px 6px;
+  text-transform: uppercase;
+}
+
+.nav-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.nav-item:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--primary-weak);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 28px;
+}
+
+/* ============ 卡片 ============ */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.card + .card {
+  margin-top: 16px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* ============ 按钮（统一：.btn 为实心主按钮） ============ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--primary);
+  color: #fff;
+  transition: opacity 0.2s;
+}
+
+.btn:hover {
+  opacity: 0.88;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* job-hunter 的实心主按钮别名（与 .btn 一致） */
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+  opacity: 1;
+}
+
+/* 浅色填充次要按钮（resume-interview 语义） */
+.btn-ghost {
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+
+.btn-ghost:hover {
+  opacity: 0.85;
+}
+
+/* 描边次要按钮（原 job-hunter 的 .btn） */
+.btn-outline {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  transition: all 0.15s;
+}
+
+.btn-outline:hover {
+  background: var(--bg);
+  opacity: 1;
+}
+
+.btn-danger {
+  color: var(--danger);
+  background: #fff;
+  border: 1px solid #fecaca;
+}
+
+.btn-danger:hover {
+  background: #fef2f2;
+  opacity: 1;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* ============ 表单 ============ */
+.field {
+  margin-bottom: 14px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-weak);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 70px;
+  line-height: 1.5;
+}
+
+/* 原生 textarea（resume-interview 全局样式） */
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+}
+
+textarea:focus {
+  border-color: var(--primary);
+}
+
+/* ============ 徽章（job-hunter 投递状态） ============ */
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-pending { background: #f3f4f6; color: #6b7280; }
+.badge-applied { background: #eff6ff; color: #2563eb; }
+.badge-chatted { background: #f0fdfa; color: #0d9488; }
+.badge-interview { background: #eef2ff; color: #4f46e5; }
+.badge-offer { background: #f0fdf4; color: #16a34a; }
+.badge-rejected { background: #fef2f2; color: #dc2626; }
+.badge-failed { background: #faf5ff; color: #7e22ce; }
+
+.badge-class-待投递 { background: #f3f4f6; color: #6b7280; }
+.badge-class-已投递 { background: #eff6ff; color: #2563eb; }
+.badge-class-已沟通 { background: #f0fdfa; color: #0d9488; }
+.badge-class-已面试 { background: #eef2ff; color: #4f46e5; }
+.badge-class-已offer { background: #f0fdf4; color: #16a34a; }
+.badge-class-已拒绝 { background: #fef2f2; color: #dc2626; }
+.badge-class-已淘汰 { background: #faf5ff; color: #7e22ce; }
+
+/* ============ 标签（resume-interview 语义） ============ */
+.tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+
+.tag-success {
+  background: #e8f7ef;
+  color: var(--success);
+}
+
+.tag-warning {
+  background: #fef4e6;
+  color: #c47d10;
+}
+
+/* ============ 页面头 / 提示 ============ */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.muted {
+  color: var(--text-faint);
+}
+
+.msg {
+  font-size: 13px;
+  color: var(--primary);
+}
+
+.msg-error {
+  color: var(--danger);
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 40px 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 0;
+}
+
+.error-tip {
+  background: #fdebec;
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 12px;
+}
+
+/* ============ 移动端适配 ============ */
+@media (max-width: 768px) {
+  .content {
+    padding: 14px;
+  }
+  .card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+  .card-title {
+    font-size: 14px;
+  }
+  .btn {
+    padding: 12px 18px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+  .btn-sm {
+    min-height: 38px;
+    padding: 8px 14px;
+  }
+  textarea,
+  input,
+  select {
+    font-size: 16px;
+  }
+  textarea {
+    padding: 10px;
+  }
+  .actions,
+  .input-actions {
+    flex-wrap: wrap;
+  }
+  .actions .btn,
+  .input-actions .btn {
+    flex: 1 1 44%;
+  }
+  .cols {
+    grid-template-columns: 1fr !important;
+  }
+  .bubble {
+    max-width: 88% !important;
+  }
+  .chat-list {
+    max-height: 50vh !important;
+    min-height: 240px;
+  }
+  .score-num,
+  .big-score {
+    font-size: 44px;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============ 打印（简历导出 PDF / 打印） ============ */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  body {
+    background: #fff;
+  }
+  /* 隐藏一切与简历正文无关的界面元素 */
+  .sidebar,
+  .topbar,
+  .app-nav,
+  .form-card,
+  .resume-toolbar,
+  .fmt-toolbar,
+  .avatar-empty,
+  .avatar-remove,
+  .actions,
+  .card-title,
+  .tip {
+    display: none !important;
+  }
+  .content,
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+  .card.result-card {
+    border: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .resume-sheet {
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  .resume-view {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .resume-view h3 {
+    page-break-after: avoid;
+  }
+  .resume-view li {
+    page-break-inside: avoid;
+  }
+}

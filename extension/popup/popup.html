@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>求职自动化助手</h1>
+    <div class="quota">今日额度 <span id="quota">-</span></div>
+  </header>
+
+  <label class="lbl">打招呼语</label>
+  <textarea id="greeting" placeholder="粘贴投递给 HR 的话（可在网页端「AI 定制」生成）"></textarea>
+
+  <label class="check">
+    <input type="checkbox" id="autoClick" />
+    <span>自动点击投递（不勾 = 半自动，只填好话术由你手动点）</span>
+  </label>
+
+  <label class="check">
+    <input type="checkbox" id="bossActiveOnly" />
+    <span>仅投 BOSS 活跃岗位（跳过「半年前活跃」等）</span>
+  </label>
+
+  <label class="lbl">关键词黑名单（命中即跳过，逗号/换行分隔）</label>
+  <textarea id="filterKeywords" placeholder="如：外包, 驻场, 销售岗"></textarea>
+
+  <div class="row">
+    <button id="applyBtn" class="primary">投递当前岗位</button>
+  </div>
+  <div class="row">
+    <button id="inspectBtn">探测页面结构</button>
+    <button id="resetBtn">重置额度</button>
+  </div>
+
+  <div id="log" class="log"></div>
+  <details>
+    <summary>页面结构（校准选择器用）</summary>
+    <pre id="inspectOut" class="inspect"></pre>
+  </details>
+
+  <script src="popup.js"></script>
+</body>
+</html>

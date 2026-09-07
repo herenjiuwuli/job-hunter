@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "求职自动化助手 job-hunter",
+  "version": "0.1.0",
+  "description": "实习僧 / BOSS 直聘半自动投递：自动填打招呼语 + 投递记录回写本地后端",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:3100/*", "http://127.0.0.1:3100/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup/popup.html", "default_title": "求职自动化助手" },
+  "content_scripts": [
+    {
+      "matches": ["*://*.shixiseng.com/*", "*://*.zhipin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

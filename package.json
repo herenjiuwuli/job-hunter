@@ -1,0 +1,26 @@
+{
+  "name": "job-hunter",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n fe,be -c blue,green \"vite\" \"node server/dev.js\"",
+    "dev:fe": "vite",
+    "dev:be": "node server/dev.js",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "html2pdf.js": "^0.14.0",
+    "vue": "^3.5.40",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "concurrently": "^10.0.4",
+    "vite": "^8.2.0"
+  }
+}
