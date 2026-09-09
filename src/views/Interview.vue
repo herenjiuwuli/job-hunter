@@ -628,6 +628,14 @@ onUnmounted(() => {
   font-size: 12px;
   color: #d97706;
 }
+/* 用户气泡（紫底）内，用时/提示改用浅色，否则看不清 */
+.bubble-row.mine .time-tag {
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 1;
+}
+.bubble-row.mine .time-tip {
+  color: #ffd9a0;
+}
 .timer-hint {
   font-size: 13px;
   color: var(--text-secondary);

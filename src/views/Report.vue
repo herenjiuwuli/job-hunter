@@ -138,7 +138,7 @@ function scoreClass(score) {
 const saved = ref(false)
 const saving = ref(false)
 
-async function saveRecord() {
+async function saveRecord(silent = false) {
   if (saved.value || saving.value) return
   saving.value = true
   try {
@@ -158,7 +158,7 @@ async function saveRecord() {
     if (!res.ok) throw new Error(data.error || '保存失败')
     saved.value = true
   } catch (e) {
-    alert(e.message || '保存失败，请稍后重试')
+    if (!silent) alert(e.message || '保存失败，请稍后重试')
   } finally {
     saving.value = false
   }
@@ -177,6 +177,8 @@ async function fetchReport() {
     if (!res.ok) throw new Error(data.error || '报告生成失败')
     report.value = data
     appState.report = data
+    // 报告生成后自动保存记录，面试记录/错题本无需手动点「保存记录」
+    saveRecord(true)
   } catch (e) {
     loadError.value = e.message || '网络错误，请稍后重试'
   } finally {
@@ -268,6 +270,7 @@ onMounted(() => {
   }
   if (appState.report) {
     loading.value = false
+    saveRecord(true)
     return
   }
   fetchReport()
