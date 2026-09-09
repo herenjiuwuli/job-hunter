@@ -236,6 +236,9 @@ onMounted(load)
                 <option v-for="s in STATUSES" :key="s" :value="s">{{ s }}</option>
               </select>
             </td>
+            <td>
+              <span class="badge" :class="RESULT_CLASS[a.result] || 'res-pending'">{{ a.result || '待处理' }}</span>
+            </td>
             <td class="strong">{{ a.company }}</td>
             <td>{{ a.jobTitle }}</td>
             <td><span class="badge badge-pending">{{ a.platform }}</span></td>
