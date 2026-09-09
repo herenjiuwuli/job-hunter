@@ -14,6 +14,7 @@ import Salary from './views/Salary.vue'
 import Intro from './views/Intro.vue'
 import Mistakes from './views/Mistakes.vue'
 import Prep from './views/Prep.vue'
+import Backup from './views/Backup.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -37,5 +38,7 @@ export default createRouter({
     { path: '/intro', component: Intro },
     { path: '/mistakes', component: Mistakes },
     { path: '/prep', component: Prep },
+    // 数据管理
+    { path: '/backup', component: Backup },
   ],
 })

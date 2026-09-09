@@ -56,6 +56,12 @@ const active = computed(() => route.path)
             投递助手
           </router-link>
         </div>
+        <div class="nav-group">
+          <div class="nav-group-title">数据管理</div>
+          <router-link to="/backup" class="nav-item" :class="{ active: active === '/backup' }">
+            数据备份
+          </router-link>
+        </div>
       </nav>
       <div class="sidebar-footer">求职助手 · v0.2</div>
     </aside>

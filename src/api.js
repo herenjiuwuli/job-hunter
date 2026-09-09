@@ -32,4 +32,8 @@ export const api = {
   },
   tailor: (data) => request('/tailor', { method: 'POST', body: JSON.stringify(data) }),
   match: (resumeId) => request(`/match?resumeId=${encodeURIComponent(resumeId)}`),
+  backup: {
+    export: () => request('/backup/export'),
+    import: (data) => request('/backup/import', { method: 'POST', body: JSON.stringify(data) }),
+  },
 }
