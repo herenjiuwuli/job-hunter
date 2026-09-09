@@ -15,6 +15,7 @@ async function request(path, options = {}) {
 export const api = {
   resumes: {
     list: () => request('/resumes'),
+    get: (id) => request(`/resumes/${id}`),
     create: (data) => request('/resumes', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/resumes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     remove: (id) => request(`/resumes/${id}`, { method: 'DELETE' }),
