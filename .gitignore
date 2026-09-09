@@ -3,10 +3,11 @@ dist/
 .env
 *.local
 
-# 运行时数据（含个人简历 / 投递记录 / 面试记录，敏感，不提交）
-server/data/resumes.json
-server/data/applications.json
-server/data/records.json
+# 运行时数据（简历 / 投递记录 / 面试记录 / 候选人画像等个人敏感数据，不提交）
+# 用目录级忽略，只放行岗位知识库 jobs.json（非敏感，需进 git）——
+# 白名单式逐个列文件名会漏（曾漏掉 profile.json，候选人画像含薪资等敏感字段）
+server/data/*
+!server/data/jobs.json
 
 # Python 测试栈（pytest）
 .venv/

@@ -4,7 +4,7 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：49 个 pytest 接口用例（`tests/`，详见 [`TESTING.md`](TESTING.md)）
+- **测试**：52 个 pytest 接口用例（`tests/`，详见 [`TESTING.md`](TESTING.md)）
 
 ## 一、它解决什么
 
