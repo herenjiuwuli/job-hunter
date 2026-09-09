@@ -106,9 +106,24 @@ job-hunter/
 │   ├── lib/                # ai.js（DeepSeek）/ store.js（JSON 存储）/ jobs.js（岗位库）/ matcher.js（打分）
 │   └── data/jobs.json      # 岗位知识库（进 Git）
 ├── extension/              # Chrome MV3 半自动投递扩展
-├── scripts/                # mock-deepseek.mjs（本地测试 mock）/ seed-test.mjs（灌测试数据）
+├── scripts/                # 推送脚本：push-main.sh / retry-push.sh（直连+后台轮询）
+│                           # 静态扫描：check-vue-{undef,tpl,refvalue}.mjs（npm run check:frontend）
+│                           # 测试：tests/mock_deepseek.py + tests/*.py（pytest）
 └── .env.example
 ```
+
+## 三点五、前端静态扫描（避免「点了才炸」）
+
+`vite build` 对「引用了未声明的标识符」只 warning 不 error，编译照过、真机一点就 `ReferenceError`。本项目踩过 3 次（`router.js` 漏 Profile import、`Applications.vue` 漏 `tailoring`/`matchPoints`、旧 `resume/interview` 缺路由）。所以固化了一套**零依赖**的纯 Node 静态扫描脚本（不依赖 ESLint）：
+
+```bash
+npm run check:frontend           # 一键跑三遍，0 警告才算干净
+npm run check:frontend:undef     # script 部分大写未声明标识符
+npm run check:frontend:tpl       # template 组件/事件未声明
+npm run check:frontend:refvalue  # Vue ref 漏声明（用了 .value 但未 const ref()）
+```
+
+**适用范围**：任何 Vue 3 `<script setup>` 项目。三个脚本互相补充，覆盖 95% 的「build OK、运行时崩」类错误。建议挂到 CI：有任何可疑就拒绝合入。
 
 ## 九、免责声明
 
