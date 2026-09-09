@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { api } from '../api.js'
+import { CITIES, COUNTRIES, CURRENT_ROLE, SALARY_STRATEGY, WORK_AUTH } from '../options.js'
 
 const REMOTE_OPTIONS = ['', '远程', '混合', '现场', '不限']
 const SELF_ID_OPTIONS = [
@@ -51,6 +52,15 @@ async function load() {
 }
 
 async function save() {
+  const missing = []
+  if (!form.basic.name.trim()) missing.push('姓名')
+  if (!form.basic.email.trim()) missing.push('邮箱')
+  if (!form.workAuthorization.country.trim()) missing.push('国家/地区')
+  if (missing.length) {
+    message.value = `请先填写必填项：${missing.join('、')}`
+    messageError.value = true
+    return
+  }
   saving.value = true
   message.value = ''
   try {
@@ -94,10 +104,13 @@ onMounted(load)
     <div class="card">
       <div class="card-title">基本信息</div>
       <div class="grid-2">
-        <div class="field"><label class="label">姓名</label><input v-model="form.basic.name" class="input" /></div>
-        <div class="field"><label class="label">邮箱</label><input v-model="form.basic.email" class="input" /></div>
+        <div class="field"><label class="label">姓名<span class="req">*</span></label><input v-model="form.basic.name" class="input" /></div>
+        <div class="field"><label class="label">邮箱<span class="req">*</span></label><input v-model="form.basic.email" class="input" /></div>
         <div class="field"><label class="label">电话</label><input v-model="form.basic.phone" class="input" /></div>
-        <div class="field"><label class="label">所在地</label><input v-model="form.basic.location" class="input" /></div>
+        <div class="field">
+          <label class="label">所在地</label>
+          <input v-model="form.basic.location" class="input" list="pf-city" placeholder="可直接输入，或从预设选" />
+        </div>
         <div class="field"><label class="label">作品集链接</label><input v-model="form.basic.portfolio" class="input" /></div>
         <div class="field"><label class="label">GitHub</label><input v-model="form.basic.github" class="input" /></div>
       </div>
@@ -106,8 +119,8 @@ onMounted(load)
     <div class="card">
       <div class="card-title">当前状态</div>
       <div class="grid-2">
-        <div class="field"><label class="label">当前身份（如「大四在读 / 应届」）</label><input v-model="form.currentStatus.currentRole" class="input" /></div>
-        <div class="field"><label class="label">求职状态</label><input v-model="form.currentStatus.employmentStatus" class="input" /></div>
+        <div class="field"><label class="label">当前身份（如「大四在读 / 应届」）</label><input v-model="form.currentStatus.currentRole" class="input" list="pf-role" /></div>
+        <div class="field"><label class="label">求职状态</label><input v-model="form.currentStatus.employmentStatus" class="input" list="pf-role" /></div>
         <div class="field"><label class="label">可入职时间</label><input v-model="form.currentStatus.availableStart" class="input" placeholder="如 2026-07" /></div>
       </div>
     </div>
@@ -115,9 +128,15 @@ onMounted(load)
     <div class="card">
       <div class="card-title">工作授权（投递前必填，不可猜测）</div>
       <div class="grid-2">
-        <div class="field"><label class="label">国家/地区</label><input v-model="form.workAuthorization.country" class="input" /></div>
-        <div class="field"><label class="label">当前工作授权</label><input v-model="form.workAuthorization.currentAuthorization" class="input" placeholder="如 中国大陆，无需额外授权" /></div>
-        <div class="field"><label class="label">是否需要签证/担保（sponsorship）</label><input v-model="form.workAuthorization.requiresSponsorship" class="input" placeholder="如 否 / 是（需 H-1B）" /></div>
+        <div class="field"><label class="label">国家/地区<span class="req">*</span></label><input v-model="form.workAuthorization.country" class="input" list="pf-country" /></div>
+        <div class="field">
+          <label class="label">当前工作授权</label>
+          <input v-model="form.workAuthorization.currentAuthorization" class="input" list="pf-auth" placeholder="如 中国公民，无需额外授权" />
+        </div>
+        <div class="field">
+          <label class="label">是否需要签证/担保（sponsorship）</label>
+          <input v-model="form.workAuthorization.requiresSponsorship" class="input" list="pf-auth" placeholder="如 否 / 是（需担保）" />
+        </div>
       </div>
     </div>
 
@@ -152,7 +171,7 @@ onMounted(load)
         <div class="field"><label class="label">总包区间</label><input v-model="form.compensation.totalRange" class="input" placeholder="如 10w-15w / 年" /></div>
         <div class="field" style="grid-column: 1 / -1;">
           <label class="label">回答策略</label>
-          <input v-model="form.compensation.answerStrategy" class="input" />
+          <input v-model="form.compensation.answerStrategy" class="input" list="pf-salary" />
         </div>
       </div>
     </div>
@@ -172,5 +191,12 @@ onMounted(load)
     </div>
 
     <div v-if="message" class="msg" :class="{ 'msg-error': messageError }">{{ message }}</div>
+
+    <!-- 输入框预设：只是联想建议，仍可自由输入任意值 -->
+    <datalist id="pf-city"><option v-for="o in CITIES" :key="o" :value="o" /></datalist>
+    <datalist id="pf-role"><option v-for="o in CURRENT_ROLE" :key="o" :value="o" /></datalist>
+    <datalist id="pf-country"><option v-for="o in COUNTRIES" :key="o" :value="o" /></datalist>
+    <datalist id="pf-auth"><option v-for="o in WORK_AUTH" :key="o" :value="o" /></datalist>
+    <datalist id="pf-salary"><option v-for="o in SALARY_STRATEGY" :key="o" :value="o" /></datalist>
   </div>
 </template>

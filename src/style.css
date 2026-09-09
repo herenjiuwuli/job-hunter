@@ -441,6 +441,20 @@ textarea:focus {
   }
 }
 
+/* ============ 表单必填标记 ============ */
+.req {
+  color: #dc2626;
+  margin-left: 2px;
+  font-weight: 700;
+}
+
+.field-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-faint, #999);
+  line-height: 1.5;
+}
+
 /* ============ 打印（简历导出 PDF / 打印） ============ */
 @media print {
   @page {

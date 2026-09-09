@@ -1,6 +1,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api.js'
+import { COMMON_JOBS } from '../jobs.js'
+import { PLATFORMS } from '../options.js'
 
 const STATUSES = ['待投递', '已投递', '已沟通', '已面试', '已offer', '已拒绝', '已淘汰']
 const RESULTS = ['待处理', '已确认提交', '跳过', '被拦截', '需用户']
@@ -11,7 +13,6 @@ const RESULT_CLASS = {
   '被拦截': 'res-blocked',
   '需用户': 'res-needs-user',
 }
-const PLATFORMS = ['实习僧', 'BOSS直聘', '拉勾', '牛客网', '智联招聘', '前程无忧', '猎聘', '其他']
 
 const apps = ref([])
 const resumes = ref([])
@@ -58,6 +59,11 @@ const filtered = computed(() => {
     }
     return true
   })
+})
+
+// 公司名联想：从已有投递记录去重，越用越省事（仍可自由输入新公司）
+const companyOptions = computed(() => {
+  return [...new Set(apps.value.map((a) => a.company).filter(Boolean))]
 })
 
 function fmtDate(iso) {
@@ -254,12 +260,18 @@ onMounted(load)
         <div class="modal-body">
           <div class="grid-2">
             <div class="field">
-              <label class="label">公司 *</label>
-              <input v-model="form.company" class="input" placeholder="公司名" />
+              <label class="label">公司<span class="req">*</span></label>
+              <input v-model="form.company" class="input" list="ap-company" placeholder="公司名" />
+              <datalist id="ap-company">
+                <option v-for="c in companyOptions" :key="c" :value="c" />
+              </datalist>
             </div>
             <div class="field">
-              <label class="label">岗位 *</label>
-              <input v-model="form.jobTitle" class="input" placeholder="岗位名" />
+              <label class="label">岗位<span class="req">*</span></label>
+              <input v-model="form.jobTitle" class="input" list="ap-job" placeholder="岗位名（任意岗位都可直接输入）" />
+              <datalist id="ap-job">
+                <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
+              </datalist>
             </div>
             <div class="field">
               <label class="label">平台</label>
@@ -272,6 +284,13 @@ onMounted(load)
               <select v-model="form.status" class="select">
                 <option v-for="s in STATUSES" :key="s" :value="s">{{ s }}</option>
               </select>
+            </div>
+            <div class="field">
+              <label class="label">投递结果</label>
+              <select v-model="form.result" class="select">
+                <option v-for="r in RESULTS" :key="r" :value="r">{{ r }}</option>
+              </select>
+              <div class="field-hint">这次「投成没成」——与上面「进行到哪一步」是两个维度</div>
             </div>
             <div class="field">
               <label class="label">关联简历</label>

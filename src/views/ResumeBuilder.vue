@@ -19,21 +19,28 @@
       <div class="card-title">AI 简历助手</div>
       <p class="tip">只基于你填写的真实信息组织排版，AI 绝不虚构经历或数据。生成后可自由编辑，<b>确认无误再点「导出 PDF」</b>。</p>
       <div class="form-grid">
-        <label>姓名 *<input v-model="form.name" type="text" placeholder="张三" /></label>
-        <label>性别<input v-model="form.gender" type="text" placeholder="女" /></label>
+        <label>姓名<span class="req">*</span><input v-model="form.name" type="text" placeholder="张三" /></label>
+        <label>性别<input v-model="form.gender" type="text" list="rb-gender" placeholder="女" /></label>
         <label>年龄<input v-model="form.age" type="text" placeholder="22" /></label>
-        <label>电话 *<input v-model="form.phone" type="text" placeholder="13800000000" /></label>
-        <label>邮箱 *<input v-model="form.email" type="text" placeholder="zhangsan@xx.com" /></label>
-        <label>求职岗位<input v-model="form.jobTitle" type="text" placeholder="新媒体运营实习生" /></label>
-        <label>城市<input v-model="form.city" type="text" placeholder="杭州" /></label>
-        <label>政治面貌<input v-model="form.political" type="text" placeholder="共青团员" /></label>
+        <label>电话<span class="req">*</span><input v-model="form.phone" type="text" placeholder="13800000000" /></label>
+        <label>邮箱<span class="req">*</span><input v-model="form.email" type="text" placeholder="zhangsan@xx.com" /></label>
+        <label>求职岗位<input v-model="form.jobTitle" type="text" list="rb-job" placeholder="新媒体运营实习生" /></label>
+        <label>城市<input v-model="form.city" type="text" list="rb-city" placeholder="杭州" /></label>
+        <label>政治面貌<input v-model="form.political" type="text" list="rb-political" placeholder="共青团员" /></label>
         <label>学校<input v-model="form.school" type="text" placeholder="XX大学" /></label>
         <label>专业<input v-model="form.major" type="text" placeholder="计算机科学与技术" /></label>
-        <label>学历<input v-model="form.education" type="text" placeholder="本科" /></label>
-        <label>毕业时间<input v-model="form.gradYear" type="text" placeholder="2025.06" /></label>
+        <label>学历<input v-model="form.education" type="text" list="rb-edu" placeholder="本科" /></label>
+        <label>毕业时间<input v-model="form.gradYear" type="text" list="rb-year" placeholder="2025.06" /></label>
         <label class="span2">技能（逗号分隔）<input v-model="form.skills" type="text" placeholder="Vue3, JavaScript, Node.js, MySQL" /></label>
         <label class="span2">项目经历要点<textarea v-model="form.projects" rows="4" placeholder="一行一个项目或要点，例如：&#10;电商后台管理系统：负责订单模块和权限模块开发，使用 Vue3 + Element Plus&#10;校园二手交易平台：独立完成前后端开发"></textarea></label>
       </div>
+      <!-- 输入框预设：只是联想建议，仍可自由输入任意值 -->
+      <datalist id="rb-gender"><option v-for="o in GENDERS" :key="o" :value="o" /></datalist>
+      <datalist id="rb-job"><option v-for="o in COMMON_JOBS" :key="o" :value="o" /></datalist>
+      <datalist id="rb-city"><option v-for="o in CITIES" :key="o" :value="o" /></datalist>
+      <datalist id="rb-political"><option v-for="o in POLITICAL" :key="o" :value="o" /></datalist>
+      <datalist id="rb-edu"><option v-for="o in EDUCATION" :key="o" :value="o" /></datalist>
+      <datalist id="rb-year"><option v-for="o in GRAD_YEARS" :key="o" :value="o" /></datalist>
       <div class="jobs-select">
         <span class="qlabel">目标岗位（可多选，生成对应的优化版本；任意岗位都可选）</span>
         <div class="job-checks">
@@ -180,6 +187,7 @@ import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api.js'
 import { COMMON_JOBS } from '../jobs.js'
+import { CITIES, EDUCATION, GENDERS, GRAD_YEARS, POLITICAL } from '../options.js'
 
 // 可选的简历版式
 const TEMPLATE_LIST = [
