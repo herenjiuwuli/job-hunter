@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Resumes from './views/Resumes.vue'
 import Applications from './views/Applications.vue'
+import Profile from './views/Profile.vue'
 import Match from './views/Match.vue'
 import ResumeBuilder from './views/ResumeBuilder.vue'
 import Home from './views/Home.vue'
