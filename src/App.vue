@@ -30,12 +30,6 @@ const active = computed(() => route.path)
           </router-link>
         </div>
         <div class="nav-group">
-          <div class="nav-group-title">简历工作台</div>
-          <router-link to="/resume-builder" class="nav-item" :class="{ active: active === '/resume-builder' }">
-            写简历
-          </router-link>
-        </div>
-        <div class="nav-group">
           <div class="nav-group-title">面试准备</div>
           <router-link to="/home" class="nav-item" :class="{ active: active === '/home' }">
             简历分析
