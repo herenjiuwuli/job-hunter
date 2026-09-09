@@ -66,11 +66,13 @@ npm run dev
 
 ## 6. 上线部署（可选）
 
-前端是纯静态产物，后端是 Node 服务：
+**跑通上面 7 步后**，如果要把服务放到服务器上让自己随时访问，见 [`DEPLOY.md`](DEPLOY.md)。
+
+本地也可以先体验「生产模式」（单端口同时提供前端 + API）：
 
 ```bash
-npm run build        # 产物在 dist/
-node server/dev.js   # 后端需单独跑（生产建议 PM2 / 单端口部署）
+npm run build
+npm start          # 打开 http://localhost:3100
 ```
 
-> 若只想「给大家看功能」，可先本地 `npm run dev` + 录屏 demo，不必立刻上服务器。
+> ⚠️ 部署到公网前**务必先看 DEPLOY.md 的安全警告**：本项目没有登录鉴权，端口直接暴露等于公开你的简历和投递记录。
