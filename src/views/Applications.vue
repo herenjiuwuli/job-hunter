@@ -21,6 +21,8 @@ const showForm = ref(false)
 const saving = ref(false)
 const message = ref('')
 const messageError = ref(false)
+const tailoring = ref(false)
+const matchPoints = ref([])
 
 const emptyForm = () => ({
   id: '',
@@ -31,6 +33,7 @@ const emptyForm = () => ({
   jd: '',
   greeting: '',
   status: '待投递',
+  result: '待处理',
   note: '',
   appliedAt: '',
 })
@@ -285,6 +288,15 @@ onMounted(load)
           <div class="field">
             <label class="label">岗位 JD（供 AI 定制 / 匹配使用）</label>
             <textarea v-model="form.jd" class="textarea" placeholder="粘贴岗位描述…"></textarea>
+            <button
+              class="btn btn-outline"
+              style="margin-top: 8px;"
+              :disabled="tailoring"
+              @click="tailor"
+            >{{ tailoring ? 'AI 定制中…' : 'AI 定制（生成打招呼语 / 求职信 / 定制简历）' }}</button>
+            <div v-if="matchPoints.length" class="match-points">
+              <div v-for="(p, i) in matchPoints" :key="i" class="match-point">{{ p }}</div>
+            </div>
           </div>
           <div class="field">
             <label class="label">打招呼语</label>
