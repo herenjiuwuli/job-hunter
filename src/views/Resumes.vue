@@ -120,6 +120,7 @@ async function remove(r) {
 }
 
 function beautify(id) {
+  // 跳到 AI 重写版：传入 resumeId，ResumeBuilder 必须基于库中已有简历工作
   router.push(`/resume-builder?resumeId=${id}`)
 }
 
@@ -164,7 +165,7 @@ onMounted(load)
           </div>
           <div class="resume-card-actions">
             <button class="btn btn-outline" @click="openEdit(r)">编辑</button>
-            <button class="btn btn-outline" @click="beautify(r.id)">排版导出</button>
+            <button class="btn btn-outline" @click="beautify(r.id)">AI 重写版</button>
             <button class="btn btn-danger" @click="remove(r)">删除</button>
           </div>
         </div>

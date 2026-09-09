@@ -1,48 +1,41 @@
 <template>
   <div>
-    <!-- 简历库联动 -->
+    <!-- 顶栏：返回 + 正在编辑哪份简历 -->
+    <div class="page-head">
+      <button class="btn btn-outline back-btn" @click="backToLibrary">← 返回简历库</button>
+      <h1 class="page-title">
+        AI 重写版 <span v-if="sourceResume" class="muted"> · {{ sourceResume.title || '未命名简历' }}</span>
+      </h1>
+      <div class="page-sub">基于简历库数据生成新版本，生成后可一键保存回原简历的 <code>content</code> 字段。</div>
+    </div>
+
+    <!-- 简历库只读概览（基本信息/技能/项目计数） -->
     <div class="card library-card">
-      <div class="library-row">
-        <select v-model="linkedResumeId" class="select" style="flex: 1;" @change="loadFromLibrary($event.target.value)">
-          <option value="">从简历库加载…</option>
-          <option v-for="r in libraryResumes" :key="r.id" :value="r.id">{{ r.title }}</option>
-        </select>
-        <button class="btn btn-ghost btn-sm" :disabled="savingToLibrary" @click="saveToLibrary">
-          {{ savingToLibrary ? '保存中…' : '保存到简历库' }}
-        </button>
+      <div class="card-title">简历库摘要（只读）</div>
+      <p class="tip">基本信息请到 <router-link to="/resumes">简历库</router-link> 维护，本页面仅在此副本上 AI 重写。</p>
+      <div v-if="sourceResume" class="meta-grid">
+        <div class="meta-row"><span class="meta-label">姓名</span><span>{{ sourceResume.basic?.name || '—' }}</span></div>
+        <div class="meta-row"><span class="meta-label">电话</span><span>{{ sourceResume.basic?.phone || '—' }}</span></div>
+        <div class="meta-row"><span class="meta-label">邮箱</span><span>{{ sourceResume.basic?.email || '—' }}</span></div>
+        <div class="meta-row"><span class="meta-label">城市</span><span>{{ sourceResume.basic?.city || '—' }}</span></div>
+        <div class="meta-row"><span class="meta-label">学校</span><span>{{ sourceResume.basic?.school || '—' }}</span></div>
+        <div class="meta-row"><span class="meta-label">学历</span><span>{{ sourceResume.basic?.education || '—' }}</span></div>
+        <div class="meta-row meta-row-wide"><span class="meta-label">技能 ({{ (sourceResume.skills || []).length }})</span><span>{{ (sourceResume.skills || []).join(' · ') || '—' }}</span></div>
+        <div class="meta-row meta-row-wide"><span class="meta-label">经历/项目</span><span>{{ (sourceResume.experiences || []).length }} 段经历 · {{ (sourceResume.projects || []).length }} 个项目</span></div>
       </div>
       <div v-if="libraryMessage" class="msg" style="margin-top: 8px;">{{ libraryMessage }}</div>
     </div>
 
-    <!-- 表单 -->
+    <!-- AI 输入：项目经历 + 目标岗位 -->
     <div class="card form-card">
-      <div class="card-title">AI 简历助手</div>
-      <p class="tip">只基于你填写的真实信息组织排版，AI 绝不虚构经历或数据。生成后可自由编辑，<b>确认无误再点「导出 PDF」</b>。</p>
+      <div class="card-title">AI 输入</div>
+      <p class="tip">下方内容将作为 AI 生成依据，会自动从简历库抓取你可改写。AI 绝不虚构经历或数据，确认无误后再保存。</p>
       <div class="form-grid">
-        <label>姓名<span class="req">*</span><input v-model="form.name" type="text" placeholder="张三" /></label>
-        <label>性别<input v-model="form.gender" type="text" list="rb-gender" placeholder="女" /></label>
-        <label>年龄<input v-model="form.age" type="text" placeholder="22" /></label>
-        <label>电话<span class="req">*</span><input v-model="form.phone" type="text" placeholder="13800000000" /></label>
-        <label>邮箱<span class="req">*</span><input v-model="form.email" type="text" placeholder="zhangsan@xx.com" /></label>
-        <label>求职岗位<input v-model="form.jobTitle" type="text" list="rb-job" placeholder="新媒体运营实习生" /></label>
-        <label>城市<input v-model="form.city" type="text" list="rb-city" placeholder="杭州" /></label>
-        <label>政治面貌<input v-model="form.political" type="text" list="rb-political" placeholder="共青团员" /></label>
-        <label>学校<input v-model="form.school" type="text" placeholder="XX大学" /></label>
-        <label>专业<input v-model="form.major" type="text" placeholder="计算机科学与技术" /></label>
-        <label>学历<input v-model="form.education" type="text" list="rb-edu" placeholder="本科" /></label>
-        <label>毕业时间<input v-model="form.gradYear" type="text" list="rb-year" placeholder="2025.06" /></label>
-        <label class="span2">技能（逗号分隔）<input v-model="form.skills" type="text" placeholder="Vue3, JavaScript, Node.js, MySQL" /></label>
-        <label class="span2">项目经历要点<textarea v-model="form.projects" rows="4" placeholder="一行一个项目或要点，例如：&#10;电商后台管理系统：负责订单模块和权限模块开发，使用 Vue3 + Element Plus&#10;校园二手交易平台：独立完成前后端开发"></textarea></label>
+        <label class="span2">技能要点（自由编辑，AI 参考）<input v-model="form.skills" type="text" placeholder="Vue3, JavaScript, Node.js, MySQL…" /></label>
+        <label class="span2">项目经历要点（一行一段，AI 参考）<textarea v-model="form.projects" rows="6" placeholder="例如：&#10;电商后台管理系统：负责订单模块和权限模块开发，使用 Vue3 + Element Plus&#10;校园二手交易平台：独立完成前后端开发"></textarea></label>
       </div>
-      <!-- 输入框预设：只是联想建议，仍可自由输入任意值 -->
-      <datalist id="rb-gender"><option v-for="o in GENDERS" :key="o" :value="o" /></datalist>
-      <datalist id="rb-job"><option v-for="o in COMMON_JOBS" :key="o" :value="o" /></datalist>
-      <datalist id="rb-city"><option v-for="o in CITIES" :key="o" :value="o" /></datalist>
-      <datalist id="rb-political"><option v-for="o in POLITICAL" :key="o" :value="o" /></datalist>
-      <datalist id="rb-edu"><option v-for="o in EDUCATION" :key="o" :value="o" /></datalist>
-      <datalist id="rb-year"><option v-for="o in GRAD_YEARS" :key="o" :value="o" /></datalist>
       <div class="jobs-select">
-        <span class="qlabel">目标岗位（可多选，生成对应的优化版本；任意岗位都可选）</span>
+        <span class="qlabel">目标岗位（任意岗位都可输入，AI 针对每个岗位出一版）</span>
         <div class="job-checks">
           <label v-for="j in COMMON_JOBS" :key="j" class="check-item" :class="{ checked: form.targetJobs.includes(j) }">
             <input type="checkbox" :value="j" v-model="form.targetJobs" />{{ j }}
@@ -62,8 +55,11 @@
         </div>
       </div>
       <div class="toolbar">
-        <button class="btn" :disabled="loading || !form.name.trim()" @click="generate">
+        <button class="btn" :disabled="loading" @click="generate">
           {{ loading ? '生成中…' : '生成简历' }}
+        </button>
+        <button class="btn btn-ghost" :disabled="!result || savingToLibrary" @click="saveToLibrary">
+          {{ savingToLibrary ? '保存中…' : '保存为当前简历' }}
         </button>
       </div>
       <div v-if="error" class="error-tip">{{ error }}</div>
@@ -184,10 +180,9 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api.js'
 import { COMMON_JOBS } from '../jobs.js'
-import { CITIES, EDUCATION, GENDERS, GRAD_YEARS, POLITICAL } from '../options.js'
 
 // 可选的简历版式
 const TEMPLATE_LIST = [
@@ -197,19 +192,9 @@ const TEMPLATE_LIST = [
   { id: 'sidebar', name: '侧栏色块', desc: '左侧彩色信息栏，视觉冲击强，适合作品集' },
 ]
 
+// AI 输入表单：本页面只接收简历库传来的 skills/projects/targetJobs 这三类 AI 输入。
+// 基本信息（姓名/电话/学校/学历等）由简历库维护，本页只展示「简历库摘要」只读视图。
 const form = reactive({
-  name: '',
-  gender: '',
-  age: '',
-  phone: '',
-  email: '',
-  jobTitle: '',
-  city: '',
-  political: '',
-  school: '',
-  major: '',
-  education: '',
-  gradYear: '',
   skills: '',
   projects: '',
   targetJobs: [],
@@ -224,102 +209,83 @@ function addCustomJob() {
   customJob.value = ''
 }
 
-/* ---------- 简历库联动（深度接入：简历库 ⇄ 简历编辑器） ---------- */
+/* ---------- 数据源：简历库（强制 ?resumeId= 必传） ---------- */
 const route = useRoute()
-const libraryResumes = ref([])
-const linkedResumeId = ref('')
+const router = useRouter()
+const sourceResume = ref(null)    // 当前正在编辑的简历数据（只读）
 const savingToLibrary = ref(false)
 const libraryMessage = ref('')
 
-async function loadLibrary() {
+// 强制 resumeId：没传就直接跳回简历库
+onMounted(async () => {
+  const id = route.query.resumeId
+  if (!id) {
+    libraryMessage.value = '缺少 resumeId 参数，正在跳转回简历库…'
+    setTimeout(() => router.replace('/resumes'), 600)
+    return
+  }
   try {
-    libraryResumes.value = await api.resumes.list()
+    const r = await api.resumes.get(String(id))
+    sourceResume.value = r
+    linkedResumeId.value = String(id)
+    // 把简历库的 skills/experiences/projects 转写成 textarea/inputs 默认值，用户可在此基础上自由改写
+    form.skills = (r.skills || []).join(', ')
+    const lines = []
+    for (const e of r.experiences || []) {
+      const range = e.start || e.end ? `（${e.start || ''} - ${e.end || ''}）` : ''
+      lines.push(`${e.company} ${e.role}${range}`.trim())
+      for (const p of e.points || []) lines.push(`- ${p}`)
+    }
+    for (const p of r.projects || []) {
+      lines.push(`${p.name}${p.role ? `（${p.role}）` : ''}`)
+      if (p.desc) lines.push(`- ${p.desc}`)
+      for (const h of p.highlights || []) lines.push(`- ${h}`)
+    }
+    form.projects = lines.join('\n')
+    form.targetJobs = []
+    libraryMessage.value = `已加载「${r.title}」，可编辑下方 AI 输入并生成`
   } catch (e) {
-    libraryMessage.value = e.message || '简历库加载失败'
+    libraryMessage.value = e.message || '简历加载失败'
   }
+})
+
+// linkedResumeId 保留（saveToLibrary 还要用它），与 sourceResume 同步
+const linkedResumeId = ref('')
+watch(sourceResume, (r) => {
+  if (r) linkedResumeId.value = r.id
+}, { immediate: true })
+
+function backToLibrary() {
+  router.push('/resumes')
 }
 
-// 简历库结构化数据 → 编辑器表单
-function loadFromLibrary(id) {
-  const r = libraryResumes.value.find((x) => x.id === id)
-  if (!r) return
-  linkedResumeId.value = id
-  form.name = r.basic?.name || ''
-  form.phone = r.basic?.phone || ''
-  form.email = r.basic?.email || ''
-  form.city = r.basic?.city || ''
-  form.school = r.basic?.school || ''
-  form.major = r.basic?.major || ''
-  form.education = r.basic?.education || ''
-  form.gradYear = r.basic?.graduationYear || ''
-  form.skills = (r.skills || []).join(', ')
-  const lines = []
-  for (const e of r.experiences || []) {
-    const range = e.start || e.end ? `（${e.start || ''} - ${e.end || ''}）` : ''
-    lines.push(`${e.company} ${e.role}${range}`.trim())
-    for (const p of e.points || []) lines.push(`- ${p}`)
-  }
-  for (const p of r.projects || []) {
-    lines.push(`${p.name}${p.role ? `（${p.role}）` : ''}`)
-    if (p.desc) lines.push(`- ${p.desc}`)
-    for (const h of p.highlights || []) lines.push(`- ${h}`)
-  }
-  form.projects = lines.join('\n')
-  form.jobTitle = r.target || ''
-  form.targetJobs = []
-  libraryMessage.value = `已加载「${r.title}」，可编辑后重新生成`
-}
-
-// 编辑器表单 + AI 生成结果 → 简历库
+// 保存 AI 生成结果 → 当前简历库的 content 字段（仅更新 AI 文本，不动简历库其他字段）
 async function saveToLibrary() {
-  const name = form.name.trim()
-  if (!name) {
-    libraryMessage.value = '请先填写姓名'
+  if (!sourceResume.value) {
+    libraryMessage.value = '简历数据未加载，无法保存'
+    return
+  }
+  if (!result.value) {
+    libraryMessage.value = '请先生成简历再保存'
     return
   }
   savingToLibrary.value = true
   libraryMessage.value = ''
   try {
-    const payload = {
-      title: form.jobTitle ? `${form.jobTitle} · ${name}` : `${name}的简历`,
-      target: form.jobTitle || '其他',
-      basic: {
-        name,
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        city: form.city.trim(),
-        school: form.school.trim(),
-        major: form.major.trim(),
-        education: form.education.trim(),
-        graduationYear: form.gradYear.trim(),
-      },
-      skills: form.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
-      experiences: [],
-      projects: [],
-      selfEvaluation: '',
-      content: result.value?.resumeText || '',
+    const updated = {
+      ...sourceResume.value,
+      content: result.value.resumeText || '',
     }
-    if (linkedResumeId.value) {
-      await api.resumes.update(linkedResumeId.value, payload)
-      libraryMessage.value = '已更新到简历库 ✓'
-    } else {
-      const created = await api.resumes.create(payload)
-      linkedResumeId.value = created.id
-      libraryMessage.value = '已保存到简历库 ✓'
-    }
-    await loadLibrary()
+    await api.resumes.update(linkedResumeId.value, updated)
+    // 让 sourceResume 也带上 content，避免下次保存时覆盖用户已保存的
+    sourceResume.value = { ...sourceResume.value, content: updated.content }
+    libraryMessage.value = `已保存到「${sourceResume.value.title || '当前简历'}」 ✓`
   } catch (e) {
     libraryMessage.value = e.message || '保存失败'
   } finally {
     savingToLibrary.value = false
   }
 }
-
-onMounted(async () => {
-  await loadLibrary()
-  const id = route.query.resumeId
-  if (id) loadFromLibrary(String(id))
-})
 
 const loading = ref(false)
 const error = ref('')
@@ -477,19 +443,23 @@ function renderResume(md, tpl) {
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
+// 头部信息：来自简历库的 basic 字段（只展示用户在简历库里维护好的联系方式）
 const HEADER_FIELDS = [
   { key: 'phone', label: '电话' },
   { key: 'email', label: '邮箱' },
-  { key: 'jobTitle', label: '求职岗位' },
   { key: 'gender', label: '性别' },
   { key: 'age', label: '年龄' },
   { key: 'city', label: '城市' },
   { key: 'political', label: '政治面貌' },
+  { key: 'jobTitle', label: '求职岗位' },
 ]
 const headerHtml = computed(() => {
-  const name = (form.name || '').trim()
+  const basic = sourceResume.value?.basic || {}
+  const target = sourceResume.value?.target || ''
+  const name = (basic.name || '').trim()
+  const lookup = { ...basic, jobTitle: basic.jobTitle || target }
   const items = HEADER_FIELDS
-    .map((f) => ({ label: f.label, val: (form[f.key] || '').trim() }))
+    .map((f) => ({ label: f.label, val: (lookup[f.key] || '').trim() }))
     .filter((x) => x.val)
   let html = ''
   if (name) html += `<p class="r-name">${escapeHtml(name)}</p>`
@@ -541,7 +511,7 @@ async function scoreResume() {
     const res = await fetch('/api/resume/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resumeText: text, job: (form.jobTitle || '').trim() }),
+      body: JSON.stringify({ resumeText: text, job: (sourceResume.value?.target || '').trim() }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || '评分失败')
@@ -555,6 +525,8 @@ async function scoreResume() {
 }
 
 async function generate() {
+  // 基本信息直接取自简历库（只读），AI 输入只用页面的 skills/projects/targetJobs
+  const basic = sourceResume.value?.basic || {}
   loading.value = true
   error.value = ''
   result.value = null
@@ -566,18 +538,14 @@ async function generate() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         basicInfo: {
-          name: form.name.trim(),
-          gender: form.gender.trim(),
-          age: form.age.trim(),
-          phone: form.phone.trim(),
-          email: form.email.trim(),
-          jobTitle: form.jobTitle.trim(),
-          city: form.city.trim(),
-          political: form.political.trim(),
-          school: form.school.trim(),
-          major: form.major.trim(),
-          education: form.education.trim(),
-          gradYear: form.gradYear.trim(),
+          name: basic.name || '',
+          phone: basic.phone || '',
+          email: basic.email || '',
+          city: basic.city || '',
+          school: basic.school || '',
+          major: basic.major || '',
+          education: basic.education || '',
+          graduationYear: basic.graduationYear || '',
           skills: form.skills.trim(),
           projects: form.projects.trim(),
           targetJobs: form.targetJobs,
@@ -635,7 +603,7 @@ async function exportPdf() {
   if (!sheet || exportingPdf.value) return
   exportingPdf.value = true
   const tab = tabs.value[current.value]
-  const name = form.name.trim() || '简历'
+  const name = (sourceResume.value?.basic?.name || '').trim() || '简历'
   const label = tab ? tab.label : '简历'
   const filename = `${name}_${label}.pdf`
   let wrap = null
@@ -786,8 +754,47 @@ async function copyCurrent() {
   background: var(--primary-weak);
   color: var(--primary);
 }
+.page-head {
+  margin-bottom: 16px;
+}
+.back-btn {
+  margin-bottom: 8px;
+}
+.muted {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.page-sub code {
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+  margin-top: 8px;
+}
+.meta-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.meta-row-wide {
+  grid-column: span 2;
+}
+.meta-label {
+  color: var(--text-secondary);
+  min-width: 72px;
+}
 .toolbar {
-  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .resume-toolbar {
   display: flex;
