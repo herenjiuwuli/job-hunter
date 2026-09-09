@@ -18,6 +18,7 @@ import salaryRouter from './routes/salary.js'
 import introRouter from './routes/intro.js'
 import prepRouter from './routes/prep.js'
 import backupRouter from './routes/backup.js'
+import dashboardRouter from './routes/dashboard.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = join(__dirname, '..', 'dist')
@@ -47,6 +48,7 @@ export function createApp({ serveStatic = false } = {}) {
   app.use(introRouter)
   app.use(prepRouter)
   app.use(backupRouter)
+  app.use(dashboardRouter)
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' })

@@ -15,11 +15,14 @@ import Intro from './views/Intro.vue'
 import Mistakes from './views/Mistakes.vue'
 import Prep from './views/Prep.vue'
 import Backup from './views/Backup.vue'
+import Dashboard from './views/Dashboard.vue'
 
 export default createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/applications' },
+    { path: '/', redirect: '/dashboard' },
+    // 总览
+    { path: '/dashboard', component: Dashboard },
     // 求职执行
     { path: '/applications', component: Applications },
     { path: '/profile', component: Profile },

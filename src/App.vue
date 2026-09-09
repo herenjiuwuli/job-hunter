@@ -16,6 +16,9 @@ const active = computed(() => route.path)
       <nav class="nav">
         <div class="nav-group">
           <div class="nav-group-title">求职执行</div>
+          <router-link to="/dashboard" class="nav-item" :class="{ active: active === '/dashboard' }">
+            求职总览
+          </router-link>
           <router-link to="/applications" class="nav-item" :class="{ active: active === '/applications' }">
             投递追踪
           </router-link>

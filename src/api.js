@@ -36,4 +36,5 @@ export const api = {
     export: () => request('/backup/export'),
     import: (data) => request('/backup/import', { method: 'POST', body: JSON.stringify(data) }),
   },
+  dashboard: () => request('/dashboard'),
 }
