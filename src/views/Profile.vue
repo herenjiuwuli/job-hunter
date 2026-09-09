@@ -23,7 +23,6 @@ const primaryRolesText = ref('')
 const rolesToAvoidText = ref('')
 const targetLocationsText = ref('')
 
-const resumes = ref([])
 const saving = ref(false)
 const message = ref('')
 const messageError = ref(false)
@@ -34,8 +33,8 @@ function splitTags(s) {
 
 async function load() {
   try {
-    const [p, rs] = await Promise.all([api.profile.get(), api.resumes.list()])
-    resumes.value = rs
+    // 只拉画像本身：此前并行拉简历列表（页面上并未使用），一旦简历接口异常会连带整个画像页打不开
+    const p = await api.profile.get()
     Object.assign(form.basic, p.basic || {})
     Object.assign(form.currentStatus, p.currentStatus || {})
     Object.assign(form.workAuthorization, p.workAuthorization || {})
