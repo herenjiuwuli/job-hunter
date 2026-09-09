@@ -147,7 +147,6 @@ onMounted(load)
       <div v-if="!resumes.length" class="card empty-state">
         <div class="empty-title">还没有简历</div>
         <div class="empty-desc">点右上角「+ 新建简历」，填好标题、姓名、电话、邮箱即可创建第一份。</div>
-        <button class="btn btn-primary" @click="openNew">+ 新建简历</button>
       </div>
 
       <div v-else class="resume-grid">
