@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { api } from '../api.js'
-import { CITIES, COUNTRIES, CURRENT_ROLE, SALARY_STRATEGY, WORK_AUTH } from '../options.js'
+import { CITIES, COUNTRIES, CURRENT_ROLE, SALARY_STRATEGY, WORK_AUTH, TARGET_ROLES } from '../options.js'
 
 const REMOTE_OPTIONS = ['', '远程', '混合', '现场', '不限']
 const SELF_ID_OPTIONS = [
@@ -198,5 +198,6 @@ onMounted(load)
     <datalist id="pf-country"><option v-for="o in COUNTRIES" :key="o" :value="o" /></datalist>
     <datalist id="pf-auth"><option v-for="o in WORK_AUTH" :key="o" :value="o" /></datalist>
     <datalist id="pf-salary"><option v-for="o in SALARY_STRATEGY" :key="o" :value="o" /></datalist>
+    <datalist id="pf-target-role"><option v-for="o in TARGET_ROLES" :key="o" :value="o" /></datalist>
   </div>
 </template>

@@ -1,7 +1,9 @@
 """接口测试：数据备份/恢复（/api/backup/export|import）—— 自用工具防数据丢失"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def test_export_empty_defaults():

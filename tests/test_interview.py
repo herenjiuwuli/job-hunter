@@ -1,7 +1,9 @@
 """接口测试：模拟面试（/api/interview/start、/api/interview/answer、/api/interview/report）"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 SAMPLE_RESUME = "我叫陈晨，计算机专业本科，会 Vue3、Node.js，做过全栈项目。"
 HISTORY = [
     {"role": "assistant", "content": "请先做个自我介绍"},

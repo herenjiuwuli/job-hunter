@@ -1,7 +1,9 @@
 """接口测试：简历库 CRUD（/api/resumes）—— job-hunter 独有"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def _make(title="全栈开发"):

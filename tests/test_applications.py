@@ -1,7 +1,9 @@
 """接口测试：投递追踪（/api/applications）—— job-hunter 独有"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def _make(company="测试公司", jobTitle="前端开发实习生", **kw):

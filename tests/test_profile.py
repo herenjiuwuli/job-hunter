@@ -1,7 +1,9 @@
 """接口测试：候选人画像（/api/profile）—— applypilot 方法论吸收产物"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def test_get_default():

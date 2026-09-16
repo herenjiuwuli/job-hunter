@@ -32,7 +32,12 @@ for (const f of files) {
   }
 
   const used = new Set()
-  for (const mm of code.matchAll(/\b([A-Za-z_$][\w$]*)\.value\b/g)) used.add(mm[1])
+  for (const mm of code.matchAll(/\b([A-Za-z_$][\w$]*)\.value\b/g)) {
+    // 排除 DOM 事件对象属性误报：e.target.value / ev.target.value / event.target.value
+    // （正则只会捕获到 `target.value` 这一段；代价是 ref 名恰好叫 target 的会被漏报，可接受）
+    if (mm[0] === 'target.value') continue
+    used.add(mm[1])
+  }
   const missing = [...used].filter((u) => !declared.has(u))
   if (missing.length) {
     console.log(`${f}: 未声明却用了 .value -> ${missing.join(', ')}`)

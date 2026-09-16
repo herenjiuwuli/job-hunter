@@ -1,7 +1,9 @@
 """接口测试：AI 按 JD 定制（/api/tailor）—— job-hunter 独有"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 JD = "负责 Vue3 前端开发，需要 Node.js 经验，有测试意识者优先"
 

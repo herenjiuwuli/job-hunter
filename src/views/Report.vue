@@ -98,6 +98,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { appState } from '../store.js'
+import { exportElementToImage } from '../exportPdf.js'
 
 const loading = ref(true)
 const loadError = ref('')
@@ -243,18 +244,8 @@ async function exportImage() {
   if (!reportArea.value) return
   exportingImage.value = true
   try {
-    // 复用项目已有的 html2pdf.js（内置 html2canvas），动态加载避免拖慢首屏
-    const html2pdf = (await import('html2pdf.js')).default
-    const dataUrl = await html2pdf()
-      .from(reportArea.value)
-      .set({
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
-      })
-      .outputImg('png')
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = `面试报告_${job.value}_${today.value}.png`
-    a.click()
+    // 复用公共导出工具（html2canvas 截图 → PNG），与简历导出同一套已验证方案
+    await exportElementToImage(reportArea.value, `面试报告_${job.value}_${today.value}.png`)
   } catch (e) {
     alert(e?.message || '图片导出失败，请重试')
   } finally {

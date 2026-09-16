@@ -47,6 +47,17 @@ def build_content(body_str):
             "otherJobs": ["测试开发", "DevOps"],
         }, ensure_ascii=False)
 
+    # resume/generate（job-hunter 独有）：system prompt 含「简历排版顾问」
+    # 必须放在「简历顾问」分支之前（特征词更具体）
+    if "简历排版顾问" in body_str:
+        return json.dumps({
+            "resumeText": "# 简历\n\n## 教育背景\n**XX大学** 计算机（本科）\n\n## 专业技能\n- Vue3、Node.js、Python、pytest",
+            "versions": [
+                {"job": "前端开发", "text": "# 简历（前端开发版）\n\n## 专业技能\n- Vue3 组件化开发"},
+                {"job": "自动化测试", "text": "# 简历（自动化测试版）\n\n## 专业技能\n- pytest 接口自动化"},
+            ],
+        }, ensure_ascii=False)
+
     if "简历顾问" in body_str:
         return json.dumps({
             "resumeText": "## 教育背景\n**XX大学** 计算机专业（本科）  2021.09 - 2025.06\n\n## 专业技能\n- **Vue3**、Node.js、Python\n\n## 项目经历\n- **AI 热点选题助手**（负责人）  2026.01 - 至今",

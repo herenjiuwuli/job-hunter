@@ -1,7 +1,9 @@
 """接口测试：投递助手（/api/apply/assist）"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 SAMPLE_RESUME = "我叫陈晨，计算机专业本科，会 Vue3、Node.js、Python，做过全栈项目，会用 pytest 写测试。"
 
 

@@ -1,7 +1,9 @@
 """接口测试：JD vs 简历匹配打分排序（/api/match）—— job-hunter 独有"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def _make_resume(skills):

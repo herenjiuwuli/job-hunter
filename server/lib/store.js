@@ -1,16 +1,18 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
- * 统一数据目录：server/data/
+ * 统一数据目录：默认 server/data/，可通过 JOB_HUNTER_DATA_DIR 覆盖（测试隔离用）。
  * - 运行时数据（简历库、投递记录）都在这里。
- * - 已整体 gitignore（含个人简历原文与投递记录，敏感）。
+ * - 默认目录已整体 gitignore（含个人简历原文与投递记录，敏感）。
  */
-export const DATA_DIR = join(__dirname, '..', 'data')
+export const DATA_DIR = process.env.JOB_HUNTER_DATA_DIR
+  ? resolve(process.env.JOB_HUNTER_DATA_DIR)
+  : join(__dirname, '..', 'data')
 
 export function dataPath(key) {
   return join(DATA_DIR, `${key}.json`)

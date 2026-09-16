@@ -1,7 +1,9 @@
 """接口测试：AI 生成简历（/api/resume/generate）"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 BASIC_INFO = {
     "name": "陈晨",
     "school": "XX大学",

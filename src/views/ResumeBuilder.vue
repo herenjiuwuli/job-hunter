@@ -84,12 +84,36 @@
             </button>
           </div>
           <div class="resume-tools">
+            <label class="size-control" title="调整正文字号（像素）">
+              字号
+              <input
+                type="number"
+                min="9"
+                max="16"
+                step="0.5"
+                v-model.number="fontSize"
+              />
+              <span>px</span>
+            </label>
+            <label class="size-control" title="调整行距（行高倍数）">
+              行距
+              <input
+                type="number"
+                min="1"
+                max="2"
+                step="0.05"
+                v-model.number="lineHeight"
+              />
+            </label>
             <label v-if="avatar" class="size-control" title="调整头像大小（像素）">
               头像
               <input type="number" min="48" max="160" v-model.number="avatarSize" />
               <span>px</span>
             </label>
-            <button class="btn btn-ghost btn-sm" @click="editing = !editing">
+            <button class="btn btn-ghost btn-sm" :class="{ active: arranging }" @click="arranging = !arranging">
+              {{ arranging ? '完成排序' : '调整顺序' }}
+            </button>
+            <button class="btn btn-ghost btn-sm" @click="editing = !editing" :disabled="arranging">
               {{ editing ? '完成编辑' : '编辑文本' }}
             </button>
             <button class="btn btn-ghost btn-sm" @click="copyCurrent">{{ copied ? '已复制' : '复制' }}</button>
@@ -115,6 +139,21 @@
           >{{ t.name }}</button>
         </div>
 
+        <!-- 板块顺序调整（调整顺序模式下显示） -->
+        <div v-if="arranging" class="order-panel">
+          <span class="qlabel">拖动或点 ↑↓ 调整板块顺序（保存为当前简历会一并保留）：</span>
+          <ul class="order-list">
+            <li v-for="(s, i) in sectionsList" :key="i" class="order-item">
+              <span class="order-idx">{{ i + 1 }}</span>
+              <span class="order-title">{{ s.title || '（顶部信息）' }}</span>
+              <span class="order-btns">
+                <button class="btn btn-ghost btn-xs" :disabled="i === 0" @click="moveSection(-1, i)">↑</button>
+                <button class="btn btn-ghost btn-xs" :disabled="i === sectionsList.length - 1" @click="moveSection(1, i)">↓</button>
+              </span>
+            </li>
+          </ul>
+        </div>
+
         <!-- 文字格式化工具条（仅编辑模式显示） -->
         <div v-if="editing" class="fmt-toolbar">
           <button type="button" @mousedown.prevent="fmt('bold')">加粗</button>
@@ -124,10 +163,12 @@
           <button type="button" @mousedown.prevent="fmt('removeFormat')">清除格式</button>
         </div>
 
-        <!-- 简历纸：头部（基本信息+头像同一栏）+ 可编辑正文（套用所选版式模板）；导出 PDF 一并包含 -->
-        <div class="resume-sheet" ref="sheetEl">
-          <!-- 头部栏：左=基本信息，右=头像，二者在同一栏目 -->
-          <div v-if="headerHtml || avatar" class="resume-header">
+        <!-- 简历纸：外层负责缩放适配视口，内层保持真实 A4 尺寸，导出 PDF 克隆内层不受缩放影响 -->
+        <div class="resume-sheet-outer" ref="scaleWrapEl">
+          <div class="resume-sheet-scale" ref="scaleEl">
+            <div class="resume-sheet" ref="sheetEl" :style="{ '--rf': fontSize + 'px', '--rlh': lineHeight }">
+              <!-- 头部栏：左=基本信息，右=头像，二者在同一栏目 -->
+              <div v-if="headerHtml || avatar" class="resume-header">
             <div class="resume-header-info" v-html="headerHtml"></div>
             <div v-if="avatar" class="avatar-row">
               <img class="resume-avatar" :src="avatar" alt="头像" :style="{ width: avatarSize + 'px', height: avatarSize + 'px' }" />
@@ -147,6 +188,8 @@
             :contenteditable="editing"
             @input="onEdit"
           ></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -179,10 +222,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api.js'
 import { COMMON_JOBS } from '../jobs.js'
+import { exportElementToPdf } from '../exportPdf.js'
 
 // 可选的简历版式
 const TEMPLATE_LIST = [
@@ -247,6 +291,20 @@ onMounted(async () => {
   } catch (e) {
     libraryMessage.value = e.message || '简历加载失败'
   }
+  // 简历纸首次挂载后做一次适配，并监听外层宽度变化
+  await nextTick()
+  fitSheet()
+  if (scaleWrapEl.value && typeof ResizeObserver !== 'undefined') {
+    sheetResizeObserver = new ResizeObserver(() => fitSheet())
+    sheetResizeObserver.observe(scaleWrapEl.value)
+  }
+})
+
+onUnmounted(() => {
+  if (sheetResizeObserver) {
+    sheetResizeObserver.disconnect()
+    sheetResizeObserver = null
+  }
 })
 
 // linkedResumeId 保留（saveToLibrary 还要用它），与 sourceResume 同步
@@ -272,9 +330,13 @@ async function saveToLibrary() {
   savingToLibrary.value = true
   libraryMessage.value = ''
   try {
+    // 若调整过板块顺序，则把新顺序的 Markdown 写回 content，否则用 AI 源文本
+    const content = orderDirty.value && sectionsList.value.length
+      ? sectionsToMarkdown(sectionsList.value)
+      : (result.value.resumeText || '')
     const updated = {
       ...sourceResume.value,
-      content: result.value.resumeText || '',
+      content,
     }
     await api.resumes.update(linkedResumeId.value, updated)
     // 让 sourceResume 也带上 content，避免下次保存时覆盖用户已保存的
@@ -294,10 +356,30 @@ const current = ref(0)
 const copied = ref(false)
 const editing = ref(false)
 const avatar = ref('') // base64 dataURL
-const avatarSize = ref(96) // px，默认 96，工具条可调（48-160）
+const avatarSize = ref(80) // px，默认 80，工具条可调（48-160），调小省空间以便尽量一页
+const fontSize = ref(12) // 正文字号（px），自选（9–16，步进0.5）；作用于 --rf CSS 变量，整张简历等比缩放
+const lineHeight = ref(1.38) // 行距（行高倍数），自选（1.0–2.0，步进0.05）；作用于 --rlh CSS 变量
+const arranging = ref(false) // 是否处于「调整板块顺序」模式
+const sectionsList = ref([]) // 当前版本解析出的板块数组（可拖拽/上下移调整顺序）
+const orderDirty = ref(false) // 用户是否调整过板块顺序（决定保存时是否重写 content）
 const resumeEl = ref(null)
 const sheetEl = ref(null)
+const scaleEl = ref(null)
+const scaleWrapEl = ref(null)
 const exportingPdf = ref(false)
+
+// A4 纸在屏幕上按比例缩放，保证完整显示在页面内；导出 PDF 直接克隆真实尺寸纸张，不受缩放影响
+function fitSheet() {
+  if (!scaleWrapEl.value || !scaleEl.value || !sheetEl.value) return
+  const available = scaleWrapEl.value.clientWidth
+  const scale = available < 794 ? available / 794 : 1
+  scaleEl.value.style.transform = `scale(${scale})`
+  scaleEl.value.style.transformOrigin = 'top center'
+  // 外层高度跟随缩放后的纸张高度，避免留白/截断
+  const sheetHeight = sheetEl.value.scrollHeight
+  scaleWrapEl.value.style.height = `${sheetHeight * scale}px`
+}
+let sheetResizeObserver = null
 const templateId = ref('classic')
 // 每个版本被用户手动编辑后的 HTML（index -> html），未编辑则为 undefined
 const editedHtml = reactive({})
@@ -339,7 +421,14 @@ function parseSections(md) {
     }
   }
   if (top.length) sections.unshift({ title: '', body: top })
-  return sections.filter((s) => s.title !== '' || s.body.some((b) => b.trim()))
+  // 双保险：有标题但正文为空的板块直接丢弃；AI 常写「（待补充）」「暂无」等占位也视为无内容
+  const isPlaceholder = (line) =>
+    /^(\s*|\(待补充\)|（待补充）|\(暂无\)|（暂无）|待补充|暂无|无|无内容|—|-|～|\.\s*)$/.test(line)
+  const hasMeaningful = (lines) => lines.some((b) => b.trim() && !isPlaceholder(b.trim()))
+  return sections.filter((s) => {
+    if (s.title === '') return hasMeaningful(s.body)
+    return hasMeaningful(s.body)
+  })
 }
 
 // 列表标记（圆点 / 数字 / 顿号序号）
@@ -347,15 +436,15 @@ const MARKER = /^([-*]|\d+[.、])\s+/
 function stripMarker(line) {
   return line.replace(MARKER, '')
 }
-// 只有「项目经验/项目经历」章节用序列符号，其余章节（含基本信息/技能/教育等）去符号按段落显示
-const LIST_KEYWORDS = ['项目经验', '项目经历', '项目']
+// 这些章节内的条目使用 bullet 列表渲染（与参考简历一致）
+const LIST_KEYWORDS = ['项目经验', '项目经历', '项目', '实习/工作经历', '实习经历', '工作经历', '实习', '校园经历', '校园']
 function isListSection(s) {
   return LIST_KEYWORDS.some((k) => (s.title || '').includes(k))
 }
 
 // 行尾日期范围（如 "XX大学 数字媒体技术  2021.09 - 2025.06"、"新媒体运营实习生  2023.07 - 至今"）
 // → 渲染成「左名称 / 右日期」两栏，日期右对齐，参考用户 PDF 简历排版
-const DATE_RANGE = /^(.*?)\s+((?:19|20)\d{2}(?:[.\-/年]\d{1,2}?月?)?)\s*[-—~至]\s*(?:(?:19|20)\d{2}(?:[.\-/年]\d{1,2}?月?)?|至今|现在|present|current)$/i
+const DATE_RANGE = /^(.*?)\s+((?:19|20)\d{2}(?:[.\-/年]\d{1,2}?月?)?\s*[-—~至]\s*(?:(?:19|20)\d{2}(?:[.\-/年]\d{1,2}?月?)?|至今|现在|present|current))$/i
 function renderEntry(line) {
   const m = line.match(DATE_RANGE)
   if (!m || !m[1].trim()) return null
@@ -438,6 +527,34 @@ function renderResume(md, tpl) {
   return { bodyHtml: t.render(sections) }
 }
 
+// 把当前版本源文本解析为板块数组（用于「调整顺序」），并同步到 sectionsList
+function loadSectionsForCurrent() {
+  const tab = tabs.value[current.value]
+  if (!tab) {
+    sectionsList.value = []
+    return
+  }
+  sectionsList.value = parseSections(tab.text)
+}
+
+// 由 sectionsList（当前顺序）+ 版式 组合出 HTML；用户未手动编辑文本时即以此为准
+function composeHtml() {
+  const t = TEMPLATES[templateId.value] || TEMPLATES.classic
+  return t.render(sectionsList.value)
+}
+
+// 把板块数组还原为 Markdown（用于保存调整顺序后的简历回简历库）
+function sectionsToMarkdown(sections) {
+  return sections
+    .map((s) => {
+      const head = s.title ? `## ${s.title}\n` : ''
+      const body = (s.body || []).join('\n')
+      return (head + body).trim()
+    })
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 // 头部基本信息：直接由表单字段驱动（结构化、受控、全面），不再依赖 AI 自由发挥
 // 仅放"个人识别/联系方式"类字段；学校/专业/学历/毕业时间交给 AI 正文「教育背景」，避免重复
 function escapeHtml(s) {
@@ -472,27 +589,53 @@ const headerHtml = computed(() => {
   }
   return html
 })
-// 正文 HTML：优先用用户编辑过的，否则由 markdown + 模板现渲染
+// 正文 HTML：优先用用户编辑过的，否则由 sectionsList + 模板现渲染（支持板块顺序调整）
 const currentHtml = computed(() => {
   const i = current.value
   if (editedHtml[i] != null) return editedHtml[i]
-  const tab = tabs.value[i]
-  return tab ? renderResume(tab.text, templateId.value).bodyHtml : ''
+  return sectionsList.value.length ? composeHtml() : ''
 })
 
 // 切版本或重新生成后，把 HTML 写进 DOM（用 v-html 会在编辑时覆盖光标，故改为命令式）
 function renderCurrent() {
   if (resumeEl.value) resumeEl.value.innerHTML = currentHtml.value
+  nextTick(fitSheet)
 }
-watch(current, () => nextTick(renderCurrent))
+watch(current, () => {
+  // 切版本：重新解析该版本板块顺序（丢弃上一版本的顺序调整，保证与源文本一致）
+  orderDirty.value = false
+  if (editedHtml[current.value] == null) loadSectionsForCurrent()
+  nextTick(renderCurrent)
+})
 // 切换版式 = 从 AI 源重新渲染，丢弃该版本的手动编辑
 watch(templateId, () => {
   if (editedHtml[current.value] != null) delete editedHtml[current.value]
+  orderDirty.value = false
+  loadSectionsForCurrent()
   nextTick(renderCurrent)
 })
 
+// 板块顺序调整：上移/下移。dir=-1 上移，+1 下移
+function moveSection(dir, idx) {
+  const arr = sectionsList.value
+  const j = idx + dir
+  if (j < 0 || j >= arr.length) return
+  if (arranging.value && editing.value) return
+  const [item] = arr.splice(idx, 1)
+  arr.splice(j, 0, item)
+  orderDirty.value = true
+  // 顺序改动后，把最新 HTML 记为该版本的「编辑结果」，使保存/导出沿用新顺序
+  delete editedHtml[current.value]
+  nextTick(() => {
+    renderCurrent()
+    // 同步回 editedHtml，保证保存回简历库时保留新顺序
+    if (resumeEl.value) editedHtml[current.value] = resumeEl.value.innerHTML
+  })
+}
+
 function onEdit() {
   if (resumeEl.value) editedHtml[current.value] = resumeEl.value.innerHTML
+  nextTick(fitSheet)
 }
 
 /* ---------- 9.6 简历评分 ---------- */
@@ -557,6 +700,9 @@ async function generate() {
     result.value = data
     current.value = 0
     editing.value = false
+    arranging.value = false
+    orderDirty.value = false
+    loadSectionsForCurrent()
   } catch (e) {
     error.value = e.message || '网络错误，请稍后重试'
   } finally {
@@ -565,6 +711,7 @@ async function generate() {
   // loading 置否后卡片才渲染出 .resume-view，等 DOM 更新再写入内容（否则 resumeEl 为 null 写不进）
   await nextTick()
   renderCurrent()
+  fitSheet()
 }
 
 // 头像：读为 base64，仅前端使用（不进后端、不入库）
@@ -596,8 +743,11 @@ function fmt(cmd) {
   onEdit()
 }
 
-// 一键导出 PDF：用 html2canvas 截图当前版本（含头像 + 编辑后的加粗/高亮）→ jsPDF 生成 .pdf 下载
-// 中文不会乱码（截图位图）；临时克隆整张简历纸并解除高度/滚动限制，确保截全、不截编辑虚线框
+// 一键导出 PDF：html2canvas 截图当前版本 → jsPDF 把整张纸等比缩放到一页 A4。
+// 关键修正：
+// 1. 不再用 0×0 overflow:hidden 父容器（会把 html2canvas 内容裁剪/压坏，导致经历丢失、只剩日期）。
+// 2. 不再依赖第三方自动分页（它按宽度 fit，高度超 A4 就拆成两页）。
+// 3. 自己算 scale = min(宽 fit, 高 fit)，整张纸缩进一页 A4，居中输出。
 async function exportPdf() {
   const sheet = sheetEl.value
   if (!sheet || exportingPdf.value) return
@@ -606,11 +756,16 @@ async function exportPdf() {
   const name = (sourceResume.value?.basic?.name || '').trim() || '简历'
   const label = tab ? tab.label : '简历'
   const filename = `${name}_${label}.pdf`
-  let wrap = null
+  let holder = null
   try {
-    // html2pdf 体积较大，按需动态加载，避免拖慢首屏
-    const html2pdf = (await import('html2pdf.js')).default
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ])
+
+    // 克隆整张简历纸（保留 data-v 作用域属性与内联 --rf/--rlh，scoped 样式照常生效）
     const clone = sheet.cloneNode(true)
+    // 解除正文高度/溢出/编辑虚线框限制，确保内容完整截取
     const rv = clone.querySelector('.resume-view')
     if (rv) {
       rv.style.maxHeight = 'none'
@@ -623,27 +778,21 @@ async function exportPdf() {
     if (rmBtn) rmBtn.remove()
     const emptyAdd = clone.querySelector('.avatar-empty')
     if (emptyAdd) emptyAdd.remove()
-    wrap = document.createElement('div')
-    wrap.style.cssText =
-      'position:fixed;left:-99999px;top:0;width:794px;background:#fff;padding:24px;box-sizing:border-box;'
-    wrap.appendChild(clone)
-    document.body.appendChild(wrap)
 
-    await html2pdf()
-      .set({
-        margin: 10,
-        filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
-      })
-      .from(clone)
-      .save()
+    // 把克隆体藏到页面背后：position:fixed + z-index:-1 + 定位在视口原点 (0,0)，
+    // 宽度 794px，不做任何 transform/scale/overflow 裁剪，html2canvas 能完整抓图。
+    holder = document.createElement('div')
+    holder.style.cssText = 'position:fixed;left:0;top:0;z-index:-1;width:794px;background:#fff;'
+    holder.appendChild(clone)
+    document.body.appendChild(holder)
+
+    // 截图 + 生成 PDF 交给公共工具（强制一页 A4、居中、中文不乱码）
+    await exportElementToPdf(clone, filename)
   } catch (e) {
-    error.value = 'PDF 导出失败，可改用「复制」后粘贴到文档再导出'
+    console.error('[exportPdf] 导出失败：', e)
+    error.value = 'PDF 导出失败：' + (e && e.message ? e.message : e) + '。可改用「复制」后粘贴到文档再导出'
   } finally {
-    if (wrap && wrap.parentElement) wrap.parentElement.removeChild(wrap)
+    if (holder && holder.parentElement) holder.parentElement.removeChild(holder)
     exportingPdf.value = false
   }
 }
@@ -888,12 +1037,28 @@ async function copyCurrent() {
   border-color: var(--primary);
   color: var(--primary);
 }
+/* 外层：宽度填满卡片，负责溢出隐藏；缩放后纸张总宽度仍受限 */
+.resume-sheet-outer {
+  width: 100%;
+  overflow: hidden;
+}
+/* 缩放层：根据外层宽度按比例缩放真实 A4 纸，保证完整显示在页面内 */
+.resume-sheet-scale {
+  display: flex;
+  justify-content: center;
+  transform-origin: top center;
+}
 .resume-sheet {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 24px;
+  --rf: 12px;             /* 正文字号基准，字号自选框通过内联 --rf 覆盖，整张简历按比例缩放 */
+  border: 1px solid #e0e0e0;
+  border-radius: 0;
+  padding: 18px 24px;      /* 紧凑边距：省出更多可写面积 */
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  width: 794px;            /* 固定 A4 纸宽度（210mm@96dpi），不随屏幕收缩 */
+  max-width: none;
+  min-height: 1123px;      /* 至少一页 A4 高（297mm），内容少也像一张纸；内容多自适应撑高 */
+  box-sizing: border-box;
 }
 /* 头部栏：基本信息（左） + 头像（右）同栏 */
 .resume-header {
@@ -901,33 +1066,35 @@ async function copyCurrent() {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .resume-header-info {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text);
+  font-size: var(--rf);
+  line-height: var(--rlh);
+  color: #1a1a1a;
 }
 .resume-header-info :deep(.r-name) {
-  font-size: 20px;
+  font-size: calc(var(--rf) * 1.42);
   font-weight: 700;
-  margin: 0 0 6px;
+  color: #111;
+  margin: 0 0 4px;
+  letter-spacing: 0.02em;
 }
 .resume-header-info :deep(.r-contact) {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--text-secondary);
+  gap: 3px 16px;
+  font-size: var(--rf);
+  line-height: var(--rlh);
+  color: #333;
 }
 .resume-header-info :deep(.r-ci) {
   white-space: nowrap;
 }
 .resume-header-info :deep(.r-ci b) {
-  color: var(--text);
+  color: #111;
   font-weight: 600;
   margin-right: 2px;
 }
@@ -946,10 +1113,8 @@ async function copyCurrent() {
 .resume-avatar {
   width: 96px;              /* 兜底尺寸，实际由 inline style (avatarSize) 控制 */
   height: 96px;
-  border-radius: 4px;       /* 方形小圆角（参考用户简历） */
   object-fit: cover;
-  border: 1px solid var(--border);
-  background: #fff;
+  display: block;           /* 去掉边框/底色，让头像照片与简历纸白底自然融合 */
 }
 .avatar-remove {
   border: 1px solid var(--border);
@@ -978,11 +1143,10 @@ async function copyCurrent() {
 }
 .resume-view {
   min-height: 300px;
-  max-height: 60vh;
-  overflow-y: auto;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--text);
+  font-size: var(--rf);     /* 字号自选：随 --rf 等比缩放 */
+  line-height: var(--rlh);  /* 行距自选：随 --rlh 调整 */
+  color: #1a1a1a;
+  font-family: "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
 }
 .resume-view.editing {
   outline: 2px dashed var(--primary);
@@ -991,17 +1155,18 @@ async function copyCurrent() {
 }
 /* 通用排版（注入内容，用 :deep） */
 .resume-view :deep(p) {
-  margin: 5px 0;
+  margin: 1px 0;
 }
 .resume-view :deep(ul) {
-  padding-left: 18px;
-  margin: 5px 0;
+  padding-left: 14px;
+  margin: 1px 0 3px;
 }
 .resume-view :deep(li) {
-  margin: 3px 0;
+  margin: 0;
 }
 .resume-view :deep(b) {
   font-weight: 700;
+  color: #111;
 }
 .resume-view :deep(mark) {
   background: #fff3a0;
@@ -1009,11 +1174,13 @@ async function copyCurrent() {
   border-radius: 2px;
 }
 .resume-view :deep(.r-h) {
-  font-size: 15px;
-  margin: 16px 0 8px;
+  font-size: calc(var(--rf) * 1.08);
+  font-weight: 700;
+  color: #111;
+  margin: 8px 0 3px;
   clear: both;              /* 章节标题从右侧浮动头像下方开始，避免被压缩 */
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);   /* 统一：章节标题带下边框线，参考用户 PDF */
+  padding-bottom: 2px;
+  border-bottom: 1px solid #333;   /* 统一：章节标题带黑色下划线，参考用户 PDF */
 }
 
 /* 名称 + 行尾日期 → 左右两栏，日期右对齐（参考用户 PDF 简历） */
@@ -1022,22 +1189,28 @@ async function copyCurrent() {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin: 7px 0 2px;
+  margin: 3px 0 1px;
 }
 .resume-view :deep(.r-entry-name) {
-  font-weight: 600;
+  font-weight: 700;
+  color: #111;
 }
 .resume-view :deep(.r-entry-date) {
-  color: var(--text-secondary);
-  font-size: 13px;
+  color: #333;
+  font-size: var(--rf);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-/* 经典单栏 */
+/* 经典单栏：严格参考用户 PDF——单栏 A4、板块标题黑体+黑色下划线 */
 .resume-view.tpl-classic :deep(.r-h) {
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
+  font-size: calc(var(--rf) * 1.08);
+  font-weight: 700;
+  color: #111;
+  letter-spacing: 0.01em;
+  padding-bottom: 2px;
+  margin: 8px 0 3px;
+  border-bottom: 1px solid #333;
 }
 .resume-view.tpl-classic :deep(.r-h:first-child) {
   margin-top: 0;
@@ -1048,7 +1221,7 @@ async function copyCurrent() {
   margin: 18px 0;
 }
 .resume-view.tpl-minimal :deep(.r-min-label) {
-  font-size: 12px;
+  font-size: var(--rf);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: #9aa0a6;
@@ -1097,7 +1270,7 @@ async function copyCurrent() {
 }
 .resume-view.tpl-sidebar :deep(.r-side-bar .r-h) {
   color: #fff;
-  font-size: 13px;
+  font-size: calc(var(--rf) * 1.08);
   margin: 14px 0 6px;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.35);
@@ -1204,5 +1377,77 @@ async function copyCurrent() {
   display: grid;
   gap: 8px;
   font-size: 14px;
+}
+
+/* ---------- 字号自选 + 板块顺序调整 ---------- */
+.resume-tools .size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.resume-tools .size-control select {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 4px;
+  font-size: 12px;
+  background: #fff;
+  color: var(--text);
+}
+.btn.active {
+  border-color: var(--primary);
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.order-panel {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.order-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.order-idx {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 12px;
+}
+.order-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+.order-btns {
+  display: inline-flex;
+  gap: 4px;
 }
 </style>

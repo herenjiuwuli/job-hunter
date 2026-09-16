@@ -1,7 +1,9 @@
 """接口测试：简历分析 + 岗位推荐（/api/analyze）"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 SAMPLE_RESUME = "我叫陈晨，计算机专业本科，会 Vue3、Node.js、Python，做过 AI 热点选题助手全栈项目，会用 pytest 写接口测试。"
 
 

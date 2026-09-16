@@ -37,7 +37,7 @@ function extractScript(src, isVue) {
   return { code: m[1], offset: src.slice(0, m.index).split('\n').length - 1 }
 }
 
-// 去注释 + 去字符串（保留换行，避免行号漂移）
+// 去注释 + 去字符串 + 去正则（保留换行，避免行号漂移）
 function strip(code) {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, (s) => s.replace(/[^\n]/g, ' '))
@@ -45,6 +45,14 @@ function strip(code) {
     .replace(/'(?:\\.|[^'\\])*'/g, (s) => s.replace(/[^\n]/g, ' '))
     .replace(/"(?:\\.|[^"\\])*"/g, (s) => s.replace(/[^\n]/g, ' '))
     .replace(/`(?:\\.|[^`\\])*`/g, (s) => s.replace(/[^\n]/g, ' '))
+    // 正则字面量也要剥离：/^[A-Z]+$/、/[T ]/ 里的 A、T 会被误判成「未声明的大写标识符」，
+    // 这是最常见的误报来源。只在「可能开始正则」的位置剥（前面是分隔符/运算符或行首），
+    // 这样 `a / b / c` 这类真正的除号不会被吃掉（把真代码当注释剥掉会漏掉真问题）。
+    // 注意顺序：必须放在去字符串之后，否则字符串里的 `/` 会先被当成正则起止符。
+    .replace(
+      /(^|[([{,:;=!&|?+\-*%<>~^]\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n])+\/[dgimsuvy]*/gm,
+      (s, p) => p + s.slice(p.length).replace(/[^\n]/g, ' '),
+    )
 }
 
 function collectDeclared(code) {

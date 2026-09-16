@@ -1,7 +1,9 @@
 """接口测试：求职总览看板（/api/dashboard）—— 聚合简历/投递/面试/画像"""
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def test_dashboard_empty_defaults():

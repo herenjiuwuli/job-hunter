@@ -2,9 +2,11 @@
 
 补的是「跨接口流程」覆盖，单接口测试在 test_resumes.py / test_resume.py 已存在。
 """
+import os
+
 import requests
 
-BASE = "http://localhost:3100"
+BASE = os.environ.get("JH_BASE", "http://localhost:3100")
 
 
 def _basic_resume():

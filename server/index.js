@@ -51,7 +51,12 @@ export function createApp({ serveStatic = false } = {}) {
   app.use(dashboardRouter)
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok' })
+    const base = process.env.DEEPSEEK_BASE_URL || ''
+    res.json({
+      status: 'ok',
+      aiMock: /127\.0\.0\.1|localhost/.test(base),               // true = 走 mock，不花钱
+      dataDirIsolated: Boolean(process.env.JOB_HUNTER_DATA_DIR), // true = 数据目录已隔离
+    })
   })
 
   // 生产模式：单端口同时提供前端静态资源与 API
