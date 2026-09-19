@@ -95,13 +95,13 @@ npm run dev
 
 ```
 job-hunter/
-├── src/                    # Vue3 前端（14 视图）
+├── src/                    # Vue3 前端（17 视图）
 │   ├── views/              # 投递追踪/匹配排序/简历库/写简历/面试准备…
 │   ├── router.js           # history 路由，三板块
 │   ├── api.js              # 后端 API 封装
 │   ├── store.js            # 面试全局状态
 │   └── style.css           # 统一设计变量 + 组件样式
-├── server/                 # Express 后端（13 路由）
+├── server/                 # Express 后端（15 个路由模块 / 34 条接口）
 │   ├── routes/             # resumes/applications/profile/tailor/match/analyze/interview/…
 │   ├── lib/                # ai.js（DeepSeek）/ store.js（JSON 存储）/ jobs.js（岗位库）/ matcher.js（打分）
 │   └── data/jobs.json      # 岗位知识库（进 Git）
