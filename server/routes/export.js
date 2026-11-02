@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { readJSON } from '../lib/store.js'
+import { listMine } from '../lib/scope.js'
 
 const router = Router()
 
@@ -113,7 +113,7 @@ router.post('/api/resume/export', async (req, res) => {
   const { resumeId } = req.body || {}
   if (!resumeId) return res.status(400).json({ error: '请指定简历' })
 
-  const resumes = (await readJSON('resumes')) || []
+  const resumes = await listMine('resumes', req.userId)
   const resume = resumes.find((r) => r.id === resumeId)
   if (!resume) return res.status(404).json({ error: '简历不存在' })
 

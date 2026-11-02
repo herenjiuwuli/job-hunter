@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { readJSON } from '../lib/store.js'
+import { listMine } from '../lib/scope.js'
 import { scoreResumeVsJd } from '../lib/matcher.js'
 import { chatJSON } from '../lib/ai.js'
 import { serializeResume } from './tailor.js'
@@ -12,11 +12,11 @@ router.get('/api/match', async (req, res) => {
   const { resumeId } = req.query
   if (!resumeId) return res.status(400).json({ error: '请先选择简历' })
 
-  const resumes = (await readJSON('resumes')) || []
+  const resumes = await listMine('resumes', req.userId)
   const resume = resumes.find((r) => r.id === resumeId)
   if (!resume) return res.status(404).json({ error: '简历不存在' })
 
-  const apps = (await readJSON('applications')) || []
+  const apps = await listMine('applications', req.userId)
   const scored = apps
     .filter((a) => String(a.jd || '').trim())
     .map((a) => {
@@ -38,16 +38,24 @@ router.get('/api/match', async (req, res) => {
 
 // POST /api/match/jd  { resumeId?, jdText, company?, jobTitle? }
 // 投前快速匹配：纯关键词加权（不调 LLM），给扩展在「投递前」判断是否值得投。
-// resumeId 缺省时用简历库第一份；返回 0-100 分 + 命中词 + 缺失词。
+// resumeId 缺省时用「自己的」简历库第一份；返回 0-100 分 + 命中词 + 缺失词。
 router.post('/api/match/jd', async (req, res) => {
   const { resumeId, jdText, company = '', jobTitle = '' } = req.body || {}
   const jd = String(jdText || '').trim()
   if (!jd) return res.status(400).json({ error: '缺少 jdText' })
 
-  const resumes = (await readJSON('resumes')) || []
+  const resumes = await listMine('resumes', req.userId)
   if (!resumes.length) return res.status(404).json({ error: '简历库为空，请先在网页端导入简历' })
 
-  const resume = (resumeId && resumes.find((r) => r.id === resumeId)) || resumes[0]
+  // 指定了 id 就必须是自己的那份：老逻辑「找不到就退回到第一份」在多用户下
+  // 等于「拿别人 id 也能拿到自己第一份简历」→ 现在直接 404，不猜。
+  let resume
+  if (resumeId) {
+    resume = resumes.find((r) => r.id === resumeId)
+    if (!resume) return res.status(404).json({ error: '简历不存在' })
+  } else {
+    resume = resumes[0]
+  }
   const { score, matched, jdKeywords } = scoreResumeVsJd(resume, jd.slice(0, 8000))
   const matchedSet = new Set(matched)
 
@@ -71,11 +79,11 @@ router.post('/api/match/analyze', async (req, res) => {
   if (!resumeId) return res.status(400).json({ error: '请先选择简历' })
   if (!applicationId) return res.status(400).json({ error: '请先选择要分析的岗位' })
 
-  const resumes = (await readJSON('resumes')) || []
+  const resumes = await listMine('resumes', req.userId)
   const resume = resumes.find((r) => r.id === resumeId)
   if (!resume) return res.status(404).json({ error: '简历不存在' })
 
-  const apps = (await readJSON('applications')) || []
+  const apps = await listMine('applications', req.userId)
   const app = apps.find((a) => a.id === applicationId)
   if (!app) return res.status(404).json({ error: '投递记录不存在' })
   if (!String(app.jd || '').trim()) return res.status(400).json({ error: '该岗位没有 JD，无法深度分析' })

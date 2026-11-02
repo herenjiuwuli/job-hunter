@@ -188,6 +188,19 @@
       <summary>页面结构（校准选择器用）</summary>
       <pre id="inspectOut" class="inspect"></pre>
     </details>
+
+    <details>
+      <summary>后端连接（多用户后必须填 token）</summary>
+      <label class="lbl">后端地址</label>
+      <input id="backendUrl" type="text" placeholder="http://localhost:3100" />
+      <label class="lbl">登录 token（网页端登录后，从浏览器控制台取：localStorage.getItem('jh_token')）</label>
+      <textarea id="authToken" placeholder="eyJhbGciOiJIUzI1NiIs..."></textarea>
+      <div class="row">
+        <button id="saveConnBtn" class="ghost">保存并测试</button>
+      </div>
+      <div id="connStatus" class="statusbox">—</div>
+      <div class="tip">token 7 天过期；过期后回写会 401，届时重新登录复制一份即可。</div>
+    </details>
   </section>
 
   <div id="log" class="log"></div>

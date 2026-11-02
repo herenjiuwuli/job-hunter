@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { readJSON, updateJSON } from '../lib/store.js'
+import { updateJSON } from '../lib/store.js'
+import { listMine, getMine, isMine } from '../lib/scope.js'
 
 const router = Router()
 const KEY = 'records'
 
-router.get('/api/records', async (_req, res) => {
-  const records = (await readJSON(KEY)) || []
+router.get('/api/records', async (req, res) => {
+  const records = await listMine(KEY, req.userId)
   const list = [...records].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   res.json(list)
 })
@@ -29,6 +30,7 @@ router.post('/api/records', async (req, res) => {
 
   const record = {
     id: randomUUID(),
+    ownerId: req.userId, // 归属只由后端决定
     resume: String(resume).slice(0, 8000),
     job,
     questions: Number(questions) || 0,
@@ -43,8 +45,7 @@ router.post('/api/records', async (req, res) => {
 })
 
 router.get('/api/records/:id', async (req, res) => {
-  const records = (await readJSON(KEY)) || []
-  const record = records.find((r) => r.id === req.params.id)
+  const record = await getMine(KEY, req.userId, req.params.id)
   if (!record) {
     return res.status(404).json({ error: '记录不存在' })
   }
@@ -56,10 +57,10 @@ router.delete('/api/records/:id', async (req, res) => {
   await updateJSON(
     KEY,
     (list) => {
-      const next = list.filter((r) => r.id !== req.params.id)
-      if (next.length === list.length) return undefined
+      const target = list.find((r) => r.id === req.params.id)
+      if (!target || !isMine(target, req.userId)) return undefined
       removed = true
-      return next
+      return list.filter((r) => r.id !== req.params.id)
     },
     []
   )

@@ -4,7 +4,34 @@
 // ⚠️ 选择器是启发式的，实习僧/BOSS 真实 DOM 结构需真机校准：
 //    在投递页点弹窗里的「探测页面结构」，把结果贴给 AI 即可锁定精确选择器。
 
-const BACKEND = 'http://localhost:3100'
+const BACKEND_DEFAULT = 'http://localhost:3100'
+
+/**
+ * 后端地址与登录 token 都从 chrome.storage.local 读（在 popup 的「记录 → 后端连接」里配）。
+ *
+ * 为什么要 token：后端加了多用户隔离后，所有 /api 都要求登录，
+ * 不带 token 一律 401。以前写死地址 + 裸请求，现在必须跟着主人自己的账号走。
+ * 读不到就回退默认值，不让配置缺失把扩展整体搞崩。
+ */
+async function backendBase() {
+  try {
+    const { jhBackend } = await chrome.storage.local.get('jhBackend')
+    return String(jhBackend || BACKEND_DEFAULT).replace(/\/+$/, '')
+  } catch {
+    return BACKEND_DEFAULT
+  }
+}
+
+async function authHeaders(extra = {}) {
+  const h = { ...extra }
+  try {
+    const { jhToken } = await chrome.storage.local.get('jhToken')
+    if (jhToken) h.Authorization = `Bearer ${jhToken}`
+  } catch {
+    /* 不在扩展环境里跑（比如单测、控制台粘贴）时忽略 */
+  }
+  return h
+}
 
 function platform() {
   const h = location.hostname
@@ -489,9 +516,9 @@ async function checkMatchScore(f, info) {
   const jd = jobBodyText()
   if (!jd || jd.length < 50) return { blocked: false, note: 'JD 太短，跳过打分' }
   try {
-    const r = await fetch(`${BACKEND}/api/match/jd`, {
+    const r = await fetch(`${await backendBase()}/api/match/jd`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         resumeId: f.resumeId || '',
         jdText: jd.slice(0, 6000),
@@ -542,9 +569,9 @@ function fillGreeting(el, text) {
 
 async function writeback(info, greeting) {
   try {
-    await fetch(`${BACKEND}/api/applications`, {
+    const r = await fetch(`${await backendBase()}/api/applications`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         company: info.company,
         jobTitle: info.jobTitle,
@@ -554,6 +581,10 @@ async function writeback(info, greeting) {
         appliedAt: new Date().toISOString(),
       }),
     })
+    // 401 = 没配 token / token 过期。本地账本照记，但网页端会有缺口，必须让人看得见
+    if (r.status === 401) {
+      console.warn('[job-hunter] 回写被拒（401）：请在扩展弹窗「记录 → 后端连接」里填入 token')
+    }
   } catch (e) {
     console.warn('[job-hunter] 回写失败：', e.message)
   }

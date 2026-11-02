@@ -13,6 +13,10 @@ server/data/*
 server/data.bak-*/
 data.bak-*/
 
+# 个人 JD 语料库（data/jd/jobs.json：我在跟/排除的岗位、薪资、排除原因）
+# 属求职隐私，不进公开仓库。要纳管就删掉这一行并 git add 强制添加。
+data/jd/
+
 # Python 测试栈（pytest）
 .venv/
 .pytest_cache/

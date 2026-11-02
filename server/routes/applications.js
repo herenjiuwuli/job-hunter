@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { readJSON, updateJSON } from '../lib/store.js'
+import { updateJSON } from '../lib/store.js'
+import { listMine, getMine, isMine } from '../lib/scope.js'
 
 const router = Router()
 const KEY = 'applications'
@@ -35,21 +36,21 @@ function sanitize(input = {}) {
   }
 }
 
-router.get('/api/applications', async (_req, res) => {
-  const list = (await readJSON(KEY)) || []
+router.get('/api/applications', async (req, res) => {
+  const list = await listMine(KEY, req.userId)
   list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
   res.json(list)
 })
 
 router.get('/api/applications/:id', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
-  const item = list.find((a) => a.id === req.params.id)
+  const item = await getMine(KEY, req.userId, req.params.id)
   if (!item) return res.status(404).json({ error: '投递记录不存在' })
   res.json(item)
 })
 
 router.post('/api/applications', async (req, res) => {
   const item = sanitize(req.body)
+  item.ownerId = req.userId // 归属只由后端决定，不看请求体
   if (!item.company || !item.jobTitle) {
     return res.status(400).json({ error: '公司名与岗位名不能为空' })
   }
@@ -65,9 +66,11 @@ router.put('/api/applications/:id', async (req, res) => {
     KEY,
     (list) => {
       const idx = list.findIndex((a) => a.id === req.params.id)
-      if (idx === -1) return undefined // 不存在：不写，外面回 404
+      // 不存在、或者是别人的 → 不写，外层统一 404
+      if (idx === -1 || !isMine(list[idx], req.userId)) return undefined
       const item = sanitize(body)
       item.id = req.params.id
+      item.ownerId = req.userId
       item.createdAt = list[idx].createdAt
       item.updatedAt = new Date().toISOString()
       const next = [...list]
@@ -85,10 +88,10 @@ router.delete('/api/applications/:id', async (req, res) => {
   await updateJSON(
     KEY,
     (list) => {
-      const next = list.filter((a) => a.id !== req.params.id)
-      if (next.length === list.length) return undefined
+      const target = list.find((a) => a.id === req.params.id)
+      if (!target || !isMine(target, req.userId)) return undefined
       removed = true
-      return next
+      return list.filter((a) => a.id !== req.params.id)
     },
     []
   )

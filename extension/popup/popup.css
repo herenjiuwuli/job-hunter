@@ -125,6 +125,25 @@ textarea {
   margin-bottom: 10px;
 }
 
+/* 后端地址：单行输入，样式与 textarea 对齐 */
+input#backendUrl {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  margin-bottom: 10px;
+}
+
+/* token 一行装不下，给个矮一点的文本框 */
+textarea#authToken {
+  min-height: 56px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .check {
   display: flex;
   align-items: flex-start;

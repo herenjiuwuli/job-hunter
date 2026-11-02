@@ -12,6 +12,7 @@
 ## 二、前置条件
 
 - 后端已跑：`cd D:\Projects\job-hunter && npm run dev`（后端 3100，负责接收投递记录回写）
+- **已配置后端连接 + token**（见 §六；后端已做多用户隔离，不带 token 的回写会被 401 拒掉）
 - 已在浏览器登录实习僧 / BOSS 直聘
 
 ## 三、使用流程（半自动，默认安全）
@@ -43,8 +44,21 @@
 
 ## 六、扩展 ↔ 后端通信
 
-- 扩展 content script 通过 `fetch` 直接 POST `http://localhost:3100/api/applications` 回写投递记录
-- 后端已开启 CORS，允许任意来源（仅本地自用）
+后端从「单人自用」升级为多用户后，所有 `/api` 都要求登录。扩展这边两件事都可配，**不用改代码**：
+
+1. 打开扩展弹窗 → 「记录」页 → 最下面 **「后端连接（多用户后必须填 token）」**
+2. 后端地址：默认 `http://localhost:3100`，换端口就改这里（manifest 已放开到 `http://localhost/*`，不用重新加载扩展）
+3. 登录 token：网页端登录后，在**网页端**的控制台执行 `copy(localStorage.getItem('jh_token'))` 复制，粘进来
+4. 点「保存并测试」→ 显示「✅ 已连接，当前账号：xxx」就算通了
+
+原理：`content.js` 的 `backendBase()` / `authHeaders()` 从 `chrome.storage.local` 读 `jhBackend` / `jhToken`，
+两个键名与 popup 里保存的必须一致。
+
+**401 会怎样**：本地投递账本照记（不会重复投），但网页端不会出现这条投递记录，
+content 控制台会打一行 `回写被拒（401）`。token 有效期 7 天，过期后重新复制一份即可。
+
+> 为什么 token 不能硬编码进扩展：token 等同于账号密码，进 git 就等于把账号公开。
+> 所以它只存在本机 `chrome.storage.local` 里。
 
 ## 七、批量投递（M6）
 

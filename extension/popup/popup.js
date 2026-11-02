@@ -796,3 +796,50 @@ async function initGreeting() {
 
 initGreeting()
 initJobFilters()
+
+// ===================== 后端连接 =====================
+// 后端加了多用户隔离后，所有 /api 都要带 token。
+// content script 里的 backendBase() / authHeaders() 读的就是这两个键，键名必须一致。
+const CONN_DEFAULT_BASE = 'http://localhost:3100'
+
+async function testConnection() {
+  const base = ($('#backendUrl').value.trim() || CONN_DEFAULT_BASE).replace(/\/+$/, '')
+  const token = $('#authToken').value.trim()
+  $('#connStatus').textContent = '测试中…'
+  try {
+    const r = await fetch(`${base}/api/auth/me`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (r.status === 401) {
+      $('#connStatus').textContent = '❌ 401：token 无效或已过期，回网页端重新登录再复制'
+      return false
+    }
+    if (!r.ok) {
+      $('#connStatus').textContent = `❌ 后端返回 ${r.status}`
+      return false
+    }
+    const u = await r.json()
+    $('#connStatus').textContent = `✅ 已连接（${base}），当前账号：${u.username}`
+    return true
+  } catch (e) {
+    $('#connStatus').textContent = `❌ 连不上 ${base}（后端没启动？）`
+    return false
+  }
+}
+
+async function initConnection() {
+  const { jhBackend = '', jhToken = '' } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
+  $('#backendUrl').value = jhBackend || ''
+  $('#authToken').value = jhToken || ''
+  if (jhBackend || jhToken) testConnection()
+}
+
+$('#saveConnBtn').addEventListener('click', async () => {
+  await chrome.storage.local.set({
+    jhBackend: $('#backendUrl').value.trim(),
+    jhToken: $('#authToken').value.trim(),
+  })
+  testConnection()
+})
+
+initConnection()

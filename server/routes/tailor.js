@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { readJSON } from '../lib/store.js'
+import { listMine } from '../lib/scope.js'
 import { chatJSON } from '../lib/ai.js'
 
 const router = Router()
@@ -38,7 +38,7 @@ router.post('/api/tailor', async (req, res) => {
   if (!resumeId) return res.status(400).json({ error: '请先选择简历' })
   if (!String(jd).trim()) return res.status(400).json({ error: '请先粘贴岗位 JD' })
 
-  const resumes = (await readJSON('resumes')) || []
+  const resumes = await listMine('resumes', req.userId)
   const resume = resumes.find((r) => r.id === resumeId)
   if (!resume) return res.status(404).json({ error: '简历不存在' })
 

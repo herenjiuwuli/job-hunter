@@ -1,13 +1,22 @@
 <script setup>
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
+import { isLoggedIn, user, clearSession } from './auth.js'
 
 const route = useRoute()
+const router = useRouter()
 const active = computed(() => route.path)
+
+function logout() {
+  clearSession()
+  router.replace('/login')
+}
 </script>
 
 <template>
-  <div class="app">
+  <!-- 未登录时只渲染页面本身（也就是登录页），不要套一层空的侧边栏 -->
+  <router-view v-if="!isLoggedIn" />
+  <div v-else class="app">
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-dot"></span>
@@ -69,7 +78,10 @@ const active = computed(() => route.path)
           </router-link>
         </div>
       </nav>
-      <div class="sidebar-footer">求职助手 · v0.2</div>
+      <div class="sidebar-footer">
+        <span class="sidebar-user" :title="user?.username || ''">{{ user?.username || '未登录' }}</span>
+        <button class="sidebar-logout" type="button" @click="logout">退出</button>
+      </div>
     </aside>
     <main class="content">
       <router-view />

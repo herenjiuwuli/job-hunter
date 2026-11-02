@@ -19,6 +19,8 @@
     "test:ext": "node scripts/test-applied-ledger.mjs && node scripts/test-jobid.mjs && node scripts/test-batch-lines.mjs && node scripts/test-quota.mjs",
     "test:node": "node scripts/test-store.mjs && node scripts/test-applied-ledger.mjs && node scripts/test-jobid.mjs && node scripts/test-batch-lines.mjs && node scripts/test-quota.mjs",
     "jd:stats": "node scripts/jd-stats.mjs",
+    "migrate:owner": "node scripts/migrate-owner.mjs",
+    "check:ui:login": "node scripts/verify-login-flow.mjs",
     "check:frontend": "node scripts/check-vue-undef.mjs src && node scripts/check-vue-tpl.mjs src && node scripts/check-vue-refvalue.mjs src/views",
     "check:frontend:undef": "node scripts/check-vue-undef.mjs src",
     "check:frontend:tpl": "node scripts/check-vue-tpl.mjs src",

@@ -1,6 +1,6 @@
 # 测试说明（job-hunter）
 
-复用 resume-interview 的测试约定：**pytest（Python）+ mock DeepSeek**，覆盖全部 12 个后端路由的「校验路径 + 正路 + 匹配排序」。
+复用 resume-interview 的测试约定：**pytest（Python）+ mock DeepSeek**，覆盖全部 19 个后端路由的「鉴权 + 校验路径 + 正路 + 匹配排序 + 跨用户隔离」。
 
 ## 环境准备（首次）
 
@@ -61,19 +61,24 @@ $env:JH_BASE="http://localhost:3200"; $env:JOB_HUNTER_DATA_DIR="$env:TEMP\jh_tes
 | test_backup.py | /api/backup/export、import | 5 | 空数据导出兜底 + 含数据导出 + 导入校验（缺数据/错类型 400）+ 导入恢复 |
 | test_dashboard.py | /api/dashboard | 4 | 空默认结构 + 投递分布 + 面试指标 + 画像目标岗位聚合 |
 | test_resume_flow.py | 简历库 → /api/resume/generate 链路 | 3 | 跨接口流程：创建 → 生成 → 保存 content → 拉回验证 |
+| **test_auth.py** | `/api/auth/*` + 全部接口 | 54 | 表驱动：39 个接口无 token 一律 401；坏 token / 缺 Bearer / 篡改签名 / **过期 token**（用真实密钥在 py 端自签）全 401；重复注册 409、弱密码 400、错口令与未知用户给同一句话（防枚举）、连续失败 5 次锁 10 分钟 |
+| **test_tenant_isolation.py** | 全部数据接口 | 20 | A/B 两用户：B 拿 A 的 id 读/改/删 → 404；列表互不可见；dashboard / backup 导出 / match 分析只算自己的；画像每人一份；请求体塞 `ownerId` 无效；备份导入不能污染别人 |
 
-**合计 61 用例**。
+**合计 135 用例**（含老用例 61 条，一条未改 —— 见下方「默认身份注入」）。
 
 > 岗位已全面放开：interview / apply / salary / prep / intro 均不再对「未知岗位」报 400，而是按「自定义岗位 + 可选自定义 JD」生成；analyze 的岗位推荐也不再限定知识库岗位名。
 
-## 数据隔离（三层防护）
+## 数据隔离（三层防护 + 默认身份注入）
 
+0. **默认身份注入**（`conftest.py::_install_default_auth`）：会话开始时注册/登录 `owner_test` 与 `intruder_test`，把 owner 的 token 注入到 `requests.sessions.Session.request`。于是 **61 个老用例一行不改**也能以「已登录的主人」身份跑；越权用例显式传 `headers=` 覆写（注入逻辑只在没有 `Authorization` 头时生效）。
+   > 代价要说清楚：老用例因此看不到「未登录」这种状态。所以**另有一整套表驱动用例**（`test_auth.py`）把 39 个接口的无 token / 坏 token 逐个扫一遍 —— 注入省掉的是噪音，不是覆盖。
 1. **会话前置检查**（`conftest.py::pytest_sessionstart`）：任何用例执行前，请求后端 `/api/health`，以下任一不满足就**直接拒绝运行**（exit code 1，不执行任何用例）：
    - 后端不可达 → 提示按本文件启动
    - `aiMock` 非 true（连的是真实 AI，会花钱且结果不稳定）
    - `dataDirIsolated` 非 true（后端未设 `JOB_HUNTER_DATA_DIR`，会污染真实数据）
    - pytest 进程自己没设 `JOB_HUNTER_DATA_DIR`（清理逻辑会误删真实数据）
-2. **用例级清理**（`conftest.py::clean_runtime_data`）：每个测试函数前后清空**隔离目录**下的运行时数据 `{resumes,applications,records,profile}.json`，保留 `jobs.json`。清理目标跟随 `JOB_HUNTER_DATA_DIR` 环境变量，与后端数据目录保持一致。
+2. **用例级清理**（`conftest.py::clean_runtime_data`）：每个测试函数前后清空**隔离目录**下的运行时数据 `{resumes,applications,records,profile}.json`，保留 `jobs.json` 与 **`users.json`**。清理目标跟随 `JOB_HUNTER_DATA_DIR` 环境变量，与后端数据目录保持一致。
+   > `users.json` 不能清：删了 token 就指向一个不存在的用户，所有用例会一起 401。
 3. **数据目录隔离**（`server/lib/store.js`）：后端读 `JOB_HUNTER_DATA_DIR` 环境变量决定数据目录，未设置时才用默认 `server/data/`（日常使用不受影响）。
 
 ## mock 注意事项

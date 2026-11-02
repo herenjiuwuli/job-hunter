@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { readJSON } from '../lib/store.js'
+import { listMine, readProfileOf } from '../lib/scope.js'
 
 /**
  * 求职总览看板：聚合简历 / 投递 / 面试 / 画像四类数据，
@@ -26,16 +26,14 @@ function byDateDesc(list, key) {
   return list.slice().sort((a, b) => new Date(b[key] || 0) - new Date(a[key] || 0))
 }
 
-router.get('/api/dashboard', async (_req, res) => {
-  const [applications, records, resumes, profile] = await Promise.all([
-    readJSON('applications'),
-    readJSON('records'),
-    readJSON('resumes'),
-    readJSON('profile'),
+router.get('/api/dashboard', async (req, res) => {
+  // 这是「聚合读」接口：如果只过滤 CRUD 而漏了这里，别人的数据依然会以统计数字的形式泄露
+  const [apps, recs, reses, profile] = await Promise.all([
+    listMine('applications', req.userId),
+    listMine('records', req.userId),
+    listMine('resumes', req.userId),
+    readProfileOf(req.userId),
   ])
-  const apps = applications || []
-  const recs = records || []
-  const reses = resumes || []
   const prof = profile || {}
 
   const byStatus = countBy(apps, STATUSES, (a) => a.status)

@@ -12,7 +12,8 @@ def test_export_empty_defaults():
     assert r.status_code == 200
     body = r.json()
     assert body["app"] == "job-hunter"
-    assert body["version"] == 1
+    # v2：导出结构升级（每条记录带 ownerId）。老 v1 备份仍可导入 —— import 不校验 version
+    assert body["version"] == 2
     assert "exportedAt" in body
     assert body["data"]["resumes"] == []
     assert body["data"]["applications"] == []

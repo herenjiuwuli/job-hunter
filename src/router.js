@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isLoggedIn } from './auth.js'
+import Login from './views/Login.vue'
 import Resumes from './views/Resumes.vue'
 import Applications from './views/Applications.vue'
 import Profile from './views/Profile.vue'
@@ -18,9 +20,10 @@ import Ammo from './views/Ammo.vue'
 import Backup from './views/Backup.vue'
 import Dashboard from './views/Dashboard.vue'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/login', component: Login, meta: { public: true } },
     { path: '/', redirect: '/dashboard' },
     // 总览
     { path: '/dashboard', component: Dashboard },
@@ -47,3 +50,20 @@ export default createRouter({
     { path: '/backup', component: Backup },
   ],
 })
+
+/**
+ * 前端守卫只负责「没 token 就别进来」这种体验层的事。
+ * 真正的权限在后端：即使改掉 localStorage 绕过这里，每个接口照样 401。
+ */
+router.beforeEach((to) => {
+  if (to.meta.public) {
+    // 已登录还去登录页 → 回总览
+    return isLoggedIn.value && to.path === '/login' ? '/dashboard' : true
+  }
+  if (!isLoggedIn.value) {
+    return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+  }
+  return true
+})
+
+export default router

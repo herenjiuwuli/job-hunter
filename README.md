@@ -4,7 +4,8 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：52 个 pytest 接口用例（`tests/`，详见 [`TESTING.md`](TESTING.md)）
+- **测试**：135 个 pytest 接口用例（`tests/`）+ 95 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
+- **登录**：多用户隔离已落地 —— 每个接口都要带 token，数据按 `ownerId` 分开（见 §2.2）
 
 ## 一、它解决什么
 
@@ -58,10 +59,30 @@
 
 > 未搬的：`job-apply`（与本项目 Chrome 半自动投递扩展重叠）、`offer`（与投递追踪 7 状态重叠）、`great-resume` 改写模式（与 AI 重写版重叠，仅取其「主张—证据」思路）。
 
+### 2.2 多用户与数据隔离（2026-11）
+
+从「单人自用」升级为「多账号 + 严格隔离」。不是加个登录框就完事，四件事一起做才算数：
+
+| 层次 | 做法 | 为什么必须这样 |
+|---|---|---|
+| **认证** | 自写 HS256 token（`node:crypto`，零依赖）+ scrypt 存口令 | token 必须校验**签名**和**过期时间**；口令不能用 sha256（太快，撞库几秒几十亿次） |
+| **鉴权** | `app.use('/api', requireAuth)` 一条闸门管住**全部** `/api` | 逐个路由加必然漏；实测漏掉 `/api/backup/export` 就等于全量泄露 |
+| **归属** | 每条记录带 `ownerId`，读走 `lib/scope.js`（`listMine` / `getMine`） | 过滤逻辑写散 = 一定有一处漏；跨用户访问一律 **404 不是 403**（403 等于确认「这 id 真的存在」） |
+| **迁移** | `npm run migrate:owner -- --username <账号>` | 老数据没有 `ownerId`，不显式划给主人就等于丢失；脚本幂等、先备份再写 |
+
+**三个容易被忽略的越权面**（都有测试守着）：
+
+1. **聚合读**：`/api/dashboard` 只过滤 CRUD 不够 —— 别人的数据会以「统计数字」的形式泄露。
+2. **批量赋值**：请求体里塞 `ownerId` 想写进别人名下 → 后端一律覆盖为登录身份。
+3. **备份导入**：老实现是整文件覆盖，多用户下等于「B 恢复一次备份，A 的数据全没了」；现在只替换「属于我的那部分」，且 `ownerId` 强制重写。
+
+> 前端守卫只是体验层（没 token 就跳登录页）；**真正的权限在后端** —— 改掉 localStorage 绕过守卫，每个接口照样 401。
+
 ## 三、技术栈
 
 - **前端**：Vue 3.5 + Vite 8 + Vue Router 4（history 路由，单仓 `src/`）
 - **后端**：Express 5 + Node 20+（单仓 `server/`，端口 3100，已开 CORS）
+- **鉴权**：自写 HS256 token + scrypt 口令（零依赖，`server/lib/auth.js`）；数据按 `ownerId` 隔离
 - **AI**：DeepSeek（`deepseek-chat`，JSON 模式），所有 prompt 硬约束「绝不虚构经历」
 - **存储**：JSON 文件（`server/data/`，零数据库依赖，自用够用）
 - **浏览器扩展**：Chrome Manifest V3（content script + service worker + popup）
@@ -80,7 +101,18 @@ cp .env.example .env
 npm run dev
 ```
 
-打开 `http://localhost:5173`。
+打开 `http://localhost:5173`，**第一次先注册一个账号**（注册即登录）。老数据用 `npm run migrate:owner -- --username <你的账号>` 划到自己名下。
+
+## 四·五、账号相关命令
+
+```bash
+npm run migrate:owner -- --username chen          # 把老数据（无 ownerId）划给 chen；自动建账号+改密码
+npm run migrate:owner -- --username chen --dry-run # 只看要改什么，不落盘
+npm run check:ui:login                            # 真机验登录链路（需先起服务；默认打 3100）
+```
+
+- 密码忘了 / 要改：`PUT /api/auth/password`（前端未做页面，暂用 curl），或重新跑迁移脚本另建账号。
+- token 有效期 7 天，签名密钥落在 `server/data/.jwt-secret`（已 gitignore），删掉它等于让所有 token 立刻失效。
 
 ## 五、浏览器扩展（半自动投递，可选）
 
@@ -111,16 +143,18 @@ npm run dev
 
 ```
 job-hunter/
-├── src/                    # Vue3 前端（17 视图）
-│   ├── views/              # 投递追踪/匹配排序/简历库/写简历/面试准备…
-│   ├── router.js           # history 路由，三板块
-│   ├── api.js              # 后端 API 封装
+├── src/                    # Vue3 前端（19 视图，含登录页）
+│   ├── views/              # 登录/投递追踪/匹配排序/简历库/写简历/面试准备…
+│   ├── router.js           # history 路由 + 登录守卫
+│   ├── auth.js             # token 与登录态（localStorage + 响应式）
+│   ├── api.js              # 后端 API 封装（自动带 token，401 统一跳登录）
 │   ├── store.js            # 面试全局状态
 │   └── style.css           # 统一设计变量 + 组件样式
-├── server/                 # Express 后端（15 个路由模块 / 34 条接口）
-│   ├── routes/             # resumes/applications/profile/tailor/match/analyze/interview/…
-│   ├── lib/                # ai.js（DeepSeek）/ store.js（JSON 存储）/ jobs.js（岗位库）/ matcher.js（打分）
-│   └── data/jobs.json      # 岗位知识库（进 Git）
+├── server/                 # Express 后端（19 个路由模块 / 44 条接口）
+│   ├── routes/             # auth/resumes/applications/profile/tailor/match/interview/…
+│   ├── lib/                # auth.js（token/口令）/ scope.js（归属过滤）
+│   │                       # ai.js / store.js / jobs.js / matcher.js
+│   └── data/jobs.json      # 岗位知识库（进 Git；运行时数据全部 gitignore）
 ├── extension/              # Chrome MV3 半自动投递扩展
 ├── scripts/                # 推送脚本：push-main.sh / retry-push.sh（直连+后台轮询）
 │                           # 静态扫描：check-vue-{undef,tpl,refvalue}.mjs（npm run check:frontend）
