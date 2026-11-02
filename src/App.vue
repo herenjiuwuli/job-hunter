@@ -76,6 +76,9 @@ function logout() {
           <router-link to="/backup" class="nav-item" :class="{ active: active === '/backup' }">
             数据备份
           </router-link>
+          <router-link to="/settings" class="nav-item" :class="{ active: active === '/settings' }">
+            账号设置
+          </router-link>
         </div>
       </nav>
       <div class="sidebar-footer">

@@ -44,14 +44,25 @@ export const api = {
   auth: {
     login: (username, password) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
-    register: (username, password) =>
-      request('/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    // 邀请制：inviteCode 是注册的通行证，没带会被后端 403 挡回
+    register: (username, password, inviteCode) =>
+      request('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ username, password, inviteCode }),
+      }),
     me: () => request('/auth/me'),
     changePassword: (oldPassword, newPassword) =>
       request('/auth/password', {
         method: 'PUT',
         body: JSON.stringify({ oldPassword, newPassword }),
       }),
+    // 公开接口：注册页边输边校验，不消耗码
+    checkInvite: (code) => request(`/auth/invite/${encodeURIComponent(code)}`),
+    invites: {
+      list: () => request('/auth/invites'),
+      create: (data) => request('/auth/invites', { method: 'POST', body: JSON.stringify(data) }),
+      revoke: (code) => request(`/auth/invites/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+    },
   },
   resumes: {
     list: () => request('/resumes'),

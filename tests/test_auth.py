@@ -16,7 +16,7 @@ import uuid
 import pytest
 import requests
 
-from conftest import BASE, DATA_DIR, TOKENS, auth_headers
+from conftest import BASE, DATA_DIR, TOKENS, auth_headers, create_user_via_cli, new_invite
 
 # 全部需要登录的接口：(方法, 路径, 请求体)
 # 请求体给最小合法值即可 —— 鉴权在路由之前，401 会先返回，轮不到参数校验
@@ -60,6 +60,10 @@ ENDPOINTS = [
     ("POST", "/api/resume/score", {}),
     ("POST", "/api/resume/export", {}),
     ("POST", "/api/resume/import", {}),
+    # 邀请码管理是 owner 的权限，但「未登录」这一层必须先在闸门外被挡住（401 而不是 403）
+    ("GET", "/api/auth/invites", None),
+    ("POST", "/api/auth/invites", {}),
+    ("DELETE", "/api/auth/invites/ABCD-EFGH-JKLM", None),
 ]
 
 IDS = [f"{m} {p.split('?')[0]}" for m, p, _ in ENDPOINTS]
@@ -157,9 +161,12 @@ def test_me_returns_identity():
 
 
 def test_register_duplicate_conflict():
+    """用户名重复 → 409。邀请制之后必须先过邀请码这一关，才能撞到重名"""
+    code = new_invite()
+    assert code, "owner 生成邀请码失败"
     r = requests.post(
         f"{BASE}/api/auth/register",
-        json={"username": "owner_test", "password": "whatever-123"},
+        json={"username": "owner_test", "password": "whatever-123", "inviteCode": code},
         headers=_no_auth(),
         timeout=10,
     )
@@ -167,9 +174,11 @@ def test_register_duplicate_conflict():
 
 
 def test_register_short_password():
+    code = new_invite()
+    assert code, "owner 生成邀请码失败"
     r = requests.post(
         f"{BASE}/api/auth/register",
-        json={"username": "shortpw_test", "password": "123"},
+        json={"username": "shortpw_test", "password": "123", "inviteCode": code},
         headers=_no_auth(),
         timeout=10,
     )
@@ -180,16 +189,11 @@ def test_login_wrong_password():
     """
     已存在的账号 + 错误口令 → 401。
 
-    用一次性账号而不是 owner_test：错误登录会累积失败计数，
-    拿公共账号去撞等于给后面所有用例埋雷（轻则自己锁死，重则整个会话 401）。
+    账号用命令行脚本一次性造（不经过注册接口、不用消耗邀请码），
+    且名字随机：错误登录会累积失败计数，拿公共账号去撞等于给后面所有用例埋雷。
     """
     name = f"wrongpw_{uuid.uuid4().hex[:8]}"
-    requests.post(
-        f"{BASE}/api/auth/register",
-        json={"username": name, "password": "right-password-123"},
-        headers=_no_auth(),
-        timeout=10,
-    )
+    assert create_user_via_cli({"username": name, "password": "right-password-123"}), "脚本建号失败"
     r = requests.post(
         f"{BASE}/api/auth/login",
         json={"username": name, "password": "definitely-wrong"},
@@ -227,12 +231,12 @@ def test_lockout_after_repeated_failures():
     """
     连续失败 5 次后锁 10 分钟，挡住脚本撞库。
 
-    账号名带随机后缀：限速计数在服务端内存里、跨 pytest 运行保留 10 分钟，
-    用固定名字会「上一轮把这一轮锁住了」，变成一条自己会红的用例。
+    账号用命令行脚本造、名字带随机后缀：限速计数在服务端内存里、
+    跨 pytest 运行保留 10 分钟，用固定名字会「上一轮把这一轮锁住了」，
+    变成一条自己会红的用例。
     """
     name = f"lockme_{uuid.uuid4().hex[:8]}"
-    creds = {"username": name, "password": "lockme-123456"}
-    requests.post(f"{BASE}/api/auth/register", json=creds, headers=_no_auth(), timeout=10)
+    assert create_user_via_cli({"username": name, "password": "lockme-123456"}), "脚本建号失败"
 
     bad = {"username": name, "password": "wrong-pw"}
     codes = [

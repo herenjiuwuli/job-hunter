@@ -4,7 +4,7 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：135 个 pytest 接口用例（`tests/`）+ 95 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
+- **测试**：159 个 pytest 接口用例（`tests/`）+ 124 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
 - **登录**：多用户隔离已落地 —— 每个接口都要带 token，数据按 `ownerId` 分开（见 §2.2）
 
 ## 一、它解决什么
@@ -61,13 +61,14 @@
 
 ### 2.2 多用户与数据隔离（2026-11）
 
-从「单人自用」升级为「多账号 + 严格隔离」。不是加个登录框就完事，四件事一起做才算数：
+从「单人自用」升级为「多账号 + 严格隔离 + 邀请制」。不是加个登录框就完事，五件事一起做才算数：
 
 | 层次 | 做法 | 为什么必须这样 |
 |---|---|---|
 | **认证** | 自写 HS256 token（`node:crypto`，零依赖）+ scrypt 存口令 | token 必须校验**签名**和**过期时间**；口令不能用 sha256（太快，撞库几秒几十亿次） |
 | **鉴权** | `app.use('/api', requireAuth)` 一条闸门管住**全部** `/api` | 逐个路由加必然漏；实测漏掉 `/api/backup/export` 就等于全量泄露 |
 | **归属** | 每条记录带 `ownerId`，读走 `lib/scope.js`（`listMine` / `getMine`） | 过滤逻辑写散 = 一定有一处漏；跨用户访问一律 **404 不是 403**（403 等于确认「这 id 真的存在」） |
+| **准入** | **邀请制**：注册必须带一次性邀请码（`lib/invites.js`） | 注册是唯一「不用登录就能建账号」的入口。它有缝，后面的隔离全白做 —— 先注册进来，再谈越权 |
 | **迁移** | `npm run migrate:owner -- --username <账号>` | 老数据没有 `ownerId`，不显式划给主人就等于丢失；脚本幂等、先备份再写 |
 
 **三个容易被忽略的越权面**（都有测试守着）：
@@ -75,6 +76,14 @@
 1. **聚合读**：`/api/dashboard` 只过滤 CRUD 不够 —— 别人的数据会以「统计数字」的形式泄露。
 2. **批量赋值**：请求体里塞 `ownerId` 想写进别人名下 → 后端一律覆盖为登录身份。
 3. **备份导入**：老实现是整文件覆盖，多用户下等于「B 恢复一次备份，A 的数据全没了」；现在只替换「属于我的那部分」，且 `ownerId` 强制重写。
+
+**邀请制的几个具体决定**：
+
+- 码是 12 位、32 字符无歧义字母表（去掉 `I O 0 1`）= 60 bit 熵，按 `ABCD-EFGH-JKLM` 分组给人看；比对前归一化，小写/漏打横线也认。
+- **一次性**：用过即 `usedBy`/`usedAt`，不能复用；**只有 owner 能发码**（否则邀请制会变成病毒式扩散）。
+- **注册失败不烧码**：用户名重名 / 密码太短被拒时，把码退回，换个名字还能用。
+- 「校验码 → 建账号 → 占码」三步跨两张表，`store.js` 的锁是按 key 的，跨表拿不到共同锁 → 加一把**进程内注册锁**串起来，并发抢同一个码只会成功一个。
+- **首个账号的特例**：`users.json` 为空时允许无码注册并成为 owner，否则全新部署永远进不去。这个口子只在「一个账号都没有」时存在。
 
 > 前端守卫只是体验层（没 token 就跳登录页）；**真正的权限在后端** —— 改掉 localStorage 绕过守卫，每个接口照样 401。
 
@@ -101,17 +110,23 @@ cp .env.example .env
 npm run dev
 ```
 
-打开 `http://localhost:5173`，**第一次先注册一个账号**（注册即登录）。老数据用 `npm run migrate:owner -- --username <你的账号>` 划到自己名下。
+打开 `http://localhost:5173`，**第一次先注册一个账号**（注册即登录，此时库里没人，你会自动成为 owner）。之后任何人都需要你发的邀请码才能注册。老数据用 `npm run migrate:owner -- --username <你的账号>` 划到自己名下。
 
 ## 四·五、账号相关命令
 
 ```bash
-npm run migrate:owner -- --username chen          # 把老数据（无 ownerId）划给 chen；自动建账号+改密码
+npm run migrate:owner -- --username chen          # 把老数据（无 ownerId）划给 chen；顺带把角色补成 owner
 npm run migrate:owner -- --username chen --dry-run # 只看要改什么，不落盘
-npm run check:ui:login                            # 真机验登录链路（需先起服务；默认打 3100）
+
+npm run user:create -- --list                                   # 列出所有账号与角色
+npm run user:create -- --username chen --role owner             # 建账号（已存在会报错）
+npm run user:create -- --username chen --reset                  # 重置密码（旧的立刻作废）
+npm run check:ui:login                                          # 真机验登录 + 邀请制链路（需先起服务）
 ```
 
-- 密码忘了 / 要改：`PUT /api/auth/password`（前端未做页面，暂用 curl），或重新跑迁移脚本另建账号。
+- **改密码**：网页「账号设置」页（`/settings`），或 `PUT /api/auth/password`。
+- **邀请码**：同页，仅 owner 可见；生成、复制、撤销都在那里。注册页边输边校验。
+- **发不了邀请码 / 忘了我是谁**：`npm run user:create -- --list` 看角色，非 owner 就用 `--role owner --reset` 改回来。
 - token 有效期 7 天，签名密钥落在 `server/data/.jwt-secret`（已 gitignore），删掉它等于让所有 token 立刻失效。
 
 ## 五、浏览器扩展（半自动投递，可选）
@@ -143,23 +158,25 @@ npm run check:ui:login                            # 真机验登录链路（需�
 
 ```
 job-hunter/
-├── src/                    # Vue3 前端（19 视图，含登录页）
-│   ├── views/              # 登录/投递追踪/匹配排序/简历库/写简历/面试准备…
+├── src/                    # Vue3 前端（20 视图，含登录页与账号设置）
+│   ├── views/              # 登录/账号设置/投递追踪/匹配排序/简历库/写简历/面试准备…
 │   ├── router.js           # history 路由 + 登录守卫
 │   ├── auth.js             # token 与登录态（localStorage + 响应式）
 │   ├── api.js              # 后端 API 封装（自动带 token，401 统一跳登录）
 │   ├── store.js            # 面试全局状态
 │   └── style.css           # 统一设计变量 + 组件样式
-├── server/                 # Express 后端（19 个路由模块 / 44 条接口）
-│   ├── routes/             # auth/resumes/applications/profile/tailor/match/interview/…
-│   ├── lib/                # auth.js（token/口令）/ scope.js（归属过滤）
-│   │                       # ai.js / store.js / jobs.js / matcher.js
+├── server/                 # Express 后端（19 个路由模块 / 47 条接口，另有 /api/health）
+│   ├── routes/             # auth(含邀请码)/resumes/applications/profile/tailor/match/interview/…
+│   ├── lib/                # auth.js（token/口令/角色）/ invites.js（邀请码）
+│   │                       # scope.js（归属过滤）/ ai.js / store.js / jobs.js / matcher.js
 │   └── data/jobs.json      # 岗位知识库（进 Git；运行时数据全部 gitignore）
 ├── extension/              # Chrome MV3 半自动投递扩展
-├── scripts/                # 推送脚本：push-main.sh / retry-push.sh（直连+后台轮询）
-│                           # 静态扫描：check-vue-{undef,tpl,refvalue}.mjs（npm run check:frontend）
-│                           # 测试：tests/mock_deepseek.py + tests/*.py（pytest）
-└── .env.example
+├── scripts/                # 账号运维：create-user.mjs（建号/重置/列角色）
+│                           # 数据迁移：migrate-owner.mjs
+│                           # 真机验收：verify-login-flow.mjs（CDP，无依赖）
+│                           # 单测：test-{store,invites,applied-ledger,jobid,batch-lines,quota}.mjs
+│                           # 静态扫描：check-vue-{undef,tpl,refvalue}.mjs
+└── tests/                  # pytest 接口测试 + mock_deepseek.py
 ```
 
 ## 三点五、前端静态扫描（避免「点了才炸」）

@@ -155,11 +155,21 @@ export async function findUserById(id) {
   return users.find((u) => u.id === id) || null
 }
 
+/** 已注册人数。注册接口用它判断「是不是还没有任何账号」（首个账号允许无邀请码） */
+export async function countUsers() {
+  const users = (await readJSON(USERS_KEY)) || []
+  return users.length
+}
+
 /**
  * 创建用户。用户名唯一（大小写不敏感），口令只存 scrypt 派生值。
  * 读-改-写整段放在 updateJSON 的锁里，否则并发注册会互相覆盖。
+ *
+ * role 由调用方决定（第一个账号是 owner，其余是 member）：
+ * 「谁是第一个」这个判断必须在注册锁内做，不能让 createUser 自己数
+ * —— 否则并发两个注册请求都会数到 0，双双成为 owner。
  */
-export async function createUser({ username, password }) {
+export async function createUser({ id, username, password, role = 'member' }) {
   const name = normalizeUsername(username)
   if (!name) throw Object.assign(new Error('用户名不能为空'), { status: 400 })
   if (String(password || '').length < 6) {
@@ -172,9 +182,10 @@ export async function createUser({ username, password }) {
       const lower = name.toLowerCase()
       if (list.some((u) => String(u.username || '').toLowerCase() === lower)) return undefined
       created = {
-        id: `u_${randomUUID()}`,
+        id: id || `u_${randomUUID()}`,
         username: name,
         passwordHash: hashPassword(password),
+        role: role === 'owner' ? 'owner' : 'member',
         createdAt: new Date().toISOString(),
       }
       return [...list, created]
@@ -186,7 +197,47 @@ export async function createUser({ username, password }) {
 }
 
 export function publicUser(u) {
-  return u ? { id: u.id, username: u.username } : null
+  return u ? { id: u.id, username: u.username, role: u.role || 'member' } : null
+}
+
+/**
+ * 只有 owner 能邀请人。
+ *
+ * 为什么不让所有已登录用户都能发码：这是「邀请制」，不是「随便传播」。
+ * 如果 A 能邀请 B、B 又能邀请 C，那控制谁能进来这件事就形同虚设，
+ * 而且账号数量失控会直接放大数据面的风险（每个人各存一份简历与投递记录）。
+ * 真需要放权，把这里改成 role 白名单即可，不要散落到各个路由里。
+ */
+export async function requireOwner(req, res, next) {
+  const user = await findUserById(req.userId)
+  if (!user) return res.status(401).json({ error: '账号已不存在' })
+  if ((user.role || 'member') !== 'owner') {
+    return res.status(403).json({ error: '只有管理员能管理邀请码' })
+  }
+  req.user = user
+  next()
+}
+
+/**
+ * 注册锁：把「校验邀请码 → 建账号 → 占码」串成一段不可插队的操作。
+ *
+ * store.js 的锁是 key 级（invites 一把、users 一把），跨表拿不到共同锁。
+ * 两个请求同时拿着同一个码进来，各自校验都通过 → 建出两个账号，而码只该用一次。
+ * 用一个进程内串行链把它们串起来（注册是低频操作，串行没有性能问题）。
+ *
+ * ⚠️ 前提是单进程。真的要多实例部署，得换成文件锁或数据库事务，
+ *    这一点和 store.js 的并发假设是一致的问题，不是这里新引入的。
+ */
+let registerQueue = Promise.resolve()
+
+export function withRegisterLock(fn) {
+  const run = registerQueue.then(fn, fn)
+  // 链上挂「已消化失败」的版本，一次异常不能把后续注册永久卡住
+  registerQueue = run.then(
+    () => {},
+    () => {}
+  )
+  return run
 }
 
 // ---------- 登录失败限速 ----------

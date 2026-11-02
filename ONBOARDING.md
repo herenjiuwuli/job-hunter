@@ -41,6 +41,19 @@ npm run dev
 - 前端：http://localhost:5173
 - 后端：http://localhost:3100（`curl http://localhost:3100/api/health` 应返回 `{"status":"ok"}`）
 
+## 3.5 先注册账号（跳过这步后面全部会被挡在登录页外）
+
+打开前端会先看到登录页 —— 这是正常的（2026-11 起有鉴权与数据隔离）。
+
+| 情况 | 怎么做 |
+|---|---|
+| **这台机器第一次用**（`server/data/users.json` 不存在或为空） | 直接点「注册」，填账号密码即可，**第一个账号自动成为 owner** |
+| **已经有账号**（比如迁移过老数据） | 直接登录；账号是 `npm run migrate:owner` 时给的那个 |
+| 忘了密码 / 忘了自己是不是 owner | `npm run user:create -- --list` 看账号与角色；`npm run user:create -- --username chen --reset` 重置 |
+
+登录后右上角（侧栏底部）显示当前账号，「账号设置」页能看到「邀请码」卡片 = 你是 owner。
+**之后别人要用，必须由你发邀请码。**
+
 ## 4. 联调验证点（按顺序走）
 
 | # | 页面 | 操作 | 验证什么 |
@@ -75,4 +88,4 @@ npm run build
 npm start          # 打开 http://localhost:3100
 ```
 
-> ⚠️ 部署到公网前**务必先看 DEPLOY.md 的安全警告**：本项目没有登录鉴权，端口直接暴露等于公开你的简历和投递记录。
+> ⚠️ 部署到公网前**务必先看 DEPLOY.md 开头那三条**：先在本机把自己注册成 owner、设好 `JWT_SECRET`、确认注册要邀请码 —— 顺序错了等于把注册权交出去。

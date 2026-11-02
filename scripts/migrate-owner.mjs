@@ -129,9 +129,17 @@ async function main() {
   const lower = String(args.username).trim().toLowerCase()
   let user = users.find((u) => String(u.username || '').toLowerCase() === lower)
   let generatedPassword = null
+  let needRoleFix = false
 
   if (user) {
     log(`账号：已存在 ${user.username}  (${user.id})`)
+    // 角色：迁移的目标账号必须是 owner —— 邀请制之后只有 owner 能发邀请码，
+    // 老版本建的账号没有 role 字段，不补的话主人自己反而管不了邀请。
+    if ((user.role || 'member') !== 'owner') {
+      user = { ...user, role: 'owner' }
+      needRoleFix = true
+      log(`账号：角色将补为 owner（原 ${users.find((u) => u.id === user.id)?.role || '未设置'}）`)
+    }
   } else {
     let pw = await askPassword()
     if (!pw) {
@@ -146,6 +154,7 @@ async function main() {
       id: `u_${randomUUID()}`,
       username: String(args.username).trim(),
       passwordHash: hashPassword(pw),
+      role: 'owner', // 迁老数据的人就是主人
       createdAt: new Date().toISOString(),
     }
     // 这里只构造对象、不落盘 —— 落盘统一放在「备份之后」，保证备份覆盖到全部变更
@@ -205,7 +214,7 @@ async function main() {
   }
 
   const userIsNew = !existsSync(join(DATA_DIR, `${USERS_KEY}.json`)) || !users.some((u) => u.id === ownerId)
-  const willWrite = plans.length > 0 || userIsNew
+  const willWrite = plans.length > 0 || userIsNew || needRoleFix
 
   // 4) 有变更才备份（先备份后写，任何中间失败都能整体拷回）
   if (!args.dryRun && willWrite) {
@@ -225,6 +234,11 @@ async function main() {
     if (userIsNew) {
       mkdirSync(DATA_DIR, { recursive: true })
       writeJson(USERS_KEY, [...users, user])
+    } else if (needRoleFix) {
+      writeJson(
+        USERS_KEY,
+        users.map((u) => (u.id === user.id ? user : u))
+      )
     }
     for (const p of plans) writeJson(p.key, p.next)
   }
@@ -237,6 +251,7 @@ async function main() {
   } else {
     log(`完成：补 ${totalStamped} 条 ownerId。账号 ${user.username} 现在能看到全部历史数据。`)
   }
+  if (needRoleFix && !args.dryRun) log(`账号 ${user.username} 已设为 owner（可发邀请码）。`)
   if (generatedPassword && !args.dryRun) {
     log('')
     log('⚠️  自动生成的密码（只显示这一次，请立刻记下）：')

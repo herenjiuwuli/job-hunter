@@ -1,18 +1,32 @@
 import { Router } from 'express'
+import { randomUUID } from 'node:crypto'
 import { updateJSON } from '../lib/store.js'
 import {
   createUser,
   findUserByName,
   findUserById,
+  countUsers,
   verifyPassword,
   hashPassword,
   signToken,
   publicUser,
   requireAuth,
+  requireOwner,
+  withRegisterLock,
   isLocked,
   recordFail,
   clearFail,
 } from '../lib/auth.js'
+import {
+  checkInvite,
+  consumeInvite,
+  createInvite,
+  listInvites,
+  normalizeInvite,
+  releaseInvite,
+  revokeInvite,
+  maskCode,
+} from '../lib/invites.js'
 
 const router = Router()
 
@@ -24,15 +38,64 @@ const router = Router()
  */
 const DUMMY_HASH = hashPassword('dummy-password-for-timing-equalization')
 
-// 注册
+/**
+ * 注册（邀请制）。
+ *
+ * 两条合法的路，别的地方都进不来：
+ *   1. 系统里一个账号都没有 → 允许直接注册，并成为 owner（否则新部署永远进不去）。
+ *      这个口子只在 users 表为空时存在，注册锁内判定，并发注册也只会成功第一个。
+ *   2. 已有账号 → 必须带一个有效的、未使用的、未过期的邀请码。
+ *
+ * 为什么邀请码不写在 URL 里让用户点链接注册：链接会被转发、被聊天记录留存，
+ * 而一次性码贴在 URL 上就意味着「谁先点谁进」。邀请码只在注册表单里手输/粘贴。
+ */
 router.post('/api/auth/register', async (req, res) => {
-  const { username, password } = req.body || {}
+  const { username, password, inviteCode } = req.body || {}
   try {
-    const user = await createUser({ username, password })
-    res.json({ token: signToken(user.id), user: publicUser(user) })
+    const result = await withRegisterLock(async () => {
+      const total = await countUsers()
+
+      // 路径 1：全新部署的首个账号
+      if (total === 0) {
+        const user = await createUser({ username, password, role: 'owner' })
+        return { user, bootstrap: true }
+      }
+
+      // 路径 2：邀请制
+      if (!inviteCode) {
+        throw Object.assign(new Error('本站为邀请制，需要邀请码才能注册'), { status: 403 })
+      }
+
+      // 先占码再建账号：中途失败的代价是白费一个码，而不是「码还能复用」
+      const uid = `u_${randomUUID()}`
+      const name = String(username || '').trim()
+      const taken = await consumeInvite(inviteCode, uid, name)
+      if (!taken.ok) {
+        console.warn(`[auth] 注册被拒（邀请码 ${maskCode(inviteCode)}）`)
+        throw Object.assign(new Error(taken.reason), { status: 403 })
+      }
+
+      try {
+        const user = await createUser({ id: uid, username, password, role: 'member' })
+        return { user, bootstrap: false }
+      } catch (e) {
+        // 账号没建成（用户名重复 / 密码太短），把码退回去，别让用户白丢一个
+        await releaseInvite(inviteCode, uid)
+        throw e
+      }
+    })
+
+    res.json({ token: signToken(result.user.id), user: publicUser(result.user), bootstrap: result.bootstrap })
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || '注册失败' })
   }
+})
+
+// 邀请码是否可用（注册页边输边提示用，公开接口，不消耗码）
+// 码有 60 bit 熵，暴力试码不现实；而且这里只回 usable 布尔，不泄露码是否存在以外的信息。
+router.get('/api/auth/invite/:code', async (req, res) => {
+  const { usable } = await checkInvite(req.params.code)
+  res.json({ usable })
 })
 
 // 登录
@@ -87,6 +150,27 @@ router.put('/api/auth/password', requireAuth, async (req, res) => {
       ),
     []
   )
+  res.json({ ok: true })
+})
+
+// ---------- 邀请码管理（仅 owner）----------
+// 注意路由顺序：'invite/:code' 是公开的单码校验（上面），'invites' 是管理接口，
+// 两者路径不同，不冲突；但别把 invites 写成 invite，否则会吃掉上面的校验路由。
+
+router.get('/api/auth/invites', requireAuth, requireOwner, async (_req, res) => {
+  res.json(await listInvites())
+})
+
+router.post('/api/auth/invites', requireAuth, requireOwner, async (req, res) => {
+  const { note, ttlDays } = req.body || {}
+  const inv = await createInvite({ createdBy: req.userId, note, ttlDays })
+  res.json(normalizeInvite(inv))
+})
+
+router.delete('/api/auth/invites/:code', requireAuth, requireOwner, async (req, res) => {
+  // 已使用的码会被拒绝删除：它是「谁邀请了谁」的唯一凭证
+  const r = await revokeInvite(req.params.code)
+  if (!r.ok) return res.status(400).json({ error: r.reason })
   res.json({ ok: true })
 })
 

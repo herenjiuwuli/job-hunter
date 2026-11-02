@@ -19,6 +19,7 @@ import Prep from './views/Prep.vue'
 import Ammo from './views/Ammo.vue'
 import Backup from './views/Backup.vue'
 import Dashboard from './views/Dashboard.vue'
+import Settings from './views/Settings.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -48,6 +49,7 @@ const router = createRouter({
     { path: '/ammo', component: Ammo },
     // 数据管理
     { path: '/backup', component: Backup },
+    { path: '/settings', component: Settings },
   ],
 })
 
