@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { readJSON, writeJSON } from '../lib/store.js'
+import { readJSON, updateJSON } from '../lib/store.js'
 
 /**
  * 候选人画像：求职过程中的「不可猜测事实」唯一真相源。
@@ -59,22 +59,25 @@ router.get('/api/profile', async (_req, res) => {
 
 router.put('/api/profile', async (req, res) => {
   const body = req.body || {}
-  const prev = (await readJSON(KEY)) || DEFAULT_PROFILE
-  // 增量合并：未传字段保留旧值；首次写入（无旧值）回退默认值
-  const next = {
-    ...DEFAULT_PROFILE,
-    ...prev,
-    ...body,
-    basic: { ...DEFAULT_PROFILE.basic, ...prev.basic, ...(body.basic || {}) },
-    currentStatus: { ...DEFAULT_PROFILE.currentStatus, ...prev.currentStatus, ...(body.currentStatus || {}) },
-    workAuthorization: { ...DEFAULT_PROFILE.workAuthorization, ...prev.workAuthorization, ...(body.workAuthorization || {}) },
-    targets: { ...DEFAULT_PROFILE.targets, ...prev.targets, ...(body.targets || {}) },
-    compensation: { ...DEFAULT_PROFILE.compensation, ...prev.compensation, ...(body.compensation || {}) },
-    selfIdentification: { ...DEFAULT_PROFILE.selfIdentification, ...prev.selfIdentification, ...(body.selfIdentification || {}) },
-    resumeMapping: Array.isArray(body.resumeMapping) ? body.resumeMapping : (Array.isArray(prev.resumeMapping) ? prev.resumeMapping : []),
-    neverGuess: Array.isArray(body.neverGuess) ? body.neverGuess : (Array.isArray(prev.neverGuess) ? prev.neverGuess : DEFAULT_PROFILE.neverGuess),
-  }
-  await writeJSON(KEY, next)
+  // 增量合并：未传字段保留旧值；首次写入（无旧值）回退默认值。
+  // 必须在锁内做：两个人同时改画像，后写的会把先写的整段覆盖掉
+  const next = await updateJSON(
+    KEY,
+    (prev) => ({
+      ...DEFAULT_PROFILE,
+      ...prev,
+      ...body,
+      basic: { ...DEFAULT_PROFILE.basic, ...prev.basic, ...(body.basic || {}) },
+      currentStatus: { ...DEFAULT_PROFILE.currentStatus, ...prev.currentStatus, ...(body.currentStatus || {}) },
+      workAuthorization: { ...DEFAULT_PROFILE.workAuthorization, ...prev.workAuthorization, ...(body.workAuthorization || {}) },
+      targets: { ...DEFAULT_PROFILE.targets, ...prev.targets, ...(body.targets || {}) },
+      compensation: { ...DEFAULT_PROFILE.compensation, ...prev.compensation, ...(body.compensation || {}) },
+      selfIdentification: { ...DEFAULT_PROFILE.selfIdentification, ...prev.selfIdentification, ...(body.selfIdentification || {}) },
+      resumeMapping: Array.isArray(body.resumeMapping) ? body.resumeMapping : (Array.isArray(prev.resumeMapping) ? prev.resumeMapping : []),
+      neverGuess: Array.isArray(body.neverGuess) ? body.neverGuess : (Array.isArray(prev.neverGuess) ? prev.neverGuess : DEFAULT_PROFILE.neverGuess),
+    }),
+    DEFAULT_PROFILE
+  )
   res.json(next)
 })
 

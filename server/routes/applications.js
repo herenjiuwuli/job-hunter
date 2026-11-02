@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { readJSON, writeJSON } from '../lib/store.js'
+import { readJSON, updateJSON } from '../lib/store.js'
 
 const router = Router()
 const KEY = 'applications'
@@ -49,36 +49,50 @@ router.get('/api/applications/:id', async (req, res) => {
 })
 
 router.post('/api/applications', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
   const item = sanitize(req.body)
   if (!item.company || !item.jobTitle) {
     return res.status(400).json({ error: '公司名与岗位名不能为空' })
   }
-  list.push(item)
-  await writeJSON(KEY, list)
+  // 读-改-写必须在同一把锁里：扩展批量投递会连续 POST，
+  // 分开做会「后一条覆盖前一条」，记录静默消失
+  await updateJSON(KEY, (list) => [...list, item], [])
   res.json(item)
 })
 
 router.put('/api/applications/:id', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
-  const idx = list.findIndex((a) => a.id === req.params.id)
-  if (idx === -1) return res.status(404).json({ error: '投递记录不存在' })
-
-  const prev = list[idx]
-  const item = sanitize(req.body)
-  item.id = req.params.id
-  item.createdAt = prev.createdAt
-  item.updatedAt = new Date().toISOString()
-  list[idx] = item
-  await writeJSON(KEY, list)
-  res.json(item)
+  const body = req.body
+  const saved = await updateJSON(
+    KEY,
+    (list) => {
+      const idx = list.findIndex((a) => a.id === req.params.id)
+      if (idx === -1) return undefined // 不存在：不写，外面回 404
+      const item = sanitize(body)
+      item.id = req.params.id
+      item.createdAt = list[idx].createdAt
+      item.updatedAt = new Date().toISOString()
+      const next = [...list]
+      next[idx] = item
+      return next
+    },
+    []
+  )
+  if (!saved) return res.status(404).json({ error: '投递记录不存在' })
+  res.json(saved.find((a) => a.id === req.params.id))
 })
 
 router.delete('/api/applications/:id', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
-  const next = list.filter((a) => a.id !== req.params.id)
-  if (next.length === list.length) return res.status(404).json({ error: '投递记录不存在' })
-  await writeJSON(KEY, next)
+  let removed = false
+  await updateJSON(
+    KEY,
+    (list) => {
+      const next = list.filter((a) => a.id !== req.params.id)
+      if (next.length === list.length) return undefined
+      removed = true
+      return next
+    },
+    []
+  )
+  if (!removed) return res.status(404).json({ error: '投递记录不存在' })
   res.json({ ok: true })
 })
 

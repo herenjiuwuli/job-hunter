@@ -52,6 +52,9 @@ const active = computed(() => route.path)
           <router-link to="/mistakes" class="nav-item" :class="{ active: active === '/mistakes' }">
             错题本
           </router-link>
+          <router-link to="/ammo" class="nav-item" :class="{ active: active === '/ammo' }">
+            面试弹药自检
+          </router-link>
           <router-link to="/salary" class="nav-item" :class="{ active: active === '/salary' }">
             薪资谈判
           </router-link>

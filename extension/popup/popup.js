@@ -1,17 +1,130 @@
 const $ = (s) => document.querySelector(s)
 
+// 去掉孤立代理项 + 按字形截断。
+// 直接 slice 会切在 emoji 中间，把代理对劈成单个 → 界面上显示成 �（乱码来源）
+function safeText(s) {
+  return String(s == null ? '' : s).replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    ''
+  )
+}
+function truncate(s, n) {
+  const str = safeText(s)
+  if (str.length <= n) return str
+  try {
+    const seg = new Intl.Segmenter('zh', { granularity: 'grapheme' })
+    const parts = Array.from(seg.segment(str), (x) => x.segment)
+    return parts.length > n ? parts.slice(0, n).join('') + '…' : str
+  } catch (_) {
+    const parts = [...str]
+    return parts.length > n ? parts.slice(0, n).join('') + '…' : str
+  }
+}
+
 function log(msg) {
   $('#log').textContent = msg
 }
 
+// 额度按平台分开：双线并行时共用一个池子，实习僧会把 BOSS 的份额吃掉
 async function refreshQuota() {
+  const fmt = (q, name) => {
+    if (!q) return `${name} -/-`
+    const full = q.limit > 0 && q.used >= q.limit
+    return `${name} ${q.used}/${q.unlimited ? '不限' : q.limit}${full ? ' ⛔' : ''}`
+  }
   try {
-    const q = await chrome.runtime.sendMessage({ action: 'getQuota' })
-    $('#quota').textContent = `${q.used} / ${q.limit}`
+    const [sx, boss] = await Promise.all([
+      chrome.runtime.sendMessage({ action: 'getQuota', platform: '实习僧' }),
+      chrome.runtime.sendMessage({ action: 'getQuota', platform: 'BOSS直聘' }),
+    ])
+    $('#quota-sx').textContent = fmt(sx, '实习僧')
+    $('#quota-boss').textContent = fmt(boss, 'BOSS')
+    renderQuotaPanel([sx, boss])
   } catch {
-    $('#quota').textContent = '-'
+    $('#quota-sx').textContent = '实习僧 -/-'
+    $('#quota-boss').textContent = 'BOSS -/-'
+    const el = document.getElementById('quotaPanel')
+    if (el) el.textContent = '额度读取失败 —— 到 chrome://extensions 重载扩展再试'
   }
 }
+
+// 额度面板：数字 + 进度条 + 平台官方口径，一屏看清「还能投多少、为什么是这个数」
+function renderQuotaPanel(qs) {
+  const el = document.getElementById('quotaPanel')
+  if (!el) return
+  el.innerHTML = qs
+    .filter(Boolean)
+    .map((q) => {
+      const unlimited = !!q.unlimited
+      const pct = unlimited ? 100 : q.limit > 0 ? Math.min(100, Math.round((q.used / q.limit) * 100)) : 0
+      const full = !unlimited && q.limit > 0 && q.used >= q.limit
+      const cls = unlimited ? 'unlimited' : full ? 'full' : pct >= 80 ? 'warn' : ''
+      const left = unlimited ? '不限量' : `还剩 ${Math.max(0, q.limit - q.used)} 家`
+      const official = q.officialDaily
+        ? `平台 ${q.officialDaily} 次（${q.officialWarn} 会提醒）→ 我们停在 ${unlimited ? '不限' : q.limit}`
+        : unlimited
+          ? '平台未公布上限 → 不设限'
+          : `平台未公布上限 → 我们自设 ${q.limit}`
+      return `<div class="qrow ${cls}">
+        <div class="qtop"><b>${q.name}</b><span>今日 ${q.used} / ${unlimited ? '不限' : q.limit}</span></div>
+        <div class="qbar"><i style="width:${pct}%"></i></div>
+        <div class="qnote">${left}　·　${official}</div>
+      </div>`
+    })
+    .join('')
+}
+
+// 近 7 天分平台投递量：判断「今天投得比平时多还是少」用
+async function refreshHistory() {
+  const el = document.getElementById('historyList')
+  if (!el) return
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'quotaHistory', days: 7 })
+    const rows = (r && r.rows) || []
+    if (!rows.length) {
+      el.textContent = '暂无记录'
+      return
+    }
+    const p = (n) => String(n).padStart(3, ' ')
+    const sumB = rows.reduce((a, x) => a + x.boss, 0)
+    const sumS = rows.reduce((a, x) => a + x.sx, 0)
+    el.textContent = [
+      ...rows.map((x) => `${x.day}　BOSS ${p(x.boss)}　实习僧 ${p(x.sx)}`),
+      '─'.repeat(28),
+      `合计　　　　BOSS ${p(sumB)}　实习僧 ${p(sumS)}`,
+    ].join('\n')
+  } catch {
+    el.textContent = '读取失败'
+  }
+}
+
+// 上限输入框：读一次回填，改完即存（存的是该平台的日上限）
+async function initLimits() {
+  for (const [id, platform] of [
+    ['lim-sx', '实习僧'],
+    ['lim-boss', 'BOSS直聘'],
+  ]) {
+    const el = document.getElementById(id)
+    if (!el) continue
+    try {
+      const q = await chrome.runtime.sendMessage({ action: 'getQuota', platform })
+      if (q) el.value = q.limit
+    } catch {
+      /* 读不到就保留 HTML 里的默认值 */
+    }
+    el.addEventListener('change', async () => {
+      const res = await chrome.runtime.sendMessage({ action: 'setDailyLimit', platform, limit: el.value })
+      if (res && res.ok) {
+        el.value = res.limit
+        log(`${platform} 每日上限已设为 ${res.unlimited ? '不限' : res.limit}`)
+        refreshQuota()
+      } else {
+        log(`❌ 上限设置失败`)
+      }
+    })
+  }
+}
+initLimits()
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -19,21 +132,33 @@ async function activeTab() {
   return tab
 }
 
-async function apply() {
+async function apply(force = false) {
   const greeting = $('#greeting').value
   const autoClick = $('#autoClick').checked
-  log('投递中…')
+  log(force ? '强制继续（已跳过风控检测）…' : '投递中…')
   try {
     const tab = await activeTab()
-    const res = await chrome.tabs.sendMessage(tab.id, { action: 'apply', greeting, autoClick })
-    if (res && res.ok) {
-      const mode = res.autoClicked ? '已自动点击投递' : '已填好打招呼语，请手动点投递按钮'
-      log(`✅ ${res.company} · ${res.jobTitle}\n${mode}（今日 ${res.used}/${res.limit}）`)
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'apply', greeting, autoClick, force })
+    if (res && res.jumped) {
+      // BOSS 点「立即沟通」会整页跳到聊天页，这一句之后就由聊天页自己发消息
+      log('⏳ 已点「立即沟通」，正跳到聊天页发送…\n发送结果稍后显示在这里，别关页面')
+    } else if (res && res.needManual) {
+      // 半自动模式走到「已高亮、等你手动点」是正常流程，不该显示成红色失败。
+      // ⚠️ 这个分支必须排在 ok 前面：半自动返回的是 ok:true，否则永远走进 ✅ 那条
+      log(`👉 ${res.error || res.message || '已填好，请手动点提交'}`)
+    } else if (res && res.ok) {
+      const detail = res.message || (res.autoClicked ? '已自动点击投递' : '已填好打招呼语，请手动点投递按钮')
+      const quotaText =
+        res.limit > 0
+          ? `本平台今日 ${res.used}/${res.limit}，还剩 ${Math.max(0, res.limit - res.used)}`
+          : `本平台今日 ${res.used} 次（不限）`
+      log(`✅ ${res.company} · ${res.jobTitle}\n${detail}（${quotaText}）`)
     } else {
       log(`❌ ${(res && res.error) || '执行失败'}`)
     }
   } catch (e) {
-    log('❌ 请先打开「实习僧 / BOSS 直聘」的岗位投递页，再点此按钮')
+    // 跳到新页面的瞬间 content script 会断开，sendMessage 必然 reject —— 这不是错误
+    log('⏳ 页面正在跳转，结果稍后显示在这里…\n（等 10 秒没反应，就去聊天页点「探测页面结构」）')
   }
   refreshQuota()
 }
@@ -50,21 +175,34 @@ async function inspect() {
   }
 }
 
-document.getElementById('applyBtn').addEventListener('click', apply)
+document.getElementById('applyBtn').addEventListener('click', () => apply(false))
+document.getElementById('forceBtn').addEventListener('click', () => apply(true))
 document.getElementById('inspectBtn').addEventListener('click', inspect)
 document.getElementById('resetBtn').addEventListener('click', async () => {
+  // 不传 platform = 两个平台一起清零
   await chrome.runtime.sendMessage({ action: 'resetQuota' })
+  log('已重置：实习僧、BOSS 两个平台的今日计数都归零')
   refreshQuota()
 })
 
 // 防封配置：仅投 BOSS 活跃岗位 + 关键词黑名单
 async function initFilters() {
-  const { bossActiveOnly = false, filterKeywords = '' } = await chrome.storage.local.get(['bossActiveOnly', 'filterKeywords'])
+  const {
+    bossActiveOnly = false,
+    filterKeywords = '',
+    // 默认全自动：半自动「只填不发」在 BOSS 上等于什么都没做
+    // （BOSS 的投递就是发那条消息），留着容易以为投了其实没发。
+    autoClick = true,
+  } = await chrome.storage.local.get(['bossActiveOnly', 'filterKeywords', 'autoClick'])
   $('#bossActiveOnly').checked = !!bossActiveOnly
   $('#filterKeywords').value = filterKeywords
+  $('#autoClick').checked = !!autoClick
 }
 $('#bossActiveOnly').addEventListener('change', () => {
   chrome.storage.local.set({ bossActiveOnly: $('#bossActiveOnly').checked })
+})
+$('#autoClick').addEventListener('change', () => {
+  chrome.storage.local.set({ autoClick: $('#autoClick').checked })
 })
 $('#filterKeywords').addEventListener('change', () => {
   chrome.storage.local.set({ filterKeywords: $('#filterKeywords').value })
@@ -72,3 +210,589 @@ $('#filterKeywords').addEventListener('change', () => {
 initFilters()
 
 refreshQuota()
+refreshBatch()
+refreshApplied()
+
+// ===================== 批量投递（双线并行） =====================
+// 两条线各存 batch:sx / batch:boss，互不覆盖，所以能同时跑。
+// 老版本只有单一 'batch' 键：读不到线键时看一眼老键属不属于这条线（只读兼容，不迁移）。
+const LINES = [
+  { key: 'sx', name: '实习僧', pattern: '*://*.shixiseng.com/*' },
+  { key: 'boss', name: 'BOSS 直聘', pattern: '*://*.zhipin.com/*' },
+]
+
+// 进度条用方块字符，避免为了一根进度条引入额外 DOM
+function progressBar(done, total) {
+  const n = 10
+  const filled = total ? Math.min(n, Math.round((done / total) * n)) : 0
+  return '█'.repeat(filled) + '░'.repeat(n - filled)
+}
+
+async function readBatchLine(line) {
+  try {
+    const key = `batch:${line}`
+    const r = await chrome.storage.local.get([key, 'batch'])
+    if (r[key]) return r[key]
+    const legacy = r.batch
+    if (legacy && Array.isArray(legacy.queue) && legacy.queue.length) {
+      const legacyIsBoss = /zhipin\.com/i.test(String(legacy.queue[0]))
+      if ((line === 'boss') === legacyIsBoss) return legacy
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function renderLine(line, b) {
+  const box = document.getElementById(`line-${line}`)
+  const infoEl = document.getElementById(`info-${line}`)
+  const stateEl = document.getElementById(`state-${line}`)
+  const qEl = document.getElementById(`queue-${line}`)
+  if (!box || !infoEl || !stateEl) return
+
+  if (!b) {
+    box.className = 'linebox'
+    stateEl.textContent = '未启动'
+    infoEl.textContent = '—'
+    if (qEl) qEl.textContent = ''
+    return
+  }
+
+  const total = b.total || (b.queue || []).length
+  const done = (b.results || []).length
+  const okCount = (b.results || []).filter((r) => r.ok).length
+  const skipCount = (b.results || []).filter((r) => r.skipped).length
+  const failCount = done - okCount - skipCount
+
+  // 卡住检测：BOSS 正常间隔 30~60s，阈值要比实习僧宽，否则一直误报
+  const lastMs = b.lastAt ? new Date(b.lastAt).getTime() : new Date(b.startedAt || Date.now()).getTime()
+  const idleSec = Math.max(0, Math.round((Date.now() - lastMs) / 1000))
+  const stuckAt = line === 'boss' ? 130 : 95
+  const stuck = b.running && idleSec > stuckAt
+
+  // 最近 3 家的明细：只看汇总的话，出了错根本不知道为什么失败
+  const recent = (b.results || []).slice(-3).map((r) => {
+    const tag = r.ok ? '✅' : r.skipped ? '⏭️' : '❌'
+    return `· ${truncate(r.title, 18) || '(无标题)'}｜${tag} ${truncate(r.message, 46)}`
+  })
+
+  const lines = [
+    `${progressBar(done, total)} ${done}/${total}　成功 ${okCount} · 跳过 ${skipCount} · 失败 ${failCount}${b.force ? '　[跳过风控]' : ''}`,
+    b.stopReason ? `原因：${truncate(b.stopReason, 110)}` : '',
+    stuck ? `⚠️ 已 ${idleSec} 秒没动静，可能卡住了` : '',
+    ...recent,
+    b.running && b.queue && b.queue[b.index]
+      ? `下一家：${(b.titles && b.titles[b.index]) || b.queue[b.index]}`
+      : '',
+  ].filter(Boolean)
+
+  box.className = 'linebox' + (b.running ? ' running' : '') + (stuck ? ' stuck' : '')
+  stateEl.textContent = b.running ? (stuck ? `卡住 ${idleSec}s` : '进行中') : '已结束'
+  infoEl.textContent = lines.join('\n')
+
+  // 队列清单：让你看清整批要投哪些、投到哪了
+  if (qEl) {
+    qEl.textContent = (b.queue || [])
+      .map((u, i) => {
+        const r = (b.results || [])[i]
+        const mark = r ? (r.ok ? '✅' : r.skipped ? '⏭️' : '❌') : i === b.index && b.running ? '▶️' : '○'
+        const t = (b.titles && b.titles[i]) || u
+        return `${String(i + 1).padStart(2, ' ')}. ${mark} ${truncate(t, 22)}`
+      })
+      .join('\n') || '—'
+  }
+}
+
+async function refreshBatch() {
+  for (const L of LINES) {
+    renderLine(L.key, await readBatchLine(L.key))
+  }
+}
+
+// 找这条线的标签页：优先列表页（详情页上启动抓不到岗位链接）
+async function findLineTab(line) {
+  const L = LINES.find((x) => x.key === line)
+  if (!L) return null
+  let tabs = []
+  try {
+    tabs = await chrome.tabs.query({ url: L.pattern })
+  } catch {
+    return null
+  }
+  const usable = tabs.filter((t) => t && t.id && t.url)
+  const isDetail = (u) => /job_detail\/|shixiseng\.com\/intern\/inn_/i.test(u)
+  const isList = (u) => /search|joblist|geek\/job|interns|jobs?\?|keyword=/i.test(u)
+  const lists = usable.filter((t) => !isDetail(t.url))
+  return lists.find((t) => isList(t.url)) || lists[0] || usable[0] || null
+}
+
+async function startLine(line, limit, force) {
+  const L = LINES.find((x) => x.key === line) || { name: line }
+  const tab = await findLineTab(line)
+  if (!tab) {
+    return { ok: false, error: `没找到「${L.name}」的标签页 —— 先在浏览器打开它的搜索结果列表页` }
+  }
+  try {
+    return await chrome.tabs.sendMessage(tab.id, { action: 'batchStart', limit, force })
+  } catch {
+    return { ok: false, error: `「${L.name}」那个标签页还没注入脚本，刷新一下再试` }
+  }
+}
+
+async function stopLine(line) {
+  const tab = await findLineTab(line)
+  if (!tab) return { ok: false, error: '没找到该平台的标签页' }
+  try {
+    return await chrome.tabs.sendMessage(tab.id, { action: 'batchStop' })
+  } catch {
+    return { ok: false, error: '页面正在跳转，等两秒再停' }
+  }
+}
+
+// 每 1.5 秒刷新一次：原来只在打开 popup 那一刻读一次，
+// 所以批量在后台继续跑时界面永远停在同一格（2026-10-30 用户以为卡住就是这个原因）
+setInterval(refreshBatch, 1500)
+// 额度变化比进度慢得多，5 秒一次就够（1.5 秒会白读 4 次 storage）
+setInterval(refreshQuota, 5000)
+
+// ===================== 跳页投递的结果回显 =====================
+// BOSS 点「立即沟通」是整页跳转，原来 sendMessage 的响应必然丢失，界面看不到结果。
+// content 在聊天页发完消息后写 lastBossResult，这里轮询补上。
+let shownBossAt = null
+async function refreshJumpResult() {
+  try {
+    const { lastBossResult: r } = await chrome.storage.local.get('lastBossResult')
+    if (!r || !r.at || r.at === shownBossAt) return
+    shownBossAt = r.at
+    // 超过 5 分钟的旧结果不弹，避免一打开 popup 就显示上次的
+    if (Date.now() - new Date(r.at).getTime() > 300000) return
+    const head = `${r.ok ? '✅' : '❌'} ${r.company || ''}${r.jobTitle ? ` · ${r.jobTitle}` : ''}`
+    log(`${head}\n${r.message || ''}`)
+  } catch (_) {
+    /* 读不到就算了，不影响主流程 */
+  }
+}
+setInterval(refreshJumpResult, 1500)
+
+// ===================== 本地投递账本 =====================
+// 页面不一定显示「已投递」，所以状态以本地账本为准，页面显示只作参考
+function fmtWhen(iso) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function refreshApplied() {
+  const curEl = $('#appliedInfo')
+  const listEl = $('#appliedList')
+  try {
+    const tab = await activeTab()
+    let state = null
+    try {
+      state = await chrome.tabs.sendMessage(tab.id, { action: 'appliedState' })
+    } catch {
+      state = null
+    }
+    const list = await chrome.runtime.sendMessage({ action: 'listApplied', limit: 8 })
+    const total = (list && list.total) || 0
+
+    // ① 当前岗位状态 → 单次投递页
+    if (state && state.ok) {
+      const localHit = !!(state.local && state.local.applied)
+      const pageHit = !!(state.page && state.page.applied)
+      if (localHit) {
+        const when = state.local.at ? fmtWhen(state.local.at) : ''
+        curEl.textContent = `✅ 已投过${when ? `（${when}）` : ''}${
+          state.local.verified === false ? '\n⚠️ 当时没抓到成功提示，可能没投成' : ''
+        }`
+      } else if (pageHit) {
+        curEl.textContent = `✅ 页面显示已投（${state.page.btnText}）`
+      } else {
+        curEl.textContent = '⬜ 账本里没有，页面也没显示已投'
+      }
+      if (!state.jobId) curEl.textContent += '\n⚠️ 识别不到岗位 id（请打开岗位详情页）'
+    } else {
+      curEl.textContent = '— 读取失败（刷新页面后再试）'
+    }
+
+    // ② 账本历史 → 记录页
+    const lines = [`共 ${total} 条`]
+    const rows = (list && list.list) || []
+    if (!rows.length) lines.push('（还没有记录）')
+    rows.forEach((x) => {
+      lines.push(`· ${fmtWhen(x.at)} ${x.title || x.jobId}${x.verified === false ? '（未确认）' : ''}`)
+    })
+    if (total > rows.length) lines.push(`… 还有 ${total - rows.length} 条`)
+    listEl.textContent = lines.join('\n')
+  } catch {
+    curEl.textContent = '—'
+    listEl.textContent = '—'
+  }
+}
+
+function batchForceChecked() {
+  return !!(document.getElementById('batchForce') && document.getElementById('batchForce').checked)
+}
+function batchLimitValue(def = 5) {
+  return Number($('#batchLimit').value) || def
+}
+
+function startLogText(res, name) {
+  if (res && res.ok) {
+    const parts = [`✅ ${name}：${res.total} 家已启动`]
+    // 剩余额度不够整批时 content 会主动收缩，这里要说清楚为什么数量变少了
+    if (res.shrunk && res.quota) {
+      parts.push(`今日剩余额度只剩 ${res.quota.remaining} 家，本批按剩余量收缩`)
+    }
+    if (res.appliedSkip) parts.push(`本地记录里已投过 ${res.appliedSkip} 家，已排除`)
+    if (res.blocked) parts.push(`不符合筛选 ${res.blocked} 家`)
+    // 跑之前的额度基线：方便对账「这批投完应该到多少」
+    if (res.quota) {
+      parts.push(
+        res.quota.limit > 0
+          ? `今日 ${res.quota.used}/${res.quota.limit}`
+          : `今日 ${res.quota.used} 次（不限）`
+      )
+    }
+    return parts.join('；')
+  }
+  return `❌ ${name}：${(res && res.error) || '启动失败'}`
+}
+
+// 双线并发启动：两条线各发一条指令，各自跳自己的标签页，互不等待。
+// 真正的并行发生在两个标签页里（各自的 content script 独立推进），popup 只是发令枪。
+document.getElementById('batchBothBtn').addEventListener('click', async () => {
+  const limit = batchLimitValue()
+  const force = batchForceChecked()
+  const btn = document.getElementById('batchBothBtn')
+  btn.disabled = true
+  log(`正在并行启动两条线（每条 ${limit} 家）…`)
+  try {
+    const results = await Promise.all(LINES.map((L) => startLine(L.key, limit, force)))
+    log(results.map((r, i) => startLogText(r, LINES[i].name)).join('\n'))
+  } finally {
+    btn.disabled = false
+    setTimeout(refreshBatch, 800)
+  }
+})
+
+// 每条线单独的启动 / 停止
+for (const L of LINES) {
+  const startBtn = document.getElementById(`start-${L.key}`)
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true
+      log(`正在启动「${L.name}」这条线…`)
+      try {
+        const res = await startLine(L.key, batchLimitValue(), batchForceChecked())
+        log(startLogText(res, L.name))
+      } finally {
+        startBtn.disabled = false
+        setTimeout(refreshBatch, 500)
+      }
+    })
+  }
+
+  const stopBtn = document.getElementById(`stop-${L.key}`)
+  if (stopBtn) {
+    stopBtn.addEventListener('click', async () => {
+      const res = await stopLine(L.key)
+      log(
+        res && res.ok
+          ? `${L.name}：${res.message || '已请求停止'}`
+          : `❌ ${L.name}：${(res && res.error) || '停止失败'}`
+      )
+      refreshBatch()
+    })
+  }
+}
+
+// 只在当前标签页启动（就在那一页上操作时用）
+document.getElementById('batchBtn').addEventListener('click', async () => {
+  const limit = batchLimitValue()
+  const force = batchForceChecked()
+  log(force ? '正在抓取本页岗位链接（本批跳过风控检测）…' : '正在抓取本页岗位链接…')
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'batchStart', limit, force })
+    const name = res && res.line === 'boss' ? 'BOSS 直聘' : res && res.line === 'sx' ? '实习僧' : '当前页'
+    log(startLogText(res, name))
+  } catch {
+    log('❌ 当前页面无法通信（请在实习僧 / BOSS 的搜索结果列表页操作）')
+  }
+  refreshBatch()
+})
+
+document.getElementById('batchStopBtn').addEventListener('click', async () => {
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'batchStop' })
+    log((res && res.message) || '已请求停止')
+  } catch {
+    log('❌ 当前页面无法通信（可能正在跳转）')
+  }
+  refreshBatch()
+})
+
+// 卡住时手动推进：跳到队列里当前该投的那家
+document.getElementById('resumeBtn').addEventListener('click', async () => {
+  log('正在跳到下一家…')
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'batchJumpNext' })
+    if (res && res.ok) {
+      log(`已跳到第 ${res.index}/${res.total} 家：${res.title}`)
+    } else {
+      log(`❌ ${(res && res.error) || '跳转失败'}`)
+    }
+  } catch {
+    log('❌ 当前页面无法通信（可能正在跳转），等两秒再点')
+  }
+  setTimeout(refreshBatch, 800)
+})
+
+// ===================== 标签页切换 =====================
+function initTabs() {
+  const tabs = [...document.querySelectorAll('.tab')]
+  const activate = (name) => {
+    tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === name))
+    document.querySelectorAll('.pane').forEach((p) => {
+      p.classList.toggle('active', p.id === `pane-${name}`)
+    })
+    if (name === 'records') refreshHistory()
+    chrome.storage.local.set({ popupTab: name })
+  }
+  tabs.forEach((t) => {
+    t.addEventListener('click', () => activate(t.dataset.tab))
+  })
+  // 记住上次停留的标签页，重开不用重新点
+  chrome.storage.local.get('popupTab', (r) => {
+    const saved = r && r.popupTab
+    if (saved && document.getElementById(`pane-${saved}`)) activate(saved)
+  })
+}
+initTabs()
+
+// ===================== 账本按钮 =====================
+$('#checkAppliedBtn').addEventListener('click', () => {
+  refreshApplied()
+})
+
+$('#markAppliedBtn').addEventListener('click', async () => {
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'markCurrentApplied' })
+    if (res && res.ok) log(`✅ 已记为已投（账本共 ${res.total} 条），之后不会重复投这家`)
+    else log(`❌ ${(res && res.error) || '标记失败'}`)
+  } catch {
+    log('❌ 当前页面无法通信（请打开岗位详情页）')
+  }
+  refreshApplied()
+})
+
+$('#clearAppliedBtn').addEventListener('click', async () => {
+  // 清空 = 放弃所有防重复投递保护，必须二次确认
+  if (!window.confirm('确定清空全部投递记录？清空后无法再防止重复投递。')) return
+  await chrome.runtime.sendMessage({ action: 'clearApplied' })
+  log('已清空投递记录')
+  refreshApplied()
+})
+
+// ===================== 投递筛选面板（A 方案配置） =====================
+const F = window.JH_FILTERS
+const DAY_OPTIONS = [2, 3, 4, 5]
+const MONTH_OPTIONS = [1, 2, 3, 4, 6]
+const SCORE_OPTIONS = [0, 40, 50, 60, 70]
+
+let jobFilters = { ...F.DEFAULT_FILTERS }
+
+function loadJobFilters() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('filters', (r) => {
+      jobFilters = { ...F.DEFAULT_FILTERS, ...(r.filters || {}) }
+      if (!Array.isArray(jobFilters.cities)) jobFilters.cities = []
+      if (!Array.isArray(jobFilters.directions)) jobFilters.directions = []
+      resolve(jobFilters)
+    })
+  })
+}
+
+function saveJobFilters() {
+  chrome.storage.local.set({ filters: jobFilters })
+}
+
+function renderProvinceSelect() {
+  const sel = $('#provinceSel')
+  sel.innerHTML = ''
+  F.PROVINCES.forEach((p) => {
+    const o = document.createElement('option')
+    o.value = p.name
+    o.textContent = p.name
+    sel.appendChild(o)
+  })
+  const first = jobFilters.cities[0]
+  if (first) {
+    const hit = F.PROVINCES.find((p) => p.cities.includes(first))
+    if (hit) sel.value = hit.name
+  }
+}
+
+function renderCityList() {
+  const prov = F.PROVINCES.find((p) => p.name === $('#provinceSel').value)
+  const box = $('#cityList')
+  box.innerHTML = ''
+  if (!prov) return
+  prov.cities.forEach((c) => {
+    const on = jobFilters.cities.includes(c)
+    const label = document.createElement('label')
+    label.className = 'chip' + (on ? ' on' : '')
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = on
+    const span = document.createElement('span')
+    span.textContent = c
+    label.append(input, span)
+    input.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        if (!jobFilters.cities.includes(c)) jobFilters.cities.push(c)
+      } else {
+        jobFilters.cities = jobFilters.cities.filter((x) => x !== c)
+      }
+      label.classList.toggle('on', e.target.checked)
+      renderPicked()
+      saveJobFilters()
+    })
+    box.appendChild(label)
+  })
+}
+
+function renderPicked() {
+  $('#cityPicked').textContent = jobFilters.cities.length
+    ? `已选：${jobFilters.cities.join('、')}`
+    : '已选：—（不选 = 不限城市）'
+}
+
+function renderDirList() {
+  const box = $('#dirList')
+  box.innerHTML = ''
+  F.DIRECTIONS.forEach((d) => {
+    const on = jobFilters.directions.includes(d.id)
+    const label = document.createElement('label')
+    label.className = 'chip' + (on ? ' on' : '')
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = on
+    const span = document.createElement('span')
+    span.textContent = d.label
+    label.append(input, span)
+    input.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        if (!jobFilters.directions.includes(d.id)) jobFilters.directions.push(d.id)
+      } else {
+        jobFilters.directions = jobFilters.directions.filter((x) => x !== d.id)
+      }
+      label.classList.toggle('on', e.target.checked)
+      saveJobFilters()
+    })
+    box.appendChild(label)
+  })
+}
+
+function fillSelect(el, list, cur, fmt) {
+  el.innerHTML = list.map((v) => `<option value="${v}">${fmt(v)}</option>`).join('')
+  el.value = String(cur)
+}
+
+async function loadResumeOptions() {
+  const sel = $('#resumeSel')
+  sel.innerHTML = '<option value="">默认（简历库第一份）</option>'
+  try {
+    const r = await fetch('http://localhost:3100/api/resumes')
+    if (!r.ok) throw new Error('bad status')
+    const list = await r.json()
+    if (!Array.isArray(list) || !list.length) return
+    sel.innerHTML =
+      '<option value="">默认（简历库第一份）</option>' +
+      list
+        .map((x) => `<option value="${x.id}">${(x.title || x.id).replace(/</g, '&lt;')}</option>`)
+        .join('')
+    // 没选过就默认挑「测试开发」那份，避免默认用了运营版导致分数偏低
+    if (!jobFilters.resumeId) {
+      const qa = list.find((x) => /测试开发/.test(x.title || ''))
+      if (qa) {
+        jobFilters.resumeId = qa.id
+        saveJobFilters()
+      }
+    }
+    sel.value = jobFilters.resumeId || ''
+  } catch {
+    sel.innerHTML = '<option value="">后端未启动，读不到简历列表</option>'
+  }
+}
+
+async function initJobFilters() {
+  await loadJobFilters()
+  renderProvinceSelect()
+  renderCityList()
+  renderPicked()
+  renderDirList()
+  fillSelect($('#daysSel'), DAY_OPTIONS, jobFilters.daysPerWeek || 4, (v) => `${v} 天/周`)
+  fillSelect($('#monthsSel'), MONTH_OPTIONS, jobFilters.months || 3, (v) =>
+    v === 6 ? '6 个月及以上' : `${v} 个月`
+  )
+  fillSelect($('#scoreSel'), SCORE_OPTIONS, jobFilters.minScore || 0, (v) =>
+    v === 0 ? '不启用' : `≥ ${v} 分`
+  )
+  $('#filterEnabled').checked = jobFilters.enabled !== false
+  $('#strictMeta').checked = !!jobFilters.strictMeta
+  await loadResumeOptions()
+
+  $('#provinceSel').addEventListener('change', renderCityList)
+  $('#clearCity').addEventListener('click', () => {
+    jobFilters.cities = []
+    renderCityList()
+    renderPicked()
+    saveJobFilters()
+  })
+  $('#daysSel').addEventListener('change', (e) => {
+    jobFilters.daysPerWeek = Number(e.target.value)
+    saveJobFilters()
+  })
+  $('#monthsSel').addEventListener('change', (e) => {
+    jobFilters.months = Number(e.target.value)
+    saveJobFilters()
+  })
+  $('#scoreSel').addEventListener('change', (e) => {
+    jobFilters.minScore = Number(e.target.value)
+    saveJobFilters()
+  })
+  $('#resumeSel').addEventListener('change', (e) => {
+    jobFilters.resumeId = e.target.value
+    saveJobFilters()
+  })
+  $('#filterEnabled').addEventListener('change', (e) => {
+    jobFilters.enabled = e.target.checked
+    saveJobFilters()
+  })
+  $('#strictMeta').addEventListener('change', (e) => {
+    jobFilters.strictMeta = e.target.checked
+    saveJobFilters()
+  })
+}
+
+// 招呼语持久化。BOSS 没有「投递」这个动作，投递＝发这条消息，
+// 所以批量时必须有内容（实习僧可以空，BOSS 不能）。
+async function initGreeting() {
+  const { greeting = '' } = await chrome.storage.local.get('greeting')
+  if (greeting && !$('#greeting').value) $('#greeting').value = greeting
+  let timer = null
+  $('#greeting').addEventListener('input', () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => chrome.storage.local.set({ greeting: $('#greeting').value }), 400)
+  })
+}
+
+initGreeting()
+initJobFilters()

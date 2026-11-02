@@ -20,6 +20,14 @@ if (process.env.JOB_HUNTER_DATA_DIR) {
 
 const app = createApp()
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[job-hunter] Dev server running at http://localhost:${PORT}`)
+})
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[job-hunter] 端口 ${PORT} 已被占用。请先关闭占用进程，或用 \`npm run dev\` 自动清理残留。`)
+  } else {
+    console.error(err)
+  }
+  process.exit(1)
 })

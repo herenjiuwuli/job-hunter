@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { readJSON, writeJSON } from '../lib/store.js'
+import { readJSON, updateJSON } from '../lib/store.js'
 
 const router = Router()
 const KEY = 'records'
@@ -27,7 +27,6 @@ router.post('/api/records', async (req, res) => {
     }))
   }
 
-  const records = (await readJSON(KEY)) || []
   const record = {
     id: randomUUID(),
     resume: String(resume).slice(0, 8000),
@@ -38,8 +37,7 @@ router.post('/api/records', async (req, res) => {
     report,
     createdAt: new Date().toISOString(),
   }
-  records.push(record)
-  await writeJSON(KEY, records)
+  await updateJSON(KEY, (list) => [...list, record], [])
 
   res.json({ id: record.id })
 })
@@ -54,12 +52,18 @@ router.get('/api/records/:id', async (req, res) => {
 })
 
 router.delete('/api/records/:id', async (req, res) => {
-  const records = (await readJSON(KEY)) || []
-  const next = records.filter((r) => r.id !== req.params.id)
-  if (next.length === records.length) {
-    return res.status(404).json({ error: '记录不存在' })
-  }
-  await writeJSON(KEY, next)
+  let removed = false
+  await updateJSON(
+    KEY,
+    (list) => {
+      const next = list.filter((r) => r.id !== req.params.id)
+      if (next.length === list.length) return undefined
+      removed = true
+      return next
+    },
+    []
+  )
+  if (!removed) return res.status(404).json({ error: '记录不存在' })
   res.json({ ok: true })
 })
 

@@ -77,10 +77,51 @@
 
       <!-- 预测问题 -->
       <div class="card">
-        <div class="card-title">面试官可能会问</div>
-        <ol class="plain-list">
-          <li v-for="(q, i) in result.predictedQuestions" :key="i">{{ q }}</li>
-        </ol>
+      <div class="card-title">
+        面试官可能会问
+        <button class="btn btn-ghost btn-sm predict-btn" :disabled="predicting || !resume.trim() || !hasTargetJob" @click="predict">
+          {{ predicting ? '拆解中…' : 'Claim 深度预测（新方法）' }}
+        </button>
+      </div>
+      <p v-if="!hasTargetJob" class="muted predict-hint">深度预测需先选定目标岗位：在下方「岗位推荐」点选一个，或在右侧填写自定义岗位名后重试。</p>
+      <ol class="plain-list">
+        <li v-for="(q, i) in result.predictedQuestions" :key="i">{{ q }}</li>
+      </ol>
+
+        <div v-if="predictResult" class="predict">
+          <div v-if="predictResult.matrix.length" class="block-title">能力—证据—缺口矩阵</div>
+          <table v-if="predictResult.matrix.length" class="ptbl">
+            <thead>
+              <tr><th>岗位能力</th><th>简历证据</th><th>缺口 / 风险</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(m, i) in predictResult.matrix" :key="'m' + i">
+                <td>{{ m.capability }}</td>
+                <td class="ev">{{ m.evidence }}</td>
+                <td class="ev">{{ m.gap }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="block-title">高概率题</div>
+          <div v-for="(q, i) in predictResult.high" :key="'h' + i" class="qcard">
+            <div class="q">Q{{ i + 1 }}. {{ q.q }}</div>
+            <div class="meta muted">来源：{{ q.source }} ｜ 考察：{{ q.intent }}</div>
+            <div class="meta muted">应覆盖：{{ q.cover }} ｜ 追问：{{ q.followUp }}</div>
+          </div>
+
+          <div v-if="predictResult.supplement.length" class="block-title">补充题</div>
+          <div v-for="(q, i) in predictResult.supplement" :key="'s' + i" class="qcard">
+            <div class="q">Q. {{ q.q }}</div>
+            <div class="meta muted">来源：{{ q.source }} ｜ 考察：{{ q.intent }} ｜ 追问：{{ q.followUp }}</div>
+          </div>
+
+          <div v-if="predictResult.pressure.length" class="block-title">压力 / 场景题</div>
+          <div v-for="(q, i) in predictResult.pressure" :key="'p' + i" class="qcard pressure">
+            <div class="q">Q. {{ q.q }}</div>
+            <div class="meta muted">来源：{{ q.source }} ｜ 考察：{{ q.intent }} ｜ 追问：{{ q.followUp }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- 岗位推荐 -->
@@ -133,9 +174,13 @@ const loading = ref(false)
 const error = ref('')
 const result = computed(() => appState.analysis)
 const selectedJob = computed(() => appState.selectedJob)
+const predicting = ref(false)
+const predictResult = ref(null)
 // 自定义岗位入口：任意岗位名 + 可选 JD
 const customJobName = ref('')
 const customJobJd = ref('')
+// 深度预测必须锚定一个目标岗位；没选则禁用按钮并提示（避免打到后端 400）
+const hasTargetJob = computed(() => !!(selectedJob.value || customJobName.value.trim()))
 
 // 从简历库导入：拉取简历库列表，选中后转成文本填入分析框
 const resumes = ref([])
@@ -209,6 +254,25 @@ function selectCustomJob() {
   if (!name) return
   selectJob(name, customJobJd.value.trim())
   goInterview()
+}
+
+async function predict() {
+  if (!resume.value.trim() || predicting.value) return
+  predicting.value = true
+  predictResult.value = null
+  try {
+    const jobName = selectedJob.value || customJobName.value.trim() || ''
+    const res = await api.interviewPredict({
+      resume: resume.value,
+      job: jobName,
+      jd: customJobJd.value.trim(),
+    })
+    predictResult.value = res
+  } catch (e) {
+    error.value = e.message || '预测失败'
+  } finally {
+    predicting.value = false
+  }
 }
 
 async function analyze() {
@@ -327,6 +391,66 @@ async function analyze() {
 .muted {
   color: var(--text-secondary);
   font-size: 13px;
+}
+.predict-btn {
+  float: right;
+  margin-top: -4px;
+}
+.predict-hint {
+  margin: 0 0 12px;
+}
+.predict {
+  margin-top: 14px;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+.block-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin: 14px 0 8px;
+  text-transform: uppercase;
+}
+.ptbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ptbl th,
+.ptbl td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.ptbl th {
+  color: var(--text-dim);
+  font-weight: 600;
+  background: #fafafa;
+}
+.ev {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.qcard {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.qcard.pressure {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+.qcard .q {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+.qcard .meta {
+  font-size: 12px;
+  line-height: 1.6;
 }
 .plain-list {
   padding-left: 20px;

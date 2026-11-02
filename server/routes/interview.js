@@ -83,6 +83,22 @@ ${jd}
 考察重点：${type.focus}
 ${diff.rule}
 
+面试契约（锁定 Claim，而非泛泛八股）：
+你的提问应围绕简历与 JD 中的关键 Claim，分五类追问——
+- Ownership：个人范围、亲自实现、关键决策、团队分工（项目成果不能自动算成个人成果）；
+- Metric：baseline、分母、周期、数据来源、线上/离线口径、个人归因；
+- Technical：技术在项目中的输入输出、具体作用、选型原因、trade-off；
+- Architecture：组件、数据流、边界、替代方案、故障处理、扩展限制；
+- Result：是否真实交付、谁在用、如何衡量、个人动作与团队结果。
+
+动态追问与停止条件：
+- 证据充分 → 最多追一个替代方案或反事实问题 → 结束当前 Claim；
+- 部分充分 → 只追最关键的缺失证据；
+- 明显不懂 → 降阶到最小事实问题，仍无法回答则标记未验证并切换；
+- 连续两次重复措辞、没有新证据 → 停止该分支；
+- 优先追这些风险信号：用「负责/优化/提升」等模糊词却无对象动作；报百分比/用户量/延迟却说不清口径；用「主导/架构/Owner」却划不清个人边界；只会 happy path 不会说失败/回滚；能背术语却说不清在项目中的作用；回答与简历或前文自相矛盾。
+- 只评估当前可见证据，不替候选人脑补；发现「简历写得比实际掌握更强」时，在点评中温和提示「建议补充真实事实或降低表述强度」。
+
 提问规则：
 1. 基于候选人简历和岗位要求提问，优先从题目池选取，也可根据简历个性化提问
 2. 一次只问一个问题，问题简短明确
@@ -269,6 +285,78 @@ router.post('/api/interview/report', async (req, res) => {
   } catch (err) {
     console.error('[interview/report] failed:', err.message)
     res.status(500).json({ error: '报告生成失败，请稍后重试' })
+  }
+})
+
+router.post('/api/interview/predict', async (req, res) => {
+  const { resume, job, jd = '' } = req.body || {}
+
+  if (!resume || !String(resume).trim()) {
+    return res.status(400).json({ error: '缺少简历内容' })
+  }
+  if (!job && !String(jd).trim()) {
+    return res.status(400).json({ error: '请至少提供岗位或 JD' })
+  }
+
+  const jobInfo = job ? await resolveJob(job, jd) : null
+  const jdText = jobInfo?.jd || String(jd).slice(0, 4000) || ''
+
+  const systemPrompt = `你是一位资深面试官。请基于候选人的简历与岗位 JD，预测面试最可能被深挖的问题。
+不要批量生成与岗位无关的通用八股；每道题必须能验证一条真实主张。
+
+分析步骤：
+1. 从简历提取 Ownership / Metric / Technical / Architecture / Result 五类 Claim；
+2. 从 JD 提取岗位能力，建立「能力—简历证据—缺口」矩阵；
+3. 按相关度、发生概率、表述风险、证据缺口排序，产出高概率题、补充题、压力题。
+
+输出严格 JSON（不要输出 JSON 以外的任何内容）：
+{
+  "matrix": [
+    { "capability": "岗位能力点", "evidence": "简历中的对应证据（引用具体项目/函数/字段；找不到写'未提供'）", "gap": "证据缺口 / 风险点" }
+  ],
+  "high": [
+    { "q": "高概率会被问的问题", "source": "来源（简历中的哪段）", "intent": "考察意图", "cover": "回答应覆盖的事实", "followUp": "下一层追问" }
+  ],
+  "supplement": [
+    { "q": "补充题", "source": "来源", "intent": "考察意图", "cover": "回答应覆盖的事实", "followUp": "下一层追问" }
+  ],
+  "pressure": [
+    { "q": "压力面 / 场景设计题", "source": "来源", "intent": "考察意图", "cover": "回答应覆盖的事实", "followUp": "下一层追问" }
+  ]
+}
+要求：high 4-6 题、supplement 2-4 题、pressure 2-3 题；source/intent/cover/followUp 都要具体可落地；全部简体中文。`
+
+  try {
+    const data = await chatJSON([
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `候选人简历：\n${String(resume).slice(0, 6000)}\n\n目标岗位：${jobInfo?.name || job || '未提供'}\n${jdText ? `岗位 JD：\n${jdText}\n` : ''}\n请预测面试问题，严格输出 JSON。`,
+      },
+    ])
+
+    const arr = (v) => (Array.isArray(v) ? v : [])
+    const cleanQ = (q) => ({
+      q: String(q.q || ''),
+      source: String(q.source || ''),
+      intent: String(q.intent || ''),
+      cover: String(q.cover || ''),
+      followUp: String(q.followUp || ''),
+    })
+
+    res.json({
+      matrix: arr(data.matrix).slice(0, 12).map((m) => ({
+        capability: String(m.capability || ''),
+        evidence: String(m.evidence || '未提供'),
+        gap: String(m.gap || ''),
+      })),
+      high: arr(data.high).slice(0, 6).map(cleanQ),
+      supplement: arr(data.supplement).slice(0, 4).map(cleanQ),
+      pressure: arr(data.pressure).slice(0, 3).map(cleanQ),
+    })
+  } catch (err) {
+    console.error('[interview/predict] failed:', err.message)
+    res.status(500).json({ error: '问题预测失败：' + err.message })
   }
 })
 

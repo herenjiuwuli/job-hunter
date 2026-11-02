@@ -32,9 +32,21 @@ export const api = {
   },
   tailor: (data) => request('/tailor', { method: 'POST', body: JSON.stringify(data) }),
   match: (resumeId) => request(`/match?resumeId=${encodeURIComponent(resumeId)}`),
+  matchAnalyze: (resumeId, applicationId) =>
+    request('/match/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ resumeId, applicationId }),
+    }),
   backup: {
     export: () => request('/backup/export'),
     import: (data) => request('/backup/import', { method: 'POST', body: JSON.stringify(data) }),
   },
   dashboard: () => request('/dashboard'),
+  ammo: (data) => request('/ammo', { method: 'POST', body: JSON.stringify(data) }),
+  interviewPredict: (data) =>
+    request('/interview/predict', { method: 'POST', body: JSON.stringify(data) }),
+  resumeExport: (resumeId) =>
+    request('/resume/export', { method: 'POST', body: JSON.stringify({ resumeId }) }),
+  resumeImport: (data) =>
+    request('/resume/import', { method: 'POST', body: JSON.stringify(data) }),
 }

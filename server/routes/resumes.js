@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
-import { readJSON, writeJSON } from '../lib/store.js'
+import { readJSON, updateJSON } from '../lib/store.js'
 
 const router = Router()
 const KEY = 'resumes'
@@ -57,32 +57,46 @@ router.get('/api/resumes/:id', async (req, res) => {
 })
 
 router.post('/api/resumes', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
   const item = sanitize(req.body)
   item.id = randomUUID()
   item.updatedAt = new Date().toISOString()
-  list.push(item)
-  await writeJSON(KEY, list)
+  await updateJSON(KEY, (list) => [...list, item], [])
   res.json(item)
 })
 
 router.put('/api/resumes/:id', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
-  const idx = list.findIndex((r) => r.id === req.params.id)
-  if (idx === -1) return res.status(404).json({ error: '简历不存在' })
-  const item = sanitize(req.body)
-  item.id = req.params.id
-  item.updatedAt = new Date().toISOString()
-  list[idx] = item
-  await writeJSON(KEY, list)
-  res.json(item)
+  const body = req.body
+  const saved = await updateJSON(
+    KEY,
+    (list) => {
+      const idx = list.findIndex((r) => r.id === req.params.id)
+      if (idx === -1) return undefined
+      const item = sanitize(body)
+      item.id = req.params.id
+      item.updatedAt = new Date().toISOString()
+      const next = [...list]
+      next[idx] = item
+      return next
+    },
+    []
+  )
+  if (!saved) return res.status(404).json({ error: '简历不存在' })
+  res.json(saved.find((r) => r.id === req.params.id))
 })
 
 router.delete('/api/resumes/:id', async (req, res) => {
-  const list = (await readJSON(KEY)) || []
-  const next = list.filter((r) => r.id !== req.params.id)
-  if (next.length === list.length) return res.status(404).json({ error: '简历不存在' })
-  await writeJSON(KEY, next)
+  let removed = false
+  await updateJSON(
+    KEY,
+    (list) => {
+      const next = list.filter((r) => r.id !== req.params.id)
+      if (next.length === list.length) return undefined
+      removed = true
+      return next
+    },
+    []
+  )
+  if (!removed) return res.status(404).json({ error: '简历不存在' })
   res.json({ ok: true })
 })
 

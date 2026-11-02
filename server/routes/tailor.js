@@ -4,7 +4,7 @@ import { chatJSON } from '../lib/ai.js'
 
 const router = Router()
 
-function serializeResume(r) {
+export function serializeResume(r) {
   const lines = []
   lines.push(`# ${r.title || '未命名简历'}（${r.target || '未设方向'}）`)
   const b = r.basic || {}

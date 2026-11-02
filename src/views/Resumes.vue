@@ -9,8 +9,15 @@ const router = useRouter()
 const resumes = ref([])
 const mode = ref('list') // 'list' | 'edit'
 const saving = ref(false)
+const exporting = ref('')
 const message = ref('')
 const messageError = ref(false)
+
+// 导入简历（PDF / Word）
+const showImport = ref(false)
+const importFile = ref(null)
+const importing = ref(false)
+const importError = ref('')
 
 const emptyForm = () => ({
   id: '',
@@ -124,9 +131,100 @@ function beautify(id) {
   router.push(`/resume-builder?resumeId=${id}`)
 }
 
+async function exportPdf(r) {
+  if (exporting.value) return
+  exporting.value = r.id
+  try {
+    const { html } = await api.resumeExport(r.id)
+    const w = window.open('', '_blank')
+    if (!w) {
+      alert('浏览器拦截了新窗口，请允许弹窗后重试')
+      return
+    }
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    // 等样式与字体就绪再弹打印框（用户可在此「另存为 PDF」）
+    setTimeout(() => w.print(), 300)
+  } catch (e) {
+    alert(e.message || '导出失败')
+  } finally {
+    exporting.value = ''
+  }
+}
+
 function formatTime(t) {
   if (!t) return ''
   return String(t).slice(0, 10).replace('T', ' ')
+}
+
+// ===== 导入简历：选文件 → base64 → 后端解析 → 预填表单 =====
+function onImportFile(evt) {
+  const file = evt.target.files?.[0]
+  if (!file) return
+  importFile.value = file
+  importError.value = ''
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function doImport() {
+  const file = importFile.value
+  if (!file) {
+    importError.value = '请先选择文件'
+    return
+  }
+  const lower = file.name.toLowerCase()
+  if (!lower.endsWith('.pdf') && !lower.endsWith('.docx')) {
+    importError.value = '仅支持 PDF 和 Word(.docx)，旧版 .doc 请另存为 .docx 或 PDF'
+    return
+  }
+  importing.value = true
+  importError.value = ''
+  try {
+    const data = await fileToBase64(file)
+    const { resume } = await api.resumeImport({ filename: file.name, data })
+    applyImported(resume, file.name)
+  } catch (e) {
+    importError.value = e.message || '导入失败'
+  } finally {
+    importing.value = false
+  }
+}
+
+// 把 AI 解析出的结构化简历映射成编辑表单（作为新简历，用户核对后保存）
+function applyImported(raw, filename) {
+  const e = emptyForm()
+  e.title = raw.title || `导入-${new Date().toISOString().slice(0, 10)}`
+  e.target = raw.target || ''
+  e.basic = { ...e.basic, ...(raw.basic || {}) }
+  e.skillsText = (raw.skills || []).join('\n')
+  e.experiences = (raw.experiences || []).map((x) => ({
+    company: x.company || '',
+    role: x.role || '',
+    start: x.start || '',
+    end: x.end || '',
+    pointsText: (x.points || []).join('\n'),
+  }))
+  e.projects = (raw.projects || []).map((x) => ({
+    name: x.name || '',
+    role: x.role || '',
+    desc: x.desc || '',
+    highlightsText: (x.highlights || []).join('\n'),
+  }))
+  e.selfEvaluation = raw.selfEvaluation || ''
+  Object.assign(form, e)
+  message.value = `已从「${filename}」导入并解析，请核对字段后点「保存」入库。`
+  messageError.value = false
+  mode.value = 'edit'
+  showImport.value = false
 }
 
 onMounted(load)
@@ -141,7 +239,10 @@ onMounted(load)
           <h1 class="page-title">简历库</h1>
           <div class="page-sub">维护结构化母版简历，供 AI 定制与匹配打分使用</div>
         </div>
-        <button class="btn btn-primary" @click="openNew">+ 新建简历</button>
+        <div class="page-actions">
+          <button class="btn btn-primary" @click="openNew">+ 新建简历</button>
+          <button class="btn btn-outline" @click="showImport = true">导入简历</button>
+        </div>
       </div>
 
       <div v-if="!resumes.length" class="card empty-state">
@@ -165,6 +266,9 @@ onMounted(load)
           <div class="resume-card-actions">
             <button class="btn btn-outline" @click="openEdit(r)">编辑</button>
             <button class="btn btn-outline" @click="beautify(r.id)">AI 重写版</button>
+            <button class="btn btn-outline" :disabled="exporting === r.id" @click="exportPdf(r)">
+              {{ exporting === r.id ? '导出中…' : '导出 PDF' }}
+            </button>
             <button class="btn btn-danger" @click="remove(r)">删除</button>
           </div>
         </div>
@@ -270,6 +374,25 @@ onMounted(load)
         </div>
       </div>
     </template>
+
+    <!-- ===== 导入简历弹窗 ===== -->
+    <div v-if="showImport" class="modal-mask" @click.self="showImport = false">
+      <div class="modal">
+        <div class="modal-title">导入简历（PDF / Word）</div>
+        <div class="modal-desc">
+          上传你的 PDF 或 Word(.docx) 简历，系统解析文字后用 AI 整理成结构化字段，你核对后即可保存入库。扫描版图片 PDF 暂不支持（需先 OCR 成可复制文本）。
+        </div>
+        <input type="file" accept=".pdf,.docx" @change="onImportFile" />
+        <div v-if="importFile" class="muted" style="margin-top: 8px;">已选：{{ importFile.name }}</div>
+        <div v-if="importError" class="msg msg-error" style="margin-top: 8px;">{{ importError }}</div>
+        <div class="form-actions" style="margin-top: 14px;">
+          <button class="btn btn-primary" :disabled="importing" @click="doImport">
+            {{ importing ? '解析中…' : '解析并导入' }}
+          </button>
+          <button class="btn btn-outline" @click="showImport = false">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -343,5 +466,36 @@ onMounted(load)
 }
 .sub-block .grid-2 {
   margin-bottom: 8px;
+}
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal {
+  background: var(--surface, #fff);
+  border-radius: 12px;
+  padding: 24px;
+  width: min(440px, 92vw);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.modal input[type='file'] {
+  width: 100%;
+  font-size: 13px;
 }
 </style>

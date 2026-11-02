@@ -7,39 +7,192 @@
 <body>
   <header>
     <h1>求职自动化助手</h1>
-    <div class="quota">今日额度 <span id="quota">-</span></div>
+    <div class="quota">
+      <span id="quota-sx">实习僧 -/-</span>
+      <span id="quota-boss">BOSS -/-</span>
+    </div>
   </header>
 
-  <label class="lbl">打招呼语</label>
-  <textarea id="greeting" placeholder="粘贴投递给 HR 的话（可在网页端「AI 定制」生成）"></textarea>
+  <nav class="tabs">
+    <button class="tab active" data-tab="apply">单次投递</button>
+    <button class="tab" data-tab="batch">批量</button>
+    <button class="tab" data-tab="filter">筛选</button>
+    <button class="tab" data-tab="records">记录</button>
+  </nav>
 
-  <label class="check">
-    <input type="checkbox" id="autoClick" />
-    <span>自动点击投递（不勾 = 半自动，只填好话术由你手动点）</span>
-  </label>
+  <!-- ===== 单次投递 ===== -->
+  <section class="pane active" id="pane-apply">
+    <label class="lbl">当前岗位状态（本地账本为准）</label>
+    <div id="appliedInfo" class="statusbox">—</div>
 
-  <label class="check">
-    <input type="checkbox" id="bossActiveOnly" />
-    <span>仅投 BOSS 活跃岗位（跳过「半年前活跃」等）</span>
-  </label>
+    <label class="lbl">打招呼语（BOSS 必填：BOSS 的投递＝发出这条消息）</label>
+    <textarea id="greeting" placeholder="粘贴投递给 HR 的话（可在网页端「AI 定制」生成）。会自动保存，批量时复用。"></textarea>
 
-  <label class="lbl">关键词黑名单（命中即跳过，逗号/换行分隔）</label>
-  <textarea id="filterKeywords" placeholder="如：外包, 驻场, 销售岗"></textarea>
+    <label class="check">
+      <input type="checkbox" id="autoClick" />
+      <span>自动提交（勾选 = 全自动；不勾 = 半自动，只填好并高亮，你手动点确认/发送）</span>
+    </label>
 
-  <div class="row">
-    <button id="applyBtn" class="primary">投递当前岗位</button>
-  </div>
-  <div class="row">
-    <button id="inspectBtn">探测页面结构</button>
-    <button id="resetBtn">重置额度</button>
-  </div>
+    <div class="row">
+      <button id="applyBtn" class="primary">执行当前岗位</button>
+    </div>
+    <div class="row">
+      <button id="forceBtn" class="ghost">强制继续（跳过风控文本检测）</button>
+    </div>
+  </section>
+
+  <!-- ===== 批量 ===== -->
+  <section class="pane" id="pane-batch">
+    <label class="lbl">今日额度（分平台记账，到线自动停）</label>
+    <div id="quotaPanel"></div>
+
+    <label class="lbl">并行线路（两条线各跑各的进度，互不干扰）</label>
+
+    <div class="linebox" id="line-sx">
+      <div class="linehead">
+        <b>实习僧</b>
+        <span class="linestate" id="state-sx">未启动</span>
+      </div>
+      <div class="lineinfo" id="info-sx">—</div>
+      <div class="row">
+        <button class="mini" id="start-sx">启动这条线</button>
+        <button class="mini" id="stop-sx">停止</button>
+      </div>
+      <details>
+        <summary>队列</summary>
+        <pre id="queue-sx" class="inspect"></pre>
+      </details>
+    </div>
+
+    <div class="linebox" id="line-boss">
+      <div class="linehead">
+        <b>BOSS 直聘</b>
+        <span class="linestate" id="state-boss">未启动</span>
+      </div>
+      <div class="lineinfo" id="info-boss">—</div>
+      <div class="row">
+        <button class="mini" id="start-boss">启动这条线</button>
+        <button class="mini" id="stop-boss">停止</button>
+      </div>
+      <details>
+        <summary>队列</summary>
+        <pre id="queue-boss" class="inspect"></pre>
+      </details>
+    </div>
+
+    <div class="row" style="align-items: center; gap: 6px">
+      <span class="limtag">每日上限</span>
+      <span class="limtag">实习僧</span>
+      <input type="number" id="lim-sx" class="num" min="0" max="300" value="100" />
+      <span class="limtag">BOSS</span>
+      <input type="number" id="lim-boss" class="num" min="0" max="150" value="120" />
+    </div>
+
+    <div class="row">
+      <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
+      <button id="batchBothBtn" class="primary">双线并发启动</button>
+    </div>
+    <div class="row">
+      <button id="batchBtn" class="ghost">只启动当前页</button>
+      <button id="batchStopBtn" class="ghost">停当前页</button>
+      <button id="resumeBtn" class="ghost">继续下一家</button>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" id="batchForce" />
+      <span>跳过风控文本检测（确认页面上没有真验证码再勾）</span>
+    </label>
+
+    <div class="tip">
+      数字 = <b>每条线各投几家</b>；两条线<b>各自独立算额度</b>（实习僧默认 100、BOSS 默认 120）。<br />
+      上限填 <b>0 = 不限</b>。BOSS 官方每天 150 次沟通、到 120 会提醒，所以默认停在 120。<br />
+      启动前两个平台各开一个<b>搜索结果列表页</b>标签页，我会自己找。<br />
+      间隔：实习僧 15~30 秒，BOSS 30~60 秒。本地账本里投过的自动排除。<br />
+      <b>BOSS 必须先填打招呼语</b>（BOSS 的投递＝发出那条消息）。
+    </div>
+  </section>
+
+  <!-- ===== 筛选 ===== -->
+  <section class="pane" id="pane-filter">
+    <label class="check">
+      <input type="checkbox" id="filterEnabled" />
+      <span>启用筛选（不符合的自动跳过，不消耗额度）</span>
+    </label>
+
+    <label class="lbl">城市（可跨省多选，默认深圳）</label>
+    <div class="row">
+      <select id="provinceSel" class="sel"></select>
+      <button id="clearCity" class="mini">清空</button>
+    </div>
+    <div id="cityList" class="chips"></div>
+    <div id="cityPicked" class="picked">已选：—</div>
+
+    <div class="grid2">
+      <div>
+        <label class="lbl">每周能到岗</label>
+        <select id="daysSel" class="sel"></select>
+      </div>
+      <div>
+        <label class="lbl">能连续实习</label>
+        <select id="monthsSel" class="sel"></select>
+      </div>
+    </div>
+
+    <label class="lbl">方向（勾选即只投这些方向）</label>
+    <div id="dirList" class="chips"></div>
+
+    <label class="lbl">最低匹配分（需网页端后端在跑，0 = 不启用）</label>
+    <select id="scoreSel" class="sel"></select>
+
+    <label class="lbl">用哪份简历打分</label>
+    <select id="resumeSel" class="sel"></select>
+
+    <label class="check">
+      <input type="checkbox" id="strictMeta" />
+      <span>读不到城市/天数/月数的岗位也跳过（更严）</span>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="bossActiveOnly" />
+      <span>仅投 BOSS 活跃岗位（跳过「半年前活跃」等）</span>
+    </label>
+
+    <label class="lbl">关键词黑名单（命中即跳过，逗号/换行分隔）</label>
+    <textarea id="filterKeywords" placeholder="如：外包, 驻场, 销售岗"></textarea>
+  </section>
+
+  <!-- ===== 记录 ===== -->
+  <section class="pane" id="pane-records">
+    <label class="lbl">投递账本</label>
+    <div id="appliedList" class="statusbox">—</div>
+
+    <label class="lbl">近 7 天投递量（按平台）</label>
+    <pre id="historyList" class="inspect">—</pre>
+
+    <div class="row">
+      <button id="markAppliedBtn" class="ghost">标记当前岗位为已投</button>
+      <button id="checkAppliedBtn" class="ghost">刷新</button>
+    </div>
+    <div class="row">
+      <button id="clearAppliedBtn" class="danger">清空记录</button>
+    </div>
+
+    <div class="tip">页面不显示「已投递」时，用「标记当前岗位为已投」补录，之后就不会重复投。</div>
+
+    <div class="row">
+      <button id="inspectBtn" class="ghost">探测页面结构</button>
+      <button id="resetBtn" class="ghost">重置额度</button>
+    </div>
+
+    <details>
+      <summary>页面结构（校准选择器用）</summary>
+      <pre id="inspectOut" class="inspect"></pre>
+    </details>
+  </section>
 
   <div id="log" class="log"></div>
-  <details>
-    <summary>页面结构（校准选择器用）</summary>
-    <pre id="inspectOut" class="inspect"></pre>
-  </details>
 
+  <script src="../shared/filters-data.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

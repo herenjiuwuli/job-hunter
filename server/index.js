@@ -17,6 +17,9 @@ import applyRouter from './routes/apply.js'
 import salaryRouter from './routes/salary.js'
 import introRouter from './routes/intro.js'
 import prepRouter from './routes/prep.js'
+import ammoRouter from './routes/ammo.js'
+import exportRouter from './routes/export.js'
+import importRouter from './routes/import.js'
 import backupRouter from './routes/backup.js'
 import dashboardRouter from './routes/dashboard.js'
 
@@ -32,7 +35,7 @@ export function createApp({ serveStatic = false } = {}) {
   const app = express()
 
   app.use(cors())
-  app.use(express.json({ limit: '1mb' }))
+  app.use(express.json({ limit: '5mb' })) // 上调以支持简历文件 base64 上传
 
   app.use(resumesRouter)
   app.use(applicationsRouter)
@@ -47,6 +50,9 @@ export function createApp({ serveStatic = false } = {}) {
   app.use(salaryRouter)
   app.use(introRouter)
   app.use(prepRouter)
+  app.use(ammoRouter)
+  app.use(exportRouter)
+  app.use(importRouter)
   app.use(backupRouter)
   app.use(dashboardRouter)
 

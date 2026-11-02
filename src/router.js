@@ -14,6 +14,7 @@ import Salary from './views/Salary.vue'
 import Intro from './views/Intro.vue'
 import Mistakes from './views/Mistakes.vue'
 import Prep from './views/Prep.vue'
+import Ammo from './views/Ammo.vue'
 import Backup from './views/Backup.vue'
 import Dashboard from './views/Dashboard.vue'
 
@@ -41,6 +42,7 @@ export default createRouter({
     { path: '/intro', component: Intro },
     { path: '/mistakes', component: Mistakes },
     { path: '/prep', component: Prep },
+    { path: '/ammo', component: Ammo },
     // 数据管理
     { path: '/backup', component: Backup },
   ],

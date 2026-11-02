@@ -9,6 +9,10 @@ dist/
 server/data/*
 !server/data/jobs.json
 
+# 数据目录的手工/迁移备份（含同样的个人敏感数据，绝不能进 git）
+server/data.bak-*/
+data.bak-*/
+
 # Python 测试栈（pytest）
 .venv/
 .pytest_cache/
