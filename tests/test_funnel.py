@@ -180,6 +180,59 @@ def test_jobid_wins_over_name_variants():
     assert got["stage"] == "screening"
 
 
+# ---------- 采集：两边写法不一致也要能对上 ----------
+# 2026-11-02 真机同步时全部 ignored，就是因为下面这两种写法差异。
+# 这类错不报错、不抛异常，只是「一个都没推进」，最难发现。
+
+def test_collect_matches_title_with_platform_suffix():
+    """
+    实习僧列表页标题带「实习招聘」尾巴（「台架测试实习生实习招聘」），
+    详情页 / 本地记录是干净的「台架测试实习生」。
+    不剥尾巴 → 同一条投递永远匹配不上。
+    """
+    _app(company="法雷奥", jobTitle="台架测试实习生")
+    r = _collect(
+        [{"platform": "实习僧", "company": "法雷奥", "jobTitle": "台架测试实习生实习招聘", "stageRaw": "初筛"}]
+    )
+    body = r.json()
+    assert body["matched"] == 1, f"带「实习招聘」尾巴的标题没匹配上：{body}"
+    assert body["advancedCount"] == 1
+
+
+def test_collect_matches_company_with_city_suffix():
+    """平台写「法雷奥-深圳」，本地存的是「法雷奥」—— 城市后缀不能挡住匹配"""
+    _app(company="法雷奥", jobTitle="系统测试实习生")
+    r = _collect(
+        [{"platform": "实习僧", "company": "法雷奥-深圳", "jobTitle": "系统测试实习生", "stageRaw": "面试"}]
+    )
+    assert r.json()["matched"] == 1
+    got = requests.get(f"{BASE}/api/applications", timeout=10).json()[0]
+    assert got["stage"] == "interview"
+
+
+def test_collect_does_not_match_across_companies():
+    """
+    宽松匹配必须有边界：不同公司、同名岗位不能串。
+    （放宽了公司名比较之后，这条是防止匹配变「太松」的守门用例）
+    """
+    _app(company="甲公司", jobTitle="测试实习生")
+    r = _collect([{"platform": "实习僧", "company": "乙公司", "jobTitle": "测试实习生", "stageRaw": "初筛"}])
+    assert r.json()["matched"] == 0
+    assert r.json()["ignored"] == 1
+    got = requests.get(f"{BASE}/api/applications", timeout=10).json()[0]
+    assert got["stage"] == "submitted", "别家的同名岗位被误推进了"
+
+
+def test_collect_understands_success_wording():
+    """实习僧列表里行内状态写的是「投递成功」，不是「已投递」—— 认不出就只能丢掉这条"""
+    _app(company="蓝网科技", jobTitle="测试实习生")
+    r = _collect(
+        [{"platform": "实习僧", "company": "蓝网科技-深圳", "jobTitle": "测试实习生", "stageRaw": "投递成功"}]
+    )
+    assert r.json()["matched"] == 1
+    assert r.json()["advancedCount"] == 0, "投递成功 = 仍是已投递，不该算推进"
+
+
 # ---------- 漏斗口径 ----------
 
 def test_funnel_counts_reached_from_history_not_current():

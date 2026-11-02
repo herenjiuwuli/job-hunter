@@ -567,7 +567,7 @@ function fillGreeting(el, text) {
   el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }))
 }
 
-async function writeback(info, greeting) {
+async function writeback(info, greeting, jobId) {
   try {
     const r = await fetch(`${await backendBase()}/api/applications`, {
       method: 'POST',
@@ -576,6 +576,9 @@ async function writeback(info, greeting) {
         company: info.company,
         jobTitle: info.jobTitle,
         platform: platform(),
+        // jobId 必须带：采集进度时靠它精确对账。
+        // 早期没传，导致本地 18 条投递全是 jobId 空，同步只能拿名字硬猜
+        jobId: jobId || currentJobId() || '',
         greeting,
         status: '已投递',
         appliedAt: new Date().toISOString(),
@@ -1237,7 +1240,7 @@ async function runBossApply(msg) {
       source: 'auto',
     })
   }
-  await writeback(info, greeting)
+  await writeback(info, greeting, jobId)
 
   return {
     ok: result.state !== 'failed',
@@ -1418,7 +1421,7 @@ async function runApply(msg) {
         source: 'auto',
       })
     }
-    await writeback(sxInfo, '')
+    await writeback(sxInfo, '', jobId)
 
     return {
       ok: sxResult.state !== 'pending',
@@ -1493,7 +1496,7 @@ async function runApply(msg) {
       source: 'auto',
     })
   }
-  await writeback(info, greeting)
+  await writeback(info, greeting, bossJobId)
 
   return {
     ok: true,

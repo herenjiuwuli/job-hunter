@@ -4,7 +4,7 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：190 个 pytest 接口用例（`tests/`）+ 186 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
+- **测试**：194 个 pytest 接口用例（`tests/`）+ 216 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
 - **登录**：多用户隔离已落地 —— 每个接口都要带 token，数据按 `ownerId` 分开（见 §2.2）
 
 ## 一、它解决什么

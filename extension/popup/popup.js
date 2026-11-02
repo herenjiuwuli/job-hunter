@@ -878,7 +878,11 @@ async function collectProgress(probeMode) {
     }
     st.textContent = `抓到 ${collectPreview.length} 条 —— 确认无误再上传`
     out.textContent = collectPreview
-      .map((x, i) => `${i + 1}. ${x.company} / ${x.jobTitle} → ${x.stageRaw || (x.read ? '已读' : '未读')}`)
+      .map((x, i) => {
+        const stage = x.stageRaw || x.stage || (x.read ? '已读' : '未读')
+        const where = x.city ? `${x.company}（${x.city}）` : x.company
+        return `${i + 1}. ${where} / ${x.jobTitle} → ${stage}`
+      })
       .join('\n')
     $('#collectUploadBtn').disabled = false
   } catch (e) {
@@ -912,7 +916,9 @@ async function uploadProgress() {
     }
     st.textContent =
       `✅ 匹配 ${data.matched || 0}｜推进 ${data.advancedCount || 0}` +
-      `｜忽略 ${data.ignored || 0}｜新建 ${data.created || 0}`
+      `｜忽略 ${data.ignored || 0}｜新建 ${data.created || 0}` +
+      (data.matched && !data.advancedCount ? '（阶段没变化 = 平台还没往后走，正常）' : '') +
+      (data.ignored ? '｜「忽略」= 本地账本没这条投递，不会凭空新建' : '')
     $('#collectUploadBtn').disabled = true
   } catch (e) {
     st.textContent = `❌ 连不上 ${base}（后端没启动？）`

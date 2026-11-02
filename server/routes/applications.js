@@ -133,6 +133,32 @@ router.delete('/api/applications/:id', async (req, res) => {
 })
 
 /**
+ * 岗位名归一化，专治「同一条投递两边写法不同」。
+ *
+ * 平台列表页的标题常常带一个尾巴：实习僧是「台架测试实习生**实习招聘**」，
+ * 而详情页 / 本地面试记录里是「台架测试实习生」。不剥掉尾巴，同一条投递永远匹配不上，
+ * 表现就是「同步完一个都没推进」，而且不报错 —— 2026-11-02 真机就是这个毛病。
+ */
+function normTitle(s) {
+  return normKey(s).replace(/(实习招聘|校园招聘|社会招聘|长期招聘|招聘|急招|热招)$/, '')
+}
+
+/**
+ * 公司名是否同一家。
+ * 除了完全相同，还允许「一边是另一边的子串」：本地存「法雷奥」、平台写「法雷奥汽车」，
+ * 或者反过来。这不会造成张冠李戴 —— 下面还要同时比岗位名，两道一起过才算同一条。
+ */
+function sameCompany(a, b) {
+  const x = normKey(a)
+  const y = normKey(b)
+  if (!x || !y) return false
+  if (x === y) return true
+  const short = x.length <= y.length ? x : y
+  const long = x.length <= y.length ? y : x
+  return short.length >= 2 && long.includes(short)
+}
+
+/**
  * 判断平台上报的一条 vs 本地一条，是不是同一份投递。
  *
  * 优先用 jobId（平台主键，最可靠）；没有 jobId 才退回「平台+公司+岗位」。
@@ -145,10 +171,7 @@ function sameApply(local, remote) {
   const lp = String(local.platform || '')
   const rp = String(remote.platform || '')
   if (lp && rp && lp !== rp) return false
-  return (
-    normKey(local.company) === normKey(remote.company) &&
-    normKey(local.jobTitle) === normKey(remote.jobTitle)
-  )
+  return sameCompany(local.company, remote.company) && normTitle(local.jobTitle) === normTitle(remote.jobTitle)
 }
 
 /**
