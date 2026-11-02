@@ -842,4 +842,85 @@ $('#saveConnBtn').addEventListener('click', async () => {
   testConnection()
 })
 
+// ---------- 投递进度同步 ----------
+// 采集只在「当前页」做，不翻页不点击；上传前必须人工看一眼预览。
+// 为什么强制这一步：平台 DOM 一改就可能把公司名抓成奇怪的东西，
+// 静默入库之后是脏数据，而脏数据比没数据更难发现。
+let collectPreview = null
+
+async function collectProgress(probeMode) {
+  const st = $('#collectStatus')
+  const out = $('#collectOut')
+  $('#collectUploadBtn').disabled = true
+  collectPreview = null
+  st.textContent = probeMode ? '探测中…' : '采集本页…'
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: probeMode ? 'probe' : 'collect' })
+    if (!res || res.ok === false) {
+      st.textContent = `❌ ${(res && res.error) || '采集失败'}`
+      out.textContent = ''
+      return
+    }
+    const d = res.data || {}
+    if (probeMode) {
+      out.textContent = JSON.stringify(d, null, 2)
+      st.textContent = `探测到 ${d.hits || 0} 处阶段文案，结构见下方`
+      return
+    }
+
+    collectPreview = Array.isArray(d.items) ? d.items : []
+    const dbg = d.debug || {}
+    if (!collectPreview.length) {
+      st.textContent = `没抓到可用的行（命中 ${dbg.hits || 0} 处｜取不到行 ${dbg.noRow || 0}｜取不到岗位 ${dbg.noName || 0}）`
+      out.textContent = JSON.stringify(dbg, null, 2)
+      return
+    }
+    st.textContent = `抓到 ${collectPreview.length} 条 —— 确认无误再上传`
+    out.textContent = collectPreview
+      .map((x, i) => `${i + 1}. ${x.company} / ${x.jobTitle} → ${x.stageRaw || (x.read ? '已读' : '未读')}`)
+      .join('\n')
+    $('#collectUploadBtn').disabled = false
+  } catch (e) {
+    st.textContent = '❌ 请先打开实习僧「我的投递」或 BOSS 对话列表页'
+  }
+}
+
+async function uploadProgress() {
+  if (!collectPreview || !collectPreview.length) return
+  const st = $('#collectStatus')
+  const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
+  const base = (jhBackend || 'http://localhost:3100').replace(/\/+$/, '')
+  st.textContent = '上传中…'
+  try {
+    const r = await fetch(`${base}/api/applications/collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(jhToken ? { Authorization: `Bearer ${jhToken}` } : {}),
+      },
+      body: JSON.stringify({ items: collectPreview }),
+    })
+    if (r.status === 401) {
+      st.textContent = '❌ 401：先在下面「后端连接」里填 token'
+      return
+    }
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      st.textContent = `❌ 后端返回 ${r.status}：${data.error || ''}`
+      return
+    }
+    st.textContent =
+      `✅ 匹配 ${data.matched || 0}｜推进 ${data.advancedCount || 0}` +
+      `｜忽略 ${data.ignored || 0}｜新建 ${data.created || 0}`
+    $('#collectUploadBtn').disabled = true
+  } catch (e) {
+    st.textContent = `❌ 连不上 ${base}（后端没启动？）`
+  }
+}
+
+document.getElementById('collectBtn').addEventListener('click', () => collectProgress(false))
+document.getElementById('collectProbeBtn').addEventListener('click', () => collectProgress(true))
+document.getElementById('collectUploadBtn').addEventListener('click', uploadProgress)
+
 initConnection()

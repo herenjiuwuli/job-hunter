@@ -190,6 +190,23 @@
     </details>
 
     <details>
+      <summary>投递进度同步（在「我的投递」/ 对话列表页点采集）</summary>
+      <div class="row">
+        <button id="collectBtn" class="primary">采集本页进度</button>
+        <button id="collectProbeBtn" class="ghost">探测</button>
+      </div>
+      <div id="collectStatus" class="statusbox">—</div>
+      <pre id="collectOut" class="inspect"></pre>
+      <div class="row">
+        <button id="collectUploadBtn" class="ghost" disabled>确认上传</button>
+      </div>
+      <div class="tip">
+        采集只读当前页：不翻页、不点按钮、不发请求。上传前先看预览 —— 岗位或公司抓歪了就别传，
+        把「探测」结果发给我校准。
+      </div>
+    </details>
+
+    <details>
       <summary>后端连接（多用户后必须填 token）</summary>
       <label class="lbl">后端地址</label>
       <input id="backendUrl" type="text" placeholder="http://localhost:3100" />

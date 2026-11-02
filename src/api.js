@@ -76,6 +76,11 @@ export const api = {
     create: (data) => request('/applications', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     remove: (id) => request(`/applications/${id}`, { method: 'DELETE' }),
+    collect: (items, opts = {}) =>
+      request('/applications/collect', {
+        method: 'POST',
+        body: JSON.stringify({ items, ...opts }),
+      }),
   },
   profile: {
     get: () => request('/profile'),
@@ -93,6 +98,7 @@ export const api = {
     import: (data) => request('/backup/import', { method: 'POST', body: JSON.stringify(data) }),
   },
   dashboard: () => request('/dashboard'),
+  funnel: (groupBy) => request(`/funnel${groupBy ? `?groupBy=${encodeURIComponent(groupBy)}` : ''}`),
   ammo: (data) => request('/ammo', { method: 'POST', body: JSON.stringify(data) }),
   interviewPredict: (data) =>
     request('/interview/predict', { method: 'POST', body: JSON.stringify(data) }),

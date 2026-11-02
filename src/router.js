@@ -19,6 +19,7 @@ import Prep from './views/Prep.vue'
 import Ammo from './views/Ammo.vue'
 import Backup from './views/Backup.vue'
 import Dashboard from './views/Dashboard.vue'
+import Funnel from './views/Funnel.vue'
 import Settings from './views/Settings.vue'
 
 const router = createRouter({
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/', redirect: '/dashboard' },
     // 总览
     { path: '/dashboard', component: Dashboard },
+    { path: '/funnel', component: Funnel },
     // 求职执行
     { path: '/applications', component: Applications },
     { path: '/profile', component: Profile },

@@ -7,6 +7,7 @@ import resumesRouter from './routes/resumes.js'
 import authRouter from './routes/auth.js'
 import { requireAuth } from './lib/auth.js'
 import applicationsRouter from './routes/applications.js'
+import funnelRouter from './routes/funnel.js'
 import profileRouter from './routes/profile.js'
 import tailorRouter from './routes/tailor.js'
 import matchRouter from './routes/match.js'
@@ -77,6 +78,7 @@ export function createApp({ serveStatic = false } = {}) {
   app.use(importRouter)
   app.use(backupRouter)
   app.use(dashboardRouter)
+  app.use(funnelRouter)
 
   // 生产模式：单端口同时提供前端静态资源与 API
   if (serveStatic) {

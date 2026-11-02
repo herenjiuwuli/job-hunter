@@ -61,11 +61,12 @@ $env:JH_BASE="http://localhost:3200"; $env:JOB_HUNTER_DATA_DIR="$env:TEMP\jh_tes
 | test_backup.py | /api/backup/export、import | 5 | 空数据导出兜底 + 含数据导出 + 导入校验（缺数据/错类型 400）+ 导入恢复 |
 | test_dashboard.py | /api/dashboard | 4 | 空默认结构 + 投递分布 + 面试指标 + 画像目标岗位聚合 |
 | test_resume_flow.py | 简历库 → /api/resume/generate 链路 | 3 | 跨接口流程：创建 → 生成 → 保存 content → 拉回验证 |
-| **test_auth.py** | `/api/auth/*` + 全部接口 | 57 | 表驱动：42 个接口无 token 一律 401；坏 token / 缺 Bearer / 篡改签名 / **过期 token**（用真实密钥在 py 端自签）全 401；重复注册 409、弱密码 400、错口令与未知用户给同一句话（防枚举）、连续失败 5 次锁 10 分钟 |
+| **test_auth.py** | `/api/auth/*` + 全部接口 | 60 | 表驱动：45 个接口无 token 一律 401；坏 token / 缺 Bearer / 篡改签名 / **过期 token**（用真实密钥在 py 端自签）全 401；重复注册 409、弱密码 400、错口令与未知用户给同一句话（防枚举）、连续失败 5 次锁 10 分钟 |
 | **test_tenant_isolation.py** | 全部数据接口 | 20 | A/B 两用户：B 拿 A 的 id 读/改/删 → 404；列表互不可见；dashboard / backup 导出 / match 分析只算自己的；画像每人一份；请求体塞 `ownerId` 无效；备份导入不能污染别人 |
 | **test_invite.py** | `/api/auth/invites*` + `/api/auth/register` | 21 | 邀请制：无码 403；有效码可注册且 token 可用、角色是 member；同码二次 403；过期 / 已撤销 / 伪造 / 差一位全 403；**并发 5 个抢同一码只成功 1 个**；非 owner 发码/看码/撤销全 403；列表能看出状态与「谁用掉的」；注册失败（重名 / 短密码）会把码退回 |
+| **test_funnel.py** | `/api/applications/collect`、`/api/funnel` | 28 | 阶段只前进（先面试后读到「被查看」不回退）；`rejected` 能盖面试但盖不掉 offer；已读时间不被重复同步刷新；默认不新建、`createMissing` 才导入；同公司不同岗位不串；`jobId` 优先于名字；**漏斗层数按「到达过」算**（判了不合格仍计入面试层）；草稿不进分母；按方向分组；B 调 collect 动不了 A 的记录 |
 
-**合计 159 用例**（含老用例 61 条，一条未改 —— 见下方「默认身份注入」）。
+**合计 190 用例**（含老用例 61 条，一条未改 —— 见下方「默认身份注入」）。
 
 > 岗位已全面放开：interview / apply / salary / prep / intro 均不再对「未知岗位」报 400，而是按「自定义岗位 + 可选自定义 JD」生成；analyze 的岗位推荐也不再限定知识库岗位名。
 
@@ -89,7 +90,7 @@ pytest 只能证明「接口对不对」。另外两层各自补一个盲区：
 
 | 命令 | 覆盖 | 补的盲区 |
 |---|---|---|
-| `npm run test:node` | 124 条（store 并发 13 / 邀请码纯函数 29 / 投递账本 17 / jobId 8 / 批量行解析 21 / 额度 36） | 纯函数边界（字符集、过期临界点）和并发行为 —— 这些在 HTTP 层要么测不到，要么得改文件造数据 |
+| `npm run test:node` | 186 条（store 并发 13 / 邀请码纯函数 29 / 投递账本 17 / jobId 8 / 批量行解析 21 / 额度 36 / **阶段规则 62**） | 纯函数边界（字符集、过期临界点、权重优先级）和并发行为 —— 这些在 HTTP 层要么测不到，要么得改文件造数据 |
 | `npm run check:ui:login` | 真机 14 项（CDP 驱动本机 Chrome） | 「build 通过 ≠ 浏览器能用」。踩过的真 bug：`app.use(requireAuth)` 少写 `/api`，静态资源一起 401 白屏，**接口测试一条都不会红** |
 
 真机验收怎么跑（需要一个 owner 账号来发码）：

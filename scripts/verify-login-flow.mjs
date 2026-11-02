@@ -267,7 +267,52 @@ async function main() {
       check('成员能看到改密码表单', memberPw)
       check('成员看不到邀请码管理', !memberInvite, memberInvite ? '普通成员竟然看到了邀请码卡片' : '')
 
-      // ④ 换成 owner：设置页能看到邀请码，且能生成一个新的
+      // ④ 漏斗页：造 3 条投递并推进阶段，看页面渲染的层数对不对。
+      //    为什么一定要真机验：漏斗是「后端聚合 + 前端算百分比」两段拼起来的，
+      //    接口返回对不代表页面对；空态、条形宽度、百分比格式只有看才知道。
+      await cdp.eval(`(async () => {
+        const h = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('jh_token') }
+        for (const [company, jobTitle] of [['甲数据','数据运营实习'], ['乙科技','数据分析实习'], ['丙公司','内容策划实习']]) {
+          await fetch('/api/applications', {
+            method: 'POST', headers: h,
+            body: JSON.stringify({ company, jobTitle, platform: '实习僧', status: '已投递', appliedAt: new Date().toISOString() }),
+          })
+        }
+        await fetch('/api/applications/collect', {
+          method: 'POST', headers: h,
+          body: JSON.stringify({ items: [
+            { platform: '实习僧', company: '甲数据', jobTitle: '数据运营实习', stageRaw: '面试' },
+            { platform: '实习僧', company: '乙科技', jobTitle: '数据分析实习', stageRaw: '初筛' },
+            { platform: '实习僧', company: '丙公司', jobTitle: '内容策划实习', stageRaw: '不合格' },
+          ] }),
+        })
+        return true
+      })()`)
+
+      await nav(cdp, '/funnel')
+      await cdp.waitFor(`document.body.innerText.includes('投递漏斗')`, '漏斗页渲染')
+      check('漏斗页能打开', true)
+
+      const funnelNums = await cdp.eval(
+        `[...document.querySelectorAll('.funnel-num')].map(e=>e.textContent.trim()).join('/')`
+      )
+      // 甲到面试（累计计入 已投递~面试）、乙到初筛、丙被判不合格 → 3/2/2/1/1/0
+      check('漏斗层数正确（到达数口径）', funnelNums === '3/2/2/1/1/0', funnelNums)
+
+      const totalCard = await cdp.eval(`(document.querySelector('.stat-num')||{}).textContent||''`)
+      check('首张指标卡 = 已投递 3', totalCard.trim() === '3', totalCard.trim())
+
+      if (process.env.JH_SHOT_FUNNEL) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', {
+          width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false,
+        })
+        await sleep(300)
+        const shot = await cdp.send('Page.captureScreenshot', { format: 'png' })
+        writeFileSync(process.env.JH_SHOT_FUNNEL, Buffer.from(shot.data, 'base64'))
+        console.log(`  📷 漏斗截图：${process.env.JH_SHOT_FUNNEL}`)
+      }
+
+      // ⑤ 换成 owner：设置页能看到邀请码，且能生成一个新的
       if (OWNER_USER && OWNER_PASS) {
         await cdp.eval(`(document.querySelector('.sidebar-logout')||{click(){}}).click()`)
         await cdp.waitFor(`location.pathname === '/login'`, '退出回登录页')
@@ -312,7 +357,7 @@ async function main() {
       }
     }
 
-    // ⑤ token 失效 → 自动弹回登录页
+    // ⑥ token 失效 → 自动弹回登录页
     await cdp.eval(`localStorage.setItem('jh_token','broken.token.value')`)
     await cdp.send('Page.reload')
     await sleep(800)

@@ -4,7 +4,7 @@
 > 把「做简历、投简历、面面试」三件事串成一条可追踪的流水线。
 
 - **仓库**：https://github.com/herenjiuwuli/job-hunter
-- **测试**：159 个 pytest 接口用例（`tests/`）+ 124 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
+- **测试**：190 个 pytest 接口用例（`tests/`）+ 186 个 node 单测（`scripts/test-*.mjs`），详见 [`TESTING.md`](TESTING.md)
 - **登录**：多用户隔离已落地 —— 每个接口都要带 token，数据按 `ownerId` 分开（见 §2.2）
 
 ## 一、它解决什么
@@ -87,6 +87,26 @@
 
 > 前端守卫只是体验层（没 token 就跳登录页）；**真正的权限在后端** —— 改掉 localStorage 绕过守卫，每个接口照样 401。
 
+### 2.3 投递漏斗（2026-11，数据闭环）
+
+前面所有能力都在「投出去之前」。这一层补的是**投出去之后**：平台上的进度抓回来，算转化。
+
+| 概念 | 含义 | 为什么不合并 |
+|---|---|---|
+| `status`（原有 7 档） | 你手动标的主状态 | 给人看，含「已沟通」这种模糊档 |
+| `stage`（新增 7 档） | 平台告诉你的客观阶段 | 给统计用，只有采集器写 |
+| `readAt` / `repliedAt` | 首次被查看 / 首次有回话 | BOSS 的「已回复」不推进 stage —— HR 回一句「发份简历」不等于进初筛 |
+
+**三条口径，决定这个漏斗可不可信**：
+
+1. **阶段只前进**：权重 `submitted < viewed < screening < written < interview < rejected < offer`，权重更大才允许覆盖。抓取有时序，页面偶尔渲染出旧状态，回退一次整个漏斗就脏了。
+2. **层数算「到达过」不是「此刻停在这」**：一条已判不合格的记录曾经到过面试，面试层必须算它。只按当前状态统计，画出来是分布图不是漏斗。
+3. **分母只含平台确认过的投递**：草稿（`待投递`）不进分母，否则转化率被自己的草稿稀释。
+
+采集端是**文本驱动**的：按「初筛 / 不合格 / 已读」这些业务文案定位，不猜 class 名（类名三天两头改，产品文案不会）。抓到结果**先预览再上传** —— 抓歪了会显示出来，不会静默入库。
+
+> 相关命令：`npm run migrate:stages`（老记录补 stage，幂等、有变更才备份）；漏斗页 `/funnel`。
+
 ## 三、技术栈
 
 - **前端**：Vue 3.5 + Vite 8 + Vue Router 4（history 路由，单仓 `src/`）
@@ -158,14 +178,14 @@ npm run check:ui:login                                          # 真机验登�
 
 ```
 job-hunter/
-├── src/                    # Vue3 前端（20 视图，含登录页与账号设置）
+├── src/                    # Vue3 前端（21 视图，含登录页、账号设置、投递漏斗）
 │   ├── views/              # 登录/账号设置/投递追踪/匹配排序/简历库/写简历/面试准备…
 │   ├── router.js           # history 路由 + 登录守卫
 │   ├── auth.js             # token 与登录态（localStorage + 响应式）
 │   ├── api.js              # 后端 API 封装（自动带 token，401 统一跳登录）
 │   ├── store.js            # 面试全局状态
 │   └── style.css           # 统一设计变量 + 组件样式
-├── server/                 # Express 后端（19 个路由模块 / 47 条接口，另有 /api/health）
+├── server/                 # Express 后端（20 个路由模块 / 49 条接口，另有 /api/health）
 │   ├── routes/             # auth(含邀请码)/resumes/applications/profile/tailor/match/interview/…
 │   ├── lib/                # auth.js（token/口令/角色）/ invites.js（邀请码）
 │   │                       # scope.js（归属过滤）/ ai.js / store.js / jobs.js / matcher.js

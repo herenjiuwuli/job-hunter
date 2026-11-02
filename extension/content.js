@@ -591,6 +591,22 @@ async function writeback(info, greeting) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // 投递进度采集：collect = 按业务文案抓；probe = 原样吐结构给人工校准
+  if (msg.action === 'collect' || msg.action === 'probe') {
+    const c = window.__jhCollector
+    if (!c) {
+      sendResponse({ ok: false, error: '采集器脚本未加载，请重新加载扩展' })
+      return
+    }
+    try {
+      const data = msg.action === 'collect' ? c.collectFromPage() : c.probePage()
+      sendResponse({ ok: true, data })
+    } catch (e) {
+      sendResponse({ ok: false, error: String(e && e.message) })
+    }
+    return
+  }
+
   if (msg.action === 'inspect') {
     const boxes = [...document.querySelectorAll('textarea, [contenteditable="true"], input[type="text"]')].map((el, i) => ({
       i,

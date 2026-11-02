@@ -31,6 +31,9 @@ function logout() {
           <router-link to="/applications" class="nav-item" :class="{ active: active === '/applications' }">
             投递追踪
           </router-link>
+          <router-link to="/funnel" class="nav-item" :class="{ active: active === '/funnel' }">
+            投递漏斗
+          </router-link>
           <router-link to="/profile" class="nav-item" :class="{ active: active === '/profile' }">
             候选人画像
           </router-link>
