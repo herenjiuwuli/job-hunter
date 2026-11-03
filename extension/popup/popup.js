@@ -605,6 +605,17 @@ const F = window.JH_FILTERS
 const DAY_OPTIONS = [2, 3, 4, 5]
 const MONTH_OPTIONS = [1, 2, 3, 4, 6]
 const SCORE_OPTIONS = [0, 40, 50, 60, 70]
+// 经验要求上限：值是「岗位要求的最低年限」，0=只接受经验不限/在校，99=不筛
+const EXP_OPTIONS = [0, 1, 3, 5, 99]
+const EXP_LABEL = {
+  0: '只投「经验不限/在校」',
+  1: '还能接受「1年以内」',
+  3: '还能接受「1-3年」',
+  5: '还能接受「3-5年」',
+  99: '不限（不筛经验）',
+}
+// 学历要求上限：值是「学历要求的序数」，6=不筛
+const EDU_OPTIONS = [3, 4, 5, 6]
 
 let jobFilters = { ...F.DEFAULT_FILTERS }
 
@@ -745,6 +756,14 @@ async function initJobFilters() {
   fillSelect($('#scoreSel'), SCORE_OPTIONS, jobFilters.minScore || 0, (v) =>
     v === 0 ? '不启用' : `≥ ${v} 分`
   )
+  // BOSS 专用两项。默认「只投经验不限/在校」+「最高接受本科」——
+  // 实习僧卡片上没有这两个词，读不到就不拦，所以对那条线零影响。
+  fillSelect($('#expSel'), EXP_OPTIONS, jobFilters.maxExperience != null ? jobFilters.maxExperience : 0, (v) =>
+    EXP_LABEL[v] || String(v)
+  )
+  fillSelect($('#eduSel'), EDU_OPTIONS, jobFilters.maxEduRank != null ? jobFilters.maxEduRank : 4, (v) =>
+    v >= 6 ? '不限（不筛学历）' : `最高接受「${(F.EDU_LABELS || [])[v] || '本科'}」`
+  )
   $('#filterEnabled').checked = jobFilters.enabled !== false
   $('#strictMeta').checked = !!jobFilters.strictMeta
   await loadResumeOptions()
@@ -766,6 +785,15 @@ async function initJobFilters() {
   })
   $('#scoreSel').addEventListener('change', (e) => {
     jobFilters.minScore = Number(e.target.value)
+    saveJobFilters()
+  })
+  $('#expSel').addEventListener('change', (e) => {
+    // 0 是有效值（只投经验不限），不能用 || 兜底，否则会被当成「没选」
+    jobFilters.maxExperience = Number(e.target.value)
+    saveJobFilters()
+  })
+  $('#eduSel').addEventListener('change', (e) => {
+    jobFilters.maxEduRank = Number(e.target.value)
     saveJobFilters()
   })
   $('#resumeSel').addEventListener('change', (e) => {

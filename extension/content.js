@@ -469,6 +469,22 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
     }
   }
 
+  // 4) BOSS 专属：经验 / 学历门槛
+  // 为什么单列一条：BOSS 卡片上**没有**「x天/周」「x个月」，上面两条对它形同虚设；
+  // 但它明确写「经验不限 / 1-3年 / 3-5年」和「本科 / 硕士」，这两项才是 BOSS 上真正能筛的。
+  // 实习僧卡片读不到这些词 → 不拦，对那条线零影响（宁可少拦，不可误杀）。
+  if (typeof F.detectBossMeta === 'function') {
+    const bm = F.detectBossMeta(metaSrc)
+    if (f.maxExperience != null && bm.experienceYears != null && bm.experienceYears > f.maxExperience) {
+      const mine = f.maxExperience === 0 ? '只投经验不限/在校' : `${f.maxExperience} 年以内`
+      return { blocked: true, reason: `要求「${bm.experienceLabel}」经验（你${mine}）`, meta }
+    }
+    if (f.maxEduRank != null && bm.eduRank != null && bm.eduRank > f.maxEduRank) {
+      const mine = F.EDU_LABELS ? F.EDU_LABELS[f.maxEduRank] : '本科'
+      return { blocked: true, reason: `要求${bm.eduLabel}（你最高接受${mine}）`, meta }
+    }
+  }
+
   return { blocked: false, reason: '', meta }
 }
 
@@ -1687,7 +1703,14 @@ async function collectJobLinks() {
 
     const title = linkTitleOf(a)
     if (!title) return
-    const card = cardTextOf(a)
+    // 卡片文本优先用「链接向上锁定的容器」（采集器那套），而不是 cardTextOf 的猜测。
+    // BOSS 卡片上没有「x天/周」，cardTextOf 会退化成「任意够长的父级」，可能拿到整个列表区 →
+    // 文本里混进别的岗位和别的城市 → detectCity 命中外地 → 整批误跳过（页面上看不出错）。
+    // 探测已确认：BOSS 列表页每张卡各自锁到独立的 DIV.card-area。
+    const rowEl = window.__jhCollector && window.__jhCollector.rowOfLink
+      ? window.__jhCollector.rowOfLink(a)
+      : null
+    const card = rowEl ? (rowEl.innerText || '').trim() : cardTextOf(a)
     // 列表页信息不全，识别不到城市/时长时不拦（allowUnknown=true），详情页会再校验一次
     const screen = screenJob({ jobTitle: title, company: '', jdText: card, metaText: card }, f, true)
     if (screen.blocked) {

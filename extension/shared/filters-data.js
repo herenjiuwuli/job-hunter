@@ -119,6 +119,72 @@
     }
   }
 
+  // ===== BOSS 卡片专属：经验 / 学历 / 薪资 =====
+  // 为什么要单写一套：BOSS 的岗位卡是「岗位名 / 薪资 / 经验 / 学历 / 公司 / 地址」，
+  // **没有**「x天/周」「x个月」—— 实习僧那套门槛在 BOSS 上等于全放行（实测 2026-11-03 探测）。
+  // 而经验、学历这两项 BOSS 卡片上写得清清楚楚，是真正能用的筛子。
+  //
+  // ⚠️ 薪资**读不出数字**：BOSS 用字体混淆渲染数字，innerText 只能拿到 `-K`、`-K·薪`。
+  // 所以这里不解析薪资 —— 想按薪资筛只能另做 OCR/字体映射，不值当。
+
+  // 顺序不能换：先窄条件后宽条件。「1年以内」必须排在「1-3年」前面。
+  // ⚠️ 这里**绝不能**写「实习」—— 岗位标题里几乎都带「实习」（「测试实习生」「数据分析实习」），
+  // 一旦写进去，所有岗位都会被判成「经验不限」，连「1年以内」都抢不到，
+  // 门槛等于失效（2026-11-03 单测抓到的就是这个）。
+  // 「在校 / 应届」可以留：它们是明确的身份表述，且确实代表不要求经验。
+  const EXP_RULES = [
+    { re: /经验不限|无经验|无需经验|不要求经验/, years: 0, label: '经验不限' },
+    { re: /在校|应届/, years: 0, label: '在校/应届' },
+    { re: /1\s*年以内|一年以内/, years: 1, label: '1年以内' },
+    { re: /1\s*[-~—]\s*3\s*年/, years: 3, label: '1-3年' },
+    { re: /3\s*[-~—]\s*5\s*年/, years: 5, label: '3-5年' },
+    { re: /5\s*[-~—]\s*10\s*年/, years: 10, label: '5-10年' },
+    { re: /10\s*年以上/, years: 99, label: '10年以上' },
+  ]
+
+  // 学历要求 → 序数（越大要求越高）。「学历不限」= 0，任何学历都能投
+  const EDU_RULES = [
+    { re: /学历不限|不限学历/, rank: 0, label: '学历不限' },
+    { re: /初中|小学/, rank: 1, label: '初中' },
+    { re: /中专|中技|职高/, rank: 1, label: '中专/中技' },
+    { re: /高中/, rank: 2, label: '高中' },
+    { re: /大专|专科/, rank: 3, label: '大专' },
+    { re: /本科/, rank: 4, label: '本科' },
+    { re: /硕士|研究生/, rank: 5, label: '硕士' },
+    { re: /博士/, rank: 6, label: '博士' },
+  ]
+
+  const EDU_LABELS = ['学历不限', '初中/中专', '高中', '大专', '本科', '硕士', '博士']
+
+  function detectBossMeta(text) {
+    const t = String(text || '')
+    let experienceYears = null
+    let experienceLabel = ''
+    for (const r of EXP_RULES) {
+      if (r.re.test(t)) {
+        experienceYears = r.years
+        experienceLabel = r.label
+        break
+      }
+    }
+    // 学历取**最严**的那条：卡片上若同时写「本科」和「硕士优先」，按硕士算。
+    // 但「学历不限」是门槛为零的显式声明，优先于其他任何词。
+    let eduRank = null
+    if (/学历不限|不限学历/.test(t)) {
+      eduRank = 0
+    } else {
+      for (const r of EDU_RULES) {
+        if (r.rank > 0 && r.re.test(t) && (eduRank === null || r.rank > eduRank)) eduRank = r.rank
+      }
+    }
+    return {
+      experienceYears,
+      experienceLabel,
+      eduRank,
+      eduLabel: eduRank === null ? '' : EDU_LABELS[eduRank] || '',
+    }
+  }
+
   const DEFAULT_FILTERS = {
     enabled: true,
     cities: ['深圳'],
@@ -128,14 +194,19 @@
     minScore: 0, // 0 = 不用 B 方案打分门槛
     resumeId: '', // B 方案用哪份简历打分
     strictMeta: false, // true = 城市/天数/月数识别不到时也拦截
+    // BOSS 专用（实习僧没有这两项，卡片上读不到就不拦，不会误杀）
+    maxExperience: 0, // 可接受的最大经验要求（年）：0 = 只要「经验不限/在校/应届」
+    maxEduRank: 4, // 可接受的最高学历要求：4 = 本科（要求硕士/博士的岗位跳过）
   }
 
   window.JH_FILTERS = {
     PROVINCES,
     DIRECTIONS,
     DEFAULT_FILTERS,
+    EDU_LABELS,
     normalizeCity,
     detectCity,
     detectMeta,
+    detectBossMeta,
   }
 })()

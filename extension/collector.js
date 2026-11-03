@@ -1359,6 +1359,8 @@ window.__jhCollector = {
   probeListing,
   // 纯函数也导出：单测与日后排查直接调，不用再复制一份规则
   parseRowLines,
+  rowOfLink,
+  jobIdOfHref,
   stageOfText,
   stageOfTabName,
   mergeEntries,
