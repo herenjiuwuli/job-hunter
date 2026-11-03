@@ -842,6 +842,36 @@ $('#saveConnBtn').addEventListener('click', async () => {
   testConnection()
 })
 
+// 用账号密码换 token，自动填进 token 框，省去「复制 token 可能弄脏」这一步。
+$('#loginBtn').addEventListener('click', async () => {
+  const base = ($('#backendUrl').value.trim() || CONN_DEFAULT_BASE).replace(/\/+$/, '')
+  const username = $('#loginUser').value.trim()
+  const password = $('#loginPass').value
+  if (!username || !password) {
+    $('#connStatus').textContent = '❌ 先填用户名和密码'
+    return
+  }
+  $('#connStatus').textContent = '登录中…'
+  try {
+    const r = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok || !j.token) {
+      $('#connStatus').textContent = `❌ 登录失败：${j.error || r.status}`
+      return
+    }
+    $('#authToken').value = j.token
+    await chrome.storage.local.set({ jhBackend: base, jhToken: j.token })
+    $('#connStatus').textContent = '✅ 登录成功，token 已自动填入并保存'
+    testConnection()
+  } catch (e) {
+    $('#connStatus').textContent = `❌ 连不上 ${base}（后端没启动？）`
+  }
+})
+
 // ---------- 投递进度同步 ----------
 // 采集只在「当前页」做，不翻页不点击；上传前必须人工看一眼预览。
 // 为什么强制这一步：平台 DOM 一改就可能把公司名抓成奇怪的东西，
@@ -890,9 +920,158 @@ async function collectProgress(probeMode) {
   }
 }
 
+const STAGE_CN = {
+  submitted: '已投递',
+  viewed: '被查看',
+  screening: '初筛',
+  written: '笔试',
+  interview: '面试',
+  rejected: '不合格',
+  offer: '录用',
+}
+
+/**
+ * 预览渲染：**按阶段分组**，并标出「这条是按哪个 tab 判的」。
+ * 分阶段采集最容易出错的地方就是「阶段判错」，所以预览里必须能一眼看出归属来源。
+ */
+function renderPreview(items, dbg) {
+  const lines = []
+  const byStage = new Map()
+  for (const it of items) {
+    const k = it.stage || 'unknown'
+    if (!byStage.has(k)) byStage.set(k, [])
+    byStage.get(k).push(it)
+  }
+  const order = ['submitted', 'viewed', 'screening', 'written', 'interview', 'rejected', 'offer', 'unknown']
+  for (const k of order) {
+    const list = byStage.get(k)
+    if (!list || !list.length) continue
+    const label = STAGE_CN[k] || k
+    lines.push(`【${label}】${list.length} 条`)
+    for (const x of list) {
+      const where = x.city ? `${x.company}（${x.city}）` : x.company
+      const from = x.fromTab && x.fromTab !== label ? `   ← 来自「${x.fromTab}」tab` : ''
+      lines.push(`  · ${where} / ${x.jobTitle}${from}`)
+    }
+    lines.push('')
+  }
+
+  const tabs = (dbg.tabs || []).filter((t) => t.rows)
+  if (tabs.length) {
+    lines.push('各分类 tab 命中：')
+    for (const t of tabs) {
+      lines.push(
+        `  ${t.name}${t.mirrored ? '（镜像·只信行内文案）' : ''} → ${t.rows} 条 / ${t.pages} 页` +
+          (t.note ? `｜${t.note}` : '')
+      )
+    }
+  }
+  if (dbg.baseTab) lines.push(`\n基线 tab：${dbg.baseTab}（行最多的那个，镜像判定以它为准）`)
+  if (dbg.mode === 'single') lines.push('\n未识别到分类 tab（BOSS 列表或平台改版），按单视图翻页采集')
+  if (dbg.notes && dbg.notes.length) lines.push(`\n[提示] ${dbg.notes.join('；')}`)
+  return lines.join('\n')
+}
+
+// 全阶段采集：content.js 逐一切换分类 tab（已投递/被查看/初筛/…）并翻页，
+// 按 jobId 合并取权重最大的阶段。不是 tab 页面时自动退回单视图翻页。
+async function collectAllProgress() {
+  const st = $('#collectStatus')
+  const out = $('#collectOut')
+  $('#collectUploadBtn').disabled = true
+  collectPreview = null
+  st.textContent = '按阶段采集中…（会依次切各个分类 tab 并翻页，约 10~30 秒，别关弹窗）'
+  out.textContent = ''
+  try {
+    const tab = await activeTab()
+    const res = await chrome.tabs.sendMessage(tab.id, { action: 'collectAll' })
+    if (!res || res.ok === false) {
+      st.textContent = `❌ ${(res && res.error) || '采集失败'}`
+      return
+    }
+    const d = res.data || {}
+    const items = Array.isArray(d.items) ? d.items : []
+    const dbg = d.debug || {}
+    if (!items.length) {
+      st.textContent = `没抓到可用的行（${dbg.stopped || '该页面没有投递记录'}）`
+      out.textContent = renderPreview([], dbg)
+      return
+    }
+    collectPreview = items
+
+    const hitTabs = (dbg.tabs || []).filter((t) => t.rows).length
+    const where = dbg.mode === 'single' ? '单视图翻页' : `${hitTabs} 个阶段 tab`
+    st.textContent = `采集到 ${items.length} 条（${where}，共 ${dbg.pages || 1} 页）—— 确认无误再上传`
+    out.textContent = renderPreview(items, dbg)
+    $('#collectUploadBtn').disabled = false
+  } catch (e) {
+    st.textContent = '❌ 请先打开实习僧「我的投递 → 投递反馈」页'
+  }
+}
+
+// 一键：按阶段采集 → 过滤已同步且没变化的 → 直接上传 → 显示整体汇总。
+async function collectAndUpload() {
+  const btn = $('#collectOneClickBtn')
+  // 采集要切 7 个 tab、翻页，耗时几秒到几十秒；不禁用的话连点两次会两路同时点 tab 互相打架
+  if (btn.disabled) return
+  btn.disabled = true
+  try {
+    await runCollectAndUpload()
+  } finally {
+    btn.disabled = false
+  }
+}
+
+async function runCollectAndUpload() {
+  const st = $('#collectStatus')
+  const out = $('#collectOut')
+  await collectAllProgress()
+  if (!collectPreview || !collectPreview.length) return
+
+  // 过滤掉「上次已同步、阶段也没变」的，只报有变化的部分
+  const before = collectPreview.length
+  collectPreview = await filterAlreadySynced(collectPreview)
+  const skipped = before - collectPreview.length
+  if (!collectPreview.length) {
+    st.textContent = `✅ 无新变化（${before} 条均已同步且阶段未变）`
+    out.textContent =
+      '平台没往后推进，没有需要更新的。\n\n想确认「全阶段采集」本身抓到了什么，点「全阶段采集（先看预览）」。'
+    $('#collectUploadBtn').disabled = true
+    return
+  }
+  if (skipped > 0) {
+    out.textContent = `已跳过 ${skipped} 条未变化的，剩余 ${collectPreview.length} 条待上报：\n\n` + out.textContent
+  }
+  await uploadProgress()
+  // 上传成功后把本次的 jobId+阶段 记进缓存（无论 matched 还是 created，都算「已同步」）
+  await rememberSynced(collectPreview)
+}
+
+// 「已同步」缓存：记下上次上传时「jobId + 阶段」的组合。
+// 下次采集时，jobId 相同且阶段没变的直接跳过（省重复请求），阶段变了的照报（不漏推进）。
+// 存 chrome.storage.local，键 jhSyncedJobs = { [jobId]: stageKey }。
+async function filterAlreadySynced(items) {
+  const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
+  return items.filter((it) => {
+    const id = it.jobId
+    if (!id) return true // 没有 jobId 的没法判断，照报
+    const prevStage = jhSyncedJobs[id]
+    return prevStage !== it.stage // 阶段变了要报；没变过或没记过的也报（prevStage undefined 时 !== 成立）
+  })
+}
+
+async function rememberSynced(items) {
+  const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
+  const next = { ...jhSyncedJobs }
+  for (const it of items) {
+    if (it.jobId && it.stage) next[it.jobId] = it.stage
+  }
+  await chrome.storage.local.set({ jhSyncedJobs: next })
+}
+
 async function uploadProgress() {
   if (!collectPreview || !collectPreview.length) return
   const st = $('#collectStatus')
+  const out = $('#collectOut')
   const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
   const base = (jhBackend || 'http://localhost:3100').replace(/\/+$/, '')
   st.textContent = '上传中…'
@@ -914,11 +1093,19 @@ async function uploadProgress() {
       st.textContent = `❌ 后端返回 ${r.status}：${data.error || ''}`
       return
     }
+    // 整体汇总：把上报条数 + 后端处理结果一起呈现，扫一眼就知道干了什么
+    const lines = []
+    lines.push(`上报 ${collectPreview.length} 条，已提交后端：`)
+    lines.push(`  · 匹配 ${data.matched || 0}（本地已有这条投递）`)
+    lines.push(`  · 推进 ${data.advancedCount || 0}（阶段往前走了）`)
+    lines.push(`  · 新建 ${data.created || 0}（本地账本没有，新入库）`)
+    lines.push(`  · 忽略 ${data.ignored || 0}（对不上，未入库）`)
+    if (data.matched && !data.advancedCount) lines.push('')
+    if (data.matched && !data.advancedCount) lines.push('阶段没变化 = 平台还没往后走，正常。')
     st.textContent =
-      `✅ 匹配 ${data.matched || 0}｜推进 ${data.advancedCount || 0}` +
-      `｜忽略 ${data.ignored || 0}｜新建 ${data.created || 0}` +
-      (data.matched && !data.advancedCount ? '（阶段没变化 = 平台还没往后走，正常）' : '') +
-      (data.ignored ? '｜「忽略」= 本地账本没这条投递，不会凭空新建' : '')
+      `✅ 完成｜匹配 ${data.matched || 0}｜推进 ${data.advancedCount || 0}` +
+      `｜新建 ${data.created || 0}｜忽略 ${data.ignored || 0}`
+    out.textContent = lines.join('\n')
     $('#collectUploadBtn').disabled = true
   } catch (e) {
     st.textContent = `❌ 连不上 ${base}（后端没启动？）`
@@ -926,6 +1113,8 @@ async function uploadProgress() {
 }
 
 document.getElementById('collectBtn').addEventListener('click', () => collectProgress(false))
+document.getElementById('collectAllBtn').addEventListener('click', collectAllProgress)
+document.getElementById('collectOneClickBtn').addEventListener('click', collectAndUpload)
 document.getElementById('collectProbeBtn').addEventListener('click', () => collectProgress(true))
 document.getElementById('collectUploadBtn').addEventListener('click', uploadProgress)
 

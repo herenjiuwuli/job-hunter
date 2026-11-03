@@ -210,6 +210,11 @@ summary {
   word-break: break-all;
 }
 
+/* 全阶段预览按「阶段分组 + tab 命中概况」输出，比普通检查框长，给更高一档 */
+.inspect.tall {
+  max-height: 340px;
+}
+
 .num {
   width: 56px;
   flex: none;
@@ -457,4 +462,38 @@ button.danger {
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* ===== 投递进度同步（独立区块） ===== */
+.syncbox {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+
+.synchead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.synchead b {
+  font-size: 13px;
+  color: #111827;
+}
+
+.syncnote {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+button.big {
+  width: 100%;
+  flex: none;
+  padding: 11px 12px;
+  font-size: 14px;
+  margin-bottom: 10px;
 }

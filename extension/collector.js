@@ -18,8 +18,10 @@
  *
  * 三条纪律：
  *  1. **认不出就不猜**：结构异常 → 这条不上报，宁可漏。
- *  2. **只读当前页**：不翻页、不点按钮、不发任何请求。
- *  3. **结果可预览**：探测模式直接给「解析后」的结果，抓歪了一眼就能看出来。
+ *  2. **只动「看」不动「投」**：分阶段采集会点分类 tab、点分页「下一页」——
+ *     这两样只改「显示哪一页」，不改平台状态；**绝不点投递/沟通/撤回/删除**。
+ *     采完会把你原本停留的 tab 切回去。
+ *  3. **结果可预览**：上传前先出预览，抓歪了一眼就能看出来。
  */
 
 /* eslint-disable no-unused-vars */
@@ -118,6 +120,78 @@ function stageOfText(t) {
     if (!best || WEIGHT[w] > WEIGHT[best]) best = w
   }
   return best ? STAGE_KEY[best] : null
+}
+
+/** tab 名 → 阶段。取名字里**最长**的阶段词（`已投递` 不该被更短的词抢走） */
+function stageOfTabName(name) {
+  const s = String(name || '').trim()
+  if (!s || s.length > 16) return null
+  let best = null
+  for (const w of STAGE_WORDS) {
+    if (!s.includes(w)) continue
+    if (!best || w.length > best.length) best = w
+  }
+  if (!best) return null
+  return { word: best, key: STAGE_KEY[best], weight: WEIGHT[best] }
+}
+
+function sameIdSet(a, b) {
+  const x = Array.isArray(a) ? a : []
+  const y = Array.isArray(b) ? b : []
+  if (!x.length || x.length !== y.length) return false
+  const s = new Set(x)
+  for (const id of y) if (!s.has(id)) return false
+  return true
+}
+
+/**
+ * 基线 tab = 行数最多的那个。
+ * 为什么要基线：平台上 7 个分类 pane 可能渲染的是**同一份全量列表**，
+ * 拿这种「全量镜像」的 tab 名当阶段，会把所有投递都标成高阶段。
+ */
+function pickBaseTab(tabs) {
+  let base = null
+  for (const t of Array.isArray(tabs) ? tabs : []) {
+    if (!t || !Array.isArray(t.ids) || !t.ids.length) continue
+    if (!base || t.ids.length > base.ids.length) base = t
+  }
+  return base
+}
+
+/** 该 tab 的 jobId 集合是否与基线**完全相同**（= 全量镜像，阶段不可信） */
+function isMirrorOfBase(tab, base) {
+  if (!tab || !base || tab === base) return false
+  return sameIdSet(tab.ids, base.ids)
+}
+
+/**
+ * 多来源采集结果合并：同一 jobId 只留一条，阶段取**权重最大**的那个。
+ *
+ * 为什么取最大而不是「最后采集到的」：
+ *   tab 的遍历顺序不代表投递的推进顺序（已投递排第一，但它的行内文案可能是旧的）。
+ *   权重规则与后端 lib/stages.js 的 shouldAdvance 完全一致 —— 前后端同一把尺子。
+ *
+ * @param {Array<{item:object, weight?:number}>} entries
+ * @returns {{items: object[], duplicate: number}}
+ */
+function mergeEntries(entries) {
+  const map = new Map()
+  let duplicate = 0
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const it = e && e.item
+    if (!it) continue
+    const key = it.jobId || `${it.company}|${it.jobTitle}`
+    const w = e.weight != null ? e.weight : WEIGHT_BY_KEY[it.stage] || 0
+    const cur = map.get(key)
+    if (!cur) {
+      map.set(key, { it, w })
+      continue
+    }
+    duplicate++
+    if (w > cur.w) map.set(key, { it, w })
+    else if (it.read && !cur.it.read) cur.it.read = true
+  }
+  return { items: [...map.values()].map((v) => v.it), duplicate }
 }
 
 /** 一行里所有阶段词里最靠后的那个（返回原始文案 + key） */
@@ -323,7 +397,8 @@ function activeTab() {
     for (const el of els) {
       if (!isShown(el)) continue
       const t = (el.innerText || '').trim()
-      if (!t || t.length > 8) continue
+      // tab 名可能带徽标数字（「已投递 12」），放宽到 12 个字
+      if (!t || t.length > 12) continue
       if (!isStageWord(t)) continue
       return { text: t, stage: STAGE_KEY[t] }
     }
@@ -331,14 +406,92 @@ function activeTab() {
   return null
 }
 
-/** 结构策略：按岗位链接收集候选行 */
-function candidateRows() {
+/**
+ * 页面上所有分类 tab 面板（含 display:none 的）。
+ *
+ * 实习僧「投递反馈」是 Element UI 的 el-tabs：7 个 `.el-tab-pane`，
+ * 每个 pane 通过 `aria-labelledby` 指向它自己的 tab 头。
+ * 平台把数据渲染进所有 pane（不是懒加载），所以**不用点 tab 就能读到全部**。
+ */
+function tabPanes() {
+  const panes = [...document.querySelectorAll('.el-tab-pane, [role="tabpanel"]')]
+  if (!panes.length) return []
+  const heads = [...document.querySelectorAll('.el-tabs__item, [role="tab"]')]
+  return panes.map((pane, i) => {
+    let head = null
+    const lb = pane.getAttribute('aria-labelledby')
+    if (lb) head = document.getElementById(lb)
+    if (!head && heads[i]) head = heads[i]
+    const name = head ? String(head.innerText || '').trim() : ''
+    const st = stageOfTabName(name)
+    return { pane, head, name, stage: st ? st.key : null, word: st ? st.word : '', weight: st ? st.weight : 0 }
+  })
+}
+
+function idsOf(rows) {
+  return rows.map((r) => r.jobId).filter(Boolean)
+}
+
+/** 某个 pane 自己的「下一页」（可能不可见，但 disabled 状态可读） */
+function paneNextBtn(pane) {
+  for (const b of pane.querySelectorAll('button.btn-next')) {
+    if (!b.disabled) return b
+  }
+  return null
+}
+
+async function waitPaneChange(pane, prevKeys, timeoutMs = 4000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 350))
+    const now = idsOf(rowsInRoot(pane, false)).join('|')
+    if (now && now !== prevKeys) return true
+  }
+  return false
+}
+
+/** 页面上有没有正在转的 loading 遮罩（Element UI 的 el-loading-mask） */
+function loadingNow() {
+  for (const m of document.querySelectorAll('.el-loading-mask')) {
+    const s = getComputedStyle(m)
+    if (s.display !== 'none' && s.visibility !== 'hidden') return true
+  }
+  return false
+}
+
+/** 点完 tab 后，等「激活态切到目标 tab」且「loading 消失」 */
+async function waitTabReady(name, timeoutMs = 5000) {
+  const target = stageOfTabName(name)
+  const t0 = Date.now()
+  await new Promise((r) => setTimeout(r, 150))
+  while (Date.now() - t0 < timeoutMs) {
+    const cur = activeTab()
+    const now = cur ? stageOfTabName(cur.text) : null
+    if (target && now && now.key === target.key && !loadingNow()) return true
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  return false
+}
+
+/**
+ * 结构策略：按岗位链接收集候选行。
+ *
+ * @param {Element} [root]        在哪个子树里找（默认整页）
+ * @param {boolean} [onlyShown]   是否跳过不可见的行（默认 true）
+ *
+ * ⚠️ onlyShown 的来历：实习僧 7 个分类 tab 是同一份列表复制了 7 份，
+ * 其他 6 份是 display:none 但 DOM 还在，querySelectorAll 照样能找到。
+ * 不跳过隐藏 tab，翻页判断会把 7 份链接混在一起，永远判「列表没变」。
+ * 但也正因为这份重复，**分阶段采集时反而要主动进到隐藏 pane 里读**（onlyShown: false）。
+ */
+function rowsInRoot(root, onlyShown = true) {
   const out = []
   const seen = new Set()
-  for (const a of document.querySelectorAll('a[href]')) {
-    if (!isJobLink(a)) continue
+  const scope = root || document
+  for (const a of jobLinksIn(scope)) {
     const el = rowOfLink(a)
     if (!el || seen.has(el)) continue
+    if (onlyShown && !isShown(el)) continue
     seen.add(el)
     const lines = linesOf(el)
     if (lines.length < 2) continue
@@ -347,6 +500,10 @@ function candidateRows() {
     out.push({ el, lines, jobId: jobIdFrom(el) || jobIdOfHref(a.getAttribute('href')) })
   }
   return out
+}
+
+function candidateRows() {
+  return rowsInRoot(document, true)
 }
 
 // ---- 兜底策略：没有岗位链接的页面（BOSS 对话列表）只能按阶段词反查 ----
@@ -527,6 +684,18 @@ function probePage() {
     rows: out,
   }
 
+  // 每个分类 tab 里有多少个岗位链接 —— 这是判断「7 个 pane 是同一份全量镜像，还是按阶段真分组」
+  // 最直接的证据：链接数不依赖 innerText，隐藏 pane 里也数得准。
+  const tabs = tabPanes()
+  if (tabs.length) {
+    resp.tabs = tabs.map((t) => ({
+      name: t.name,
+      stage: t.stage,
+      links: jobLinksIn(t.pane).length,
+      shown: isShown(t.pane),
+    }))
+  }
+
   // 结构策略一条都没命中 → 附上文本兜底看到了什么，方便判断是「页面没投递」还是「链接抓不到」
   if (!rows.length) {
     const hits = stageNodes()
@@ -547,13 +716,277 @@ function probePage() {
   return resp
 }
 
+// ============================================================
+// 四、自动翻页采集（实习僧「我的投递」列表，标准 el-pagination 分页）
+// ============================================================
+
+/** 找「下一页」按钮。标准 Element UI 分页是 <button class="btn-next">。 */
+function nextBtn() {
+  const cands = [
+    ...document.querySelectorAll('button.btn-next'),
+    ...document.querySelectorAll('.el-pagination .btn-next'),
+  ]
+  for (const b of cands) {
+    if (b.disabled) continue
+    if (!isShown(b)) continue
+    return b
+  }
+  return null
+}
+
+/** 轮询等待：列表刷新（行集合变化）或超时。返回「是否还在刷新」。 */
+async function waitForListChange(prevKeys, timeoutMs = 8000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 400))
+    const now = candidateRows().map((r) => r.jobId).filter(Boolean).join('|')
+    if (now && now !== prevKeys) return true
+  }
+  return false
+}
+
+/**
+ * 自动翻页采集：采当前页 → 点「下一页」→ 等刷新 → 再采，直到没有下一页。
+ *
+ * 为什么默认只翻当前 tab：实习僧 7 个分类 tab 的列表是同一份数据复制（见真机 HTML），
+ * 目前所有投递都停在「已投递」，翻当前 tab 就采全了；真需要跨 tab 遍历再加。
+ *
+ * @param {object} opts
+ * @param {number} [opts.maxPages=30] 翻页上限，防死循环（页数异常时止损）
+ * @returns {{items, debug}}
+ */
+async function collectAllPages(opts = {}) {
+  const maxPages = opts.maxPages || 30
+  const all = []
+  const seen = new Set()
+  const debug = {
+    url: location.href,
+    platform: detectPlatform(),
+    pages: 0,
+    rows: 0,
+    parsed: 0,
+    duplicate: 0,
+    noName: 0,
+    stopped: '',
+  }
+
+  for (let page = 1; page <= maxPages; page++) {
+    const res = collectFromPage()
+    debug.pages = page
+    debug.rows += res.debug.rows
+    debug.noName += res.debug.noName
+
+    for (const it of res.items) {
+      const key = it.jobId || `${it.company}|${it.jobTitle}`
+      if (seen.has(key)) {
+        debug.duplicate++
+        continue
+      }
+      seen.add(key)
+      all.push(it)
+      debug.parsed++
+    }
+
+    const btn = nextBtn()
+    if (!btn) {
+      debug.stopped = `第 ${page} 页后无「下一页」（已到底或分页组件不认识）`
+      break
+    }
+
+    // 记录当前页 jobId 集合，用来判断翻页后列表有没有真的变
+    const prevKeys = candidateRows().map((r) => r.jobId).filter(Boolean).join('|')
+    btn.click()
+    const changed = await waitForListChange(prevKeys)
+    if (!changed) {
+      debug.stopped = `第 ${page} 页点「下一页」后列表没变化，停止（可能已到底或加载慢）`
+      break
+    }
+  }
+
+  debug.items = all
+  return { items: all, debug }
+}
+
+// ============================================================
+// 五、分阶段采集（实习僧七档：已投递 / 被查看 / 初筛 / 笔试 / 面试 / 不合格 / 录用）
+// ============================================================
+
+/** 解析结果 → 上报 item（字段规则与 collectFromPage 保持一致） */
+function itemOf(parsed, jobId, platform) {
+  const it = {
+    platform,
+    company: parsed.company,
+    jobTitle: parsed.jobTitle,
+    jobId: jobId || '',
+    appliedAt: parsed.appliedAt || '',
+  }
+  if (parsed.city) it.city = parsed.city
+  if (parsed.stageRaw) it.stageRaw = parsed.stageRaw
+  if (parsed.stage) it.stage = parsed.stage
+  // BOSS：已读/未读是「读没读」，不是流程阶段 —— 分开报，免得把 submitted 覆盖掉
+  if (parsed.stageRaw === '已读') {
+    it.read = true
+    delete it.stageRaw
+    delete it.stage
+  }
+  if (parsed.stageRaw === '未读') {
+    delete it.stageRaw
+    delete it.stage
+  }
+  return it
+}
+
+/**
+ * 采全部阶段：**逐个点分类 tab**，每个 tab 翻完所有页，最后按 jobId 合并取权重最大的阶段。
+ *
+ * 为什么不直接在隐藏 pane 里读（那本是零副作用的最优解）：
+ *   `innerText` 对不可渲染的元素会退化成 `textContent` —— 卡片里各字段之间**没有换行**，
+ *   整条投递会糊成一行，`lines.length < 2` 直接被丢。真机上验证过这个行为，
+ *   所以只能点 tab 让列表真正可见，innerText 才给得出分行文本。
+ *
+ * ⚠️ 镜像守卫（这是本函数的核心判断，别删）：
+ *   当前平台上 7 个 pane 渲染的是**同一份全量列表**（每条都写「投递成功」）。
+ *   如果无条件拿 tab 名当阶段，就会把所有投递都标成「录用」之类的高阶段。
+ *   所以：与「基线 tab（行最多那个）」jobId 集合**完全相同**的 tab 判为镜像，
+ *   **它的 tab 名不参与阶段判定，只信行内文案**。等某条投递真进了「初筛」，
+ *   该 tab 的集合就不再等于基线，守卫自动失效，tab 名开始生效。
+ */
+async function collectAllTabs(opts = {}) {
+  const maxPages = opts.maxPages || 15
+  const platform = detectPlatform()
+  const debug = {
+    url: location.href,
+    platform,
+    mode: 'tabs',
+    pages: 0,
+    rows: 0,
+    parsed: 0,
+    duplicate: 0,
+    noName: 0,
+    tabs: [],
+    notes: [],
+  }
+
+  const tabs = tabPanes().filter((t) => t.head && t.stage)
+  if (tabs.length < 2) {
+    // 不是「七档 tab」页面（BOSS 对话列表 / 平台改版）→ 退回单视图翻页
+    const res = await collectAllPages({ maxPages })
+    return {
+      items: res.items,
+      debug: { ...debug, ...res.debug, mode: 'single', notes: ['未识别到分类 tab，按单视图翻页采集'] },
+    }
+  }
+
+  const initial = activeTab()
+  const initialKey = initial ? initial.stage : null
+
+  const buckets = []
+  for (const t of tabs) {
+    const tb = { name: t.name, stage: t.stage, pages: 0, rows: 0, ids: [], note: '', mirrored: false }
+    debug.tabs.push(tb)
+
+    const isCur = initialKey && initialKey === t.stage && t.head.classList.contains('is-active')
+    if (!isCur) {
+      t.head.click()
+      const ok = await waitTabReady(t.name)
+      if (!ok) {
+        // ⚠️ 切换没确认成功时**必须跳过**：此时页面上还是上一个 tab 的列表，
+        // 直接采会把那些投递错标成本阶段的记录 —— 错的阶段比漏采一条严重得多。
+        tb.note = '切换 tab 失败，跳过（避免把上个 tab 的数据错标成本阶段）'
+        continue
+      }
+      // 切换瞬间旧 pane 可能还没完成 display 切换，给一帧缓冲再读
+      await new Promise((r) => setTimeout(r, 250))
+    }
+
+    let rows = candidateRows()
+    if (!rows.length) {
+      tb.note = (tb.note ? tb.note + '；' : '') + '该阶段暂无投递'
+      tb.pages = 1
+      continue
+    }
+
+    const allRows = [...rows]
+    for (let p = 1; p <= maxPages; p++) {
+      tb.pages = p
+      const btn = nextBtn()
+      if (!btn) break
+      const prev = idsOf(rows).join('|')
+      btn.click()
+      if (!(await waitForListChange(prev))) {
+        tb.note = (tb.note ? tb.note + '；' : '') + `第 ${p} 页后翻不动`
+        break
+      }
+      rows = candidateRows()
+      allRows.push(...rows)
+    }
+
+    tb.rows = allRows.length
+    tb.ids = [...new Set(idsOf(allRows))]
+    debug.pages += tb.pages
+    debug.rows += tb.rows
+    buckets.push({ tab: t, rows: allRows, tb })
+  }
+
+  // 还原用户原本停留的 tab（不擅自改页面状态）
+  if (initialKey) {
+    const back = tabs.find((t) => t.stage === initialKey)
+    if (back && !back.head.classList.contains('is-active')) {
+      back.head.click()
+      await waitTabReady(back.name)
+    }
+  }
+
+  // ---- 镜像判定：与基线集合完全相同的 tab，其阶段不可信 ----
+  const nonEmpty = buckets.filter((b) => b.rows.length)
+  if (!nonEmpty.length) {
+    debug.notes.push('七个分类 tab 都是空的')
+    return { items: [], debug }
+  }
+  const baseTb = pickBaseTab(nonEmpty.map((b) => b.tb))
+  for (const b of nonEmpty) {
+    b.tb.mirrored = isMirrorOfBase(b.tb, baseTb)
+    if (b.tb.mirrored) {
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '列表与基线完全相同 → 视为全量镜像，只信行内文案'
+    }
+  }
+  debug.baseTab = baseTb ? baseTb.name : ''
+
+  // ---- 解析 + 按 jobId 合并（取权重最大的阶段）----
+  const entries = []
+  for (const b of nonEmpty) {
+    const tabStage = b.tb.mirrored ? null : b.tab.stage
+    for (const r of b.rows) {
+      const parsed = parseRowLines(r.lines, { tabStage })
+      if (!parsed) {
+        debug.noName++
+        continue
+      }
+      const it = itemOf(parsed, r.jobId, platform)
+      if (b.tb.name) it.fromTab = b.tb.name
+      entries.push({ item: it })
+    }
+  }
+  const merged = mergeEntries(entries)
+  debug.duplicate = merged.duplicate
+  debug.parsed = merged.items.length
+  return { items: merged.items, debug }
+}
+
 // content.js 通过 window.__jhCollector 调用
 window.__jhCollector = {
   collectFromPage,
+  collectAllPages,
+  collectAllTabs,
   probePage,
   // 纯函数也导出：单测与日后排查直接调，不用再复制一份规则
   parseRowLines,
   stageOfText,
+  stageOfTabName,
+  mergeEntries,
+  pickBaseTab,
+  isMirrorOfBase,
+  sameIdSet,
   splitCompanyCity,
   STAGE_WORDS,
 }

@@ -184,39 +184,52 @@
       <button id="resetBtn" class="ghost">重置额度</button>
     </div>
 
+    <!-- ===== 投递进度同步（独立区块，常用功能平铺） ===== -->
+    <div class="syncbox">
+      <div class="synchead">
+        <b>投递进度同步</b>
+        <span class="syncnote">在「我的投递」页点一次</span>
+      </div>
+      <button id="collectOneClickBtn" class="primary big">一键采集全阶段并上传</button>
+      <div id="collectStatus" class="statusbox">—</div>
+      <pre id="collectOut" class="inspect tall"></pre>
+      <div class="row">
+        <button id="collectBtn" class="ghost">只采当前视图</button>
+        <button id="collectAllBtn" class="ghost">全阶段采集（先看预览）</button>
+        <button id="collectUploadBtn" class="ghost" disabled>确认上传</button>
+      </div>
+      <div class="row">
+        <button id="collectProbeBtn" class="ghost">探测（校准用）</button>
+      </div>
+      <div class="tip">
+        一键 = 遍历 7 个分类 tab（已投递 / 被查看 / 初筛 / 笔试 / 面试 / 不合格 / 录用）+ 翻页
+        → 自动上传 → 显示汇总。约 10~30 秒，期间别关弹窗。<br />
+        采集只点「分类 tab」和「下一页」，<b>不会点投递 / 沟通 / 撤回</b>，采完会切回你原来那个 tab。
+      </div>
+    </div>
+
     <details>
       <summary>页面结构（校准选择器用）</summary>
       <pre id="inspectOut" class="inspect"></pre>
     </details>
 
     <details>
-      <summary>投递进度同步（在「我的投递」/ 对话列表页点采集）</summary>
-      <div class="row">
-        <button id="collectBtn" class="primary">采集本页进度</button>
-        <button id="collectProbeBtn" class="ghost">探测</button>
-      </div>
-      <div id="collectStatus" class="statusbox">—</div>
-      <pre id="collectOut" class="inspect"></pre>
-      <div class="row">
-        <button id="collectUploadBtn" class="ghost" disabled>确认上传</button>
-      </div>
-      <div class="tip">
-        采集只读当前页：不翻页、不点按钮、不发请求。上传前先看预览 —— 岗位或公司抓歪了就别传，
-        把「探测」结果发给我校准。
-      </div>
-    </details>
-
-    <details>
       <summary>后端连接（多用户后必须填 token）</summary>
       <label class="lbl">后端地址</label>
       <input id="backendUrl" type="text" placeholder="http://localhost:3100" />
-      <label class="lbl">登录 token（网页端登录后，从浏览器控制台取：localStorage.getItem('jh_token')）</label>
+      <label class="lbl">用户名 / 密码（点「登录获取 token」，自动填 token，不用手抄）</label>
+      <div class="row">
+        <input id="loginUser" type="text" placeholder="chen" style="flex:1" />
+        <input id="loginPass" type="password" placeholder="密码" style="flex:1" />
+        <button id="loginBtn" class="ghost">登录获取 token</button>
+      </div>
+      <label class="lbl">登录 token（手动粘贴或登录后自动填充）</label>
       <textarea id="authToken" placeholder="eyJhbGciOiJIUzI1NiIs..."></textarea>
       <div class="row">
         <button id="saveConnBtn" class="ghost">保存并测试</button>
       </div>
       <div id="connStatus" class="statusbox">—</div>
-      <div class="tip">token 7 天过期；过期后回写会 401，届时重新登录复制一份即可。</div>
+      <div class="tip">token 7 天过期；过期后点上面「登录获取 token」重登即可。</div>
     </details>
   </section>
 

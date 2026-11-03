@@ -180,5 +180,68 @@ eq(
 // 同名岗位不同公司（法雷奥两个岗位名不同、不同公司同名「测试实习生」）不能被误合并
 eq(parsedAll[1].company !== parsedAll[8].company, true, '「测试实习生」两家公司没串')
 
+// ——————————————————————————————————————————————
+console.log('— 分类 tab 名 → 阶段（实习僧七档）—')
+// 名字来自真机 HTML：7 个 el-tabs__item
+const TAB_NAMES = ['已投递', '被查看', '初筛', '笔试', '面试', '不合格', '录用']
+eq(
+  TAB_NAMES.map((n) => C.stageOfTabName(n)?.key),
+  ['submitted', 'viewed', 'screening', 'written', 'interview', 'rejected', 'offer'],
+  '七个 tab 名一一对上七档'
+)
+eq(C.stageOfTabName('已投递 12')?.key, 'submitted', '带徽标数字也能认（「已投递 12」）')
+eq(C.stageOfTabName('不合适')?.key, 'rejected', '「不合适」也算不合格')
+// ⚠️ 这条最容易写错：待查看 = 还没看，必须算已投递而不是被查看
+eq(C.stageOfTabName('待查看')?.key, 'submitted', '「待查看」算已投递（不能算被查看）')
+eq(C.stageOfTabName('')?.key, undefined, '空名字返回 null')
+eq(C.stageOfTabName('消息')?.key, undefined, '非阶段词返回 null')
+// 名字里同时含两个词时取最长的（「已录用」不能被「录用」先匹配后错位）
+eq(C.stageOfTabName('已录用')?.word, '已录用', '同时命中多个词取最长的')
+
+// ——————————————————————————————————————————————
+console.log('— 镜像守卫（7 个 pane 渲染同一份全量列表时不能信 tab 名）—')
+const tDelivered = { name: '已投递', ids: ['a', 'b', 'c'], rows: 3 }
+const tCheckedMirror = { name: '被查看', ids: ['a', 'b', 'c'], rows: 3 }
+const tCheckedReal = { name: '被查看', ids: ['b'], rows: 1 }
+eq(C.pickBaseTab([tCheckedReal, tDelivered])?.name, '已投递', '基线取行数最多的 tab')
+eq(C.isMirrorOfBase(tCheckedMirror, tDelivered), true, '集合完全相同 → 判为镜像')
+eq(C.isMirrorOfBase(tCheckedReal, tDelivered), false, '集合是子集（不等长）→ 不是镜像')
+eq(C.isMirrorOfBase(tDelivered, tDelivered), false, '基线和自己比不算镜像')
+eq(C.isMirrorOfBase({ ids: [] }, tDelivered), false, '空 tab 不算镜像')
+eq(C.pickBaseTab([]), null, '没有 tab 时返回 null')
+// 同长度但内容不同（全部投递都推进到下一档）也不能算镜像
+eq(C.isMirrorOfBase({ ids: ['x', 'y', 'z'] }, tDelivered), false, '等长但内容不同 → 不是镜像')
+
+// ——————————————————————————————————————————————
+console.log('— 多 tab 合并：同一条取权重最大的阶段 —')
+const mk = (jobId, company, jobTitle, stage) => ({ item: { jobId, company, jobTitle, stage } })
+// 在「已投递」tab 采到 submitted，又在「初筛」tab 采到 screening → 应该是 screening
+const m1 = C.mergeEntries([mk('inn_a', '法雷奥', '系统测试实习生', 'submitted'), mk('inn_a', '法雷奥', '系统测试实习生', 'screening')])
+eq(m1.items.length, 1, '同一 jobId 只留一条')
+eq(m1.items[0].stage, 'screening', '取权重更大的阶段')
+eq(m1.duplicate, 1, '重复计数')
+// 顺序反过来结果必须一样（不能依赖采集顺序）
+const m2 = C.mergeEntries([mk('inn_a', 'A', 'B', 'interview'), mk('inn_a', 'A', 'B', 'submitted')])
+eq(m2.items[0].stage, 'interview', '顺序颠倒也取权重最大的')
+// 录用(9) 不该被后来的「不合格」(8) 覆盖
+const m3 = C.mergeEntries([mk('inn_a', 'A', 'B', 'offer'), mk('inn_a', 'A', 'B', 'rejected')])
+eq(m3.items[0].stage, 'offer', '录用不被「不合格」拉回')
+// 不同 jobId 各留一条
+const m4 = C.mergeEntries([mk('inn_a', 'A', 'B', 'submitted'), mk('inn_b', 'A', 'C', 'submitted')])
+eq(m4.items.length, 2, '不同 jobId 互不合并')
+// 没有 jobId 时退回「公司+岗位」做键
+const m5 = C.mergeEntries([
+  { item: { company: 'X', jobTitle: '测试', stage: 'submitted' } },
+  { item: { company: 'X', jobTitle: '测试', stage: 'viewed' } },
+])
+eq(m5.items.length, 1, '无 jobId 时按公司+岗位合并')
+eq(m5.items[0].stage, 'viewed', '无 jobId 也取权重最大的')
+// read 只要任一来源标了就保留
+const m6 = C.mergeEntries([
+  { item: { jobId: 'inn_c', company: 'A', jobTitle: 'B', stage: 'submitted' } },
+  { item: { jobId: 'inn_c', company: 'A', jobTitle: 'B', stage: 'submitted', read: true } },
+])
+eq(m6.items[0].read, true, '任一来源标了已读就保留已读')
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} collector 解析用例：${pass} 通过 / ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

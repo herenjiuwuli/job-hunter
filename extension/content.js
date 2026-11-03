@@ -610,6 +610,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return
   }
 
+  // 自动采集：优先按分类 tab 分阶段采全（实习僧七档：已投递/被查看/初筛/笔试/面试/不合格/录用），
+  // 不是 tab 页面（BOSS 对话列表、平台改版）时自动退回单视图翻页。
+  // collectPages 保留成「只翻当前视图」的入口，排查用。
+  if (msg.action === 'collectAll' || msg.action === 'collectPages') {
+    const c = window.__jhCollector
+    if (!c) {
+      sendResponse({ ok: false, error: '采集器脚本未加载，请重新加载扩展' })
+      return
+    }
+    // 异步（要切 tab、翻页、等刷新），返回 true 表示会异步调 sendResponse
+    ;(async () => {
+      try {
+        const data =
+          msg.action === 'collectPages'
+            ? await c.collectAllPages({ maxPages: 30 })
+            : await c.collectAllTabs({ maxPages: 30 })
+        sendResponse({ ok: true, data })
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e && e.message) })
+      }
+    })()
+    return true
+  }
+
   if (msg.action === 'inspect') {
     const boxes = [...document.querySelectorAll('textarea, [contenteditable="true"], input[type="text"]')].map((el, i) => ({
       i,
