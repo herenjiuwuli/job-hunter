@@ -144,6 +144,22 @@ function sameIdSet(a, b) {
   return true
 }
 
+/** 一段文本里出现了哪些阶段词、各几次（探测用：看某个 pane 里到底写的是什么状态） */
+function stageWordStats(root) {
+  const m = {}
+  const txt = String((root && root.textContent) || '')
+  for (const w of STAGE_WORDS) {
+    let i = 0
+    let n = 0
+    while ((i = txt.indexOf(w, i)) !== -1) {
+      n++
+      i += w.length
+    }
+    if (n) m[w] = n
+  }
+  return m
+}
+
 /**
  * 基线 tab = 行数最多的那个。
  * 为什么要基线：平台上 7 个分类 pane 可能渲染的是**同一份全量列表**，
@@ -688,12 +704,42 @@ function probePage() {
   // 最直接的证据：链接数不依赖 innerText，隐藏 pane 里也数得准。
   const tabs = tabPanes()
   if (tabs.length) {
-    resp.tabs = tabs.map((t) => ({
-      name: t.name,
-      stage: t.stage,
-      links: jobLinksIn(t.pane).length,
-      shown: isShown(t.pane),
+    const probed = tabs.map((t) => {
+      const ids = [...new Set(jobLinksIn(t.pane).map((a) => jobIdOfHref(a.getAttribute('href'))).filter(Boolean))]
+      return {
+        name: t.name,
+        stage: t.stage,
+        links: jobLinksIn(t.pane).length,
+        ids,
+        // pane 里出现过的阶段词及次数（读 textContent，隐藏 pane 也读得到）。
+        // 「被查看」pane 里若统计出 10 次「投递成功」且 0 次「被查看」，镜像基本坐实。
+        words: stageWordStats(t.pane),
+        shown: isShown(t.pane),
+      }
+    })
+    let base = null
+    for (const p of probed) if (!base || p.ids.length > base.ids.length) base = p
+    const mirrors = base ? probed.filter((p) => p !== base && sameIdSet(p.ids, base.ids)) : []
+    resp.tabs = probed.map((p) => ({
+      name: p.name,
+      stage: p.stage,
+      links: p.links,
+      words: p.words,
+      shown: p.shown,
+      sameAsBase: base ? p === base || sameIdSet(p.ids, base.ids) : false,
     }))
+    resp.mirror = {
+      base: base ? base.name : '',
+      baseLinks: base ? base.links : 0,
+      mirroredTabs: mirrors.length,
+      // ⚠️ 这是**未点击**的静态快照：隐藏 pane 的 DOM 也许只是初始渲染，
+      // 点击后才真正请求过滤数据。结论仅供预判，最终以采集时点开每个 tab 后的集合为准。
+      verdict:
+        mirrors.length >= probed.length - 2
+          ? '大概率全量镜像（7 个 pane 挂的是同一份列表）→ 阶段只信行内文案'
+          : '各 pane 列表不同，可能是真分组 → 阶段可用 tab 名',
+      note: '未点击的静态快照，仅供参考；采集时会点开每个 tab 用真实集合复核',
+    }
   }
 
   // 结构策略一条都没命中 → 附上文本兜底看到了什么，方便判断是「页面没投递」还是「链接抓不到」
@@ -732,6 +778,38 @@ function nextBtn() {
     return b
   }
   return null
+}
+
+/** 找「上一页」按钮。标准 Element UI 分页是 <button class="btn-prev">。 */
+function prevBtn() {
+  const cands = [
+    ...document.querySelectorAll('button.btn-prev'),
+    ...document.querySelectorAll('.el-pagination .btn-prev'),
+  ]
+  for (const b of cands) {
+    if (b.disabled) continue
+    if (!isShown(b)) continue
+    return b
+  }
+  return null
+}
+
+/**
+ * 回到第 1 页。
+ *
+ * ⚠️ 为什么每次切 tab 都要做：Element UI 的分页组件若被平台复用同一个实例，
+ * 切 tab **不会**把页码重置回 1。用户上次手动翻到第 3 页，采集就从第 3 页开始，
+ * 前两页静默漏掉 —— 不报错，只表现为「怎么只有这么几条」，最难查的一类 bug。
+ */
+async function gotoFirstPage(maxSteps = 12) {
+  for (let i = 0; i < maxSteps; i++) {
+    const b = prevBtn()
+    if (!b) return true
+    const prev = idsOf(candidateRows()).join('|')
+    b.click()
+    if (!(await waitForListChange(prev))) return false
+  }
+  return false
 }
 
 /** 轮询等待：列表刷新（行集合变化）或超时。返回「是否还在刷新」。 */
@@ -837,7 +915,13 @@ function itemOf(parsed, jobId, platform) {
 }
 
 /**
- * 采全部阶段：**逐个点分类 tab**，每个 tab 翻完所有页，最后按 jobId 合并取权重最大的阶段。
+ * 采全部阶段，分两趟：
+ *   阶段 A（快检）逐个点开分类 tab，**只读第 1 页**，拿到每个 tab 的 jobId 集合；
+ *   阶段 B（翻页）只给「基线 tab」和「真分组的 tab」翻到底，最后按 jobId 合并取权重最大的阶段。
+ *
+ * 为什么要拆两趟：7 个 tab 若渲染的是同一份全量列表（本平台真机即如此），
+ * 逐 tab 翻页等于把同一份数据读 7 遍 —— 7 × N 页 × 最多 8 秒等刷新，白等一分钟还容易卡在某个 tab。
+ * 快检一遍就知道是不是镜像，镜像时只翻基线那个 tab。
  *
  * 为什么不直接在隐藏 pane 里读（那本是零副作用的最优解）：
  *   `innerText` 对不可渲染的元素会退化成 `textContent` —— 卡片里各字段之间**没有换行**，
@@ -845,7 +929,7 @@ function itemOf(parsed, jobId, platform) {
  *   所以只能点 tab 让列表真正可见，innerText 才给得出分行文本。
  *
  * ⚠️ 镜像守卫（这是本函数的核心判断，别删）：
- *   当前平台上 7 个 pane 渲染的是**同一份全量列表**（每条都写「投递成功」）。
+ *   平台上 7 个 pane 渲染的是**同一份全量列表**（每条都写「投递成功」）。
  *   如果无条件拿 tab 名当阶段，就会把所有投递都标成「录用」之类的高阶段。
  *   所以：与「基线 tab（行最多那个）」jobId 集合**完全相同**的 tab 判为镜像，
  *   **它的 tab 名不参与阶段判定，只信行内文案**。等某条投递真进了「初筛」，
@@ -880,52 +964,102 @@ async function collectAllTabs(opts = {}) {
   const initial = activeTab()
   const initialKey = initial ? initial.stage : null
 
+  /** 切到指定 tab；已经是 active 就不动。返回是否确实切过去了 */
+  async function switchToTab(t) {
+    if (t.head.classList.contains('is-active')) return true
+    t.head.click()
+    const ok = await waitTabReady(t.name)
+    // 切换瞬间旧 pane 可能还没完成 display 切换，给一帧缓冲再读
+    if (ok) await new Promise((r) => setTimeout(r, 250))
+    return ok
+  }
+
+  // ---- 阶段 A：逐个点开 tab，**只读第 1 页**，拿 jobId 集合 ----
+  // 这一步故意不翻页：7 个 tab 若是同一份全量镜像，逐个翻页就是把同一份数据读 7 遍
+  // （7 × N 页 × 最多 8 秒等刷新），白等一分钟，还容易在某个 tab 上卡住。
+  debug.phase = 'probe'
   const buckets = []
   for (const t of tabs) {
-    const tb = { name: t.name, stage: t.stage, pages: 0, rows: 0, ids: [], note: '', mirrored: false }
+    const tb = { name: t.name, stage: t.stage, pages: 0, rows: 0, ids: [], note: '', mirrored: false, paged: false }
     debug.tabs.push(tb)
 
     const isCur = initialKey && initialKey === t.stage && t.head.classList.contains('is-active')
     if (!isCur) {
-      t.head.click()
-      const ok = await waitTabReady(t.name)
+      const ok = await switchToTab(t)
       if (!ok) {
         // ⚠️ 切换没确认成功时**必须跳过**：此时页面上还是上一个 tab 的列表，
         // 直接采会把那些投递错标成本阶段的记录 —— 错的阶段比漏采一条严重得多。
         tb.note = '切换 tab 失败，跳过（避免把上个 tab 的数据错标成本阶段）'
         continue
       }
-      // 切换瞬间旧 pane 可能还没完成 display 切换，给一帧缓冲再读
-      await new Promise((r) => setTimeout(r, 250))
     }
 
-    let rows = candidateRows()
-    if (!rows.length) {
-      tb.note = (tb.note ? tb.note + '；' : '') + '该阶段暂无投递'
-      tb.pages = 1
+    // 分页可能停在用户上次翻到的页码 —— 不回到第 1 页就会静默漏掉前面的记录
+    if (!(await gotoFirstPage())) {
+      tb.note = (tb.note ? tb.note + '；' : '') + '回不到第 1 页，跳过（怕漏数据）'
       continue
     }
 
+    const rows = candidateRows()
+    tb.pages = rows.length ? 1 : 0
+    tb.rows = rows.length
+    tb.ids = [...new Set(idsOf(rows))]
+    if (!rows.length) tb.note = '该阶段暂无投递'
+    buckets.push({ tab: t, rows, tb })
+  }
+
+  // ---- 镜像判定：与「基线 tab（行最多那个）」jobId 集合完全相同的，阶段不可信 ----
+  const nonEmpty = buckets.filter((b) => b.rows.length)
+  if (!nonEmpty.length) {
+    debug.notes.push('七个分类 tab 都是空的')
+    debug.phase = 'done'
+    return { items: [], debug }
+  }
+  const baseTb = pickBaseTab(nonEmpty.map((b) => b.tb))
+  for (const b of nonEmpty) {
+    b.tb.mirrored = isMirrorOfBase(b.tb, baseTb)
+    if (b.tb.mirrored) {
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '列表与基线完全相同 → 全量镜像，只信行内文案，不重复翻页'
+    }
+  }
+  debug.baseTab = baseTb ? baseTb.name : ''
+  debug.mirrored = nonEmpty.filter((b) => b.tb.mirrored).length
+  debug.grouped = nonEmpty.length - debug.mirrored > 1
+
+  // ---- 阶段 B：只给「基线 tab」和「真分组的 tab」翻页 ----
+  // 镜像 tab 第 1 页的行内文案与基线逐条相同（同一份数据），翻页拿不到任何增量。
+  debug.phase = 'paging'
+  for (const b of nonEmpty) {
+    if (b.tb !== baseTb && b.tb.mirrored) continue
+
+    if (!(await switchToTab(b.tab))) {
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '翻页前切回该 tab 失败，只保留第 1 页'
+      continue
+    }
+    if (!(await gotoFirstPage())) {
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '回不到第 1 页，只保留已读到的'
+      continue
+    }
+
+    let rows = candidateRows()
     const allRows = [...rows]
+    b.tb.paged = true
     for (let p = 1; p <= maxPages; p++) {
-      tb.pages = p
       const btn = nextBtn()
       if (!btn) break
       const prev = idsOf(rows).join('|')
       btn.click()
       if (!(await waitForListChange(prev))) {
-        tb.note = (tb.note ? tb.note + '；' : '') + `第 ${p} 页后翻不动`
+        b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + `第 ${p} 页后翻不动`
         break
       }
+      b.tb.pages = p + 1
       rows = candidateRows()
       allRows.push(...rows)
     }
-
-    tb.rows = allRows.length
-    tb.ids = [...new Set(idsOf(allRows))]
-    debug.pages += tb.pages
-    debug.rows += tb.rows
-    buckets.push({ tab: t, rows: allRows, tb })
+    b.tb.rows = allRows.length
+    b.tb.ids = [...new Set(idsOf(allRows))]
+    b.rows = allRows
   }
 
   // 还原用户原本停留的 tab（不擅自改页面状态）
@@ -936,21 +1070,6 @@ async function collectAllTabs(opts = {}) {
       await waitTabReady(back.name)
     }
   }
-
-  // ---- 镜像判定：与基线集合完全相同的 tab，其阶段不可信 ----
-  const nonEmpty = buckets.filter((b) => b.rows.length)
-  if (!nonEmpty.length) {
-    debug.notes.push('七个分类 tab 都是空的')
-    return { items: [], debug }
-  }
-  const baseTb = pickBaseTab(nonEmpty.map((b) => b.tb))
-  for (const b of nonEmpty) {
-    b.tb.mirrored = isMirrorOfBase(b.tb, baseTb)
-    if (b.tb.mirrored) {
-      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '列表与基线完全相同 → 视为全量镜像，只信行内文案'
-    }
-  }
-  debug.baseTab = baseTb ? baseTb.name : ''
 
   // ---- 解析 + 按 jobId 合并（取权重最大的阶段）----
   const entries = []
@@ -970,6 +1089,9 @@ async function collectAllTabs(opts = {}) {
   const merged = mergeEntries(entries)
   debug.duplicate = merged.duplicate
   debug.parsed = merged.items.length
+  debug.pages = debug.tabs.reduce((s, t) => s + (t.pages || 0), 0)
+  debug.rows = debug.tabs.reduce((s, t) => s + (t.rows || 0), 0)
+  debug.phase = 'done'
   return { items: merged.items, debug }
 }
 
@@ -987,6 +1109,7 @@ window.__jhCollector = {
   pickBaseTab,
   isMirrorOfBase,
   sameIdSet,
+  stageWordStats,
   splitCompanyCity,
   STAGE_WORDS,
 }

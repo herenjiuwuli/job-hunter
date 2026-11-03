@@ -895,7 +895,10 @@ async function collectProgress(probeMode) {
     const d = res.data || {}
     if (probeMode) {
       out.textContent = JSON.stringify(d, null, 2)
-      st.textContent = `探测到 ${d.hits || 0} 处阶段文案，结构见下方`
+      const m = d.mirror
+      st.textContent = m
+        ? `探测 ${d.rows ? d.rows.length : 0} 行｜${m.verdict}`
+        : `探测 ${d.rows ? d.rows.length : 0} 行（无分类 tab，走文本兜底）`
       return
     }
 
@@ -960,13 +963,18 @@ function renderPreview(items, dbg) {
   if (tabs.length) {
     lines.push('各分类 tab 命中：')
     for (const t of tabs) {
-      lines.push(
-        `  ${t.name}${t.mirrored ? '（镜像·只信行内文案）' : ''} → ${t.rows} 条 / ${t.pages} 页` +
-          (t.note ? `｜${t.note}` : '')
-      )
+      const tag = t.mirrored ? '镜像·只信行内文案' : t.paged ? '真分组·已翻页' : '仅第 1 页'
+      lines.push(`  ${t.name}（${tag}）→ ${t.rows} 条 / ${t.pages} 页` + (t.note ? `｜${t.note}` : ''))
     }
   }
-  if (dbg.baseTab) lines.push(`\n基线 tab：${dbg.baseTab}（行最多的那个，镜像判定以它为准）`)
+  if (dbg.baseTab) {
+    lines.push(`\n基线 tab：${dbg.baseTab}（行最多的那个；与它集合相同的 tab 判为镜像，tab 名不参与阶段判定）`)
+  }
+  if (dbg.mirrored) {
+    lines.push(`判定：${dbg.mirrored} 个 tab 与基线列表完全相同 → 全量镜像，阶段只信行内文案`)
+  } else if (dbg.grouped) {
+    lines.push('判定：各 tab 列表互不相同 → 真分组，阶段按 tab 名判定')
+  }
   if (dbg.mode === 'single') lines.push('\n未识别到分类 tab（BOSS 列表或平台改版），按单视图翻页采集')
   if (dbg.notes && dbg.notes.length) lines.push(`\n[提示] ${dbg.notes.join('；')}`)
   return lines.join('\n')

@@ -213,6 +213,17 @@ eq(C.pickBaseTab([]), null, '没有 tab 时返回 null')
 eq(C.isMirrorOfBase({ ids: ['x', 'y', 'z'] }, tDelivered), false, '等长但内容不同 → 不是镜像')
 
 // ——————————————————————————————————————————————
+console.log('— 探测：pane 里到底写了什么阶段词 —')
+eq(Object.keys(C.stageWordStats({ textContent: '' })).length, 0, '空文本 → 没有阶段词')
+eq(C.stageWordStats({ textContent: '投递成功' }).投递成功, 1, '单个「投递成功」计 1')
+// 用户 2026-11-03 真机数据：「被查看」pane 里 10 条全是「投递成功」→ 镜像的确凿证据
+const paneText = Array.from({ length: 10 }, () => '系统测试实习生 法雷奥-深圳 投递成功').join(' ')
+const w = C.stageWordStats({ textContent: paneText })
+eq(w.投递成功, 10, '10 条投递成功 → 计 10')
+eq(w.被查看, undefined, '没有「被查看」就不到表里 —— 说明该 pane 不是按阶段过滤的')
+eq(C.stageWordStats({ textContent: '待查看' }).待查看, 1, '「待查看」按整词计 1，不会被更短的词拆开')
+
+// ——————————————————————————————————————————————
 console.log('— 多 tab 合并：同一条取权重最大的阶段 —')
 const mk = (jobId, company, jobTitle, stage) => ({ item: { jobId, company, jobTitle, stage } })
 // 在「已投递」tab 采到 submitted，又在「初筛」tab 采到 screening → 应该是 screening
