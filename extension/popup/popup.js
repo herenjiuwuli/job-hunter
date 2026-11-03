@@ -895,6 +895,15 @@ async function collectProgress(probeMode) {
     const d = res.data || {}
     if (probeMode) {
       out.textContent = JSON.stringify(d, null, 2)
+      // 列表页（BOSS 搜索结果页 / 实习僧列表页）：这里没有「投递记录」，只有岗位卡。
+      // 卡片边界锁不准是这个页面最致命的错，所以状态栏直接给结论，不用去 JSON 里翻。
+      const L = d.listing
+      if (L) {
+        st.textContent =
+          `列表页：${L.links} 个岗位链接｜锁到 ${L.rowCount} 个容器` +
+          (L.sharedRows && L.sharedRows.length ? `｜⚠️ ${L.sharedRows.length} 处边界锁大了` : '｜边界正常')
+        return
+      }
       const m = d.mirror
       st.textContent = m
         ? `探测 ${d.rows ? d.rows.length : 0} 行｜${m.verdict}`

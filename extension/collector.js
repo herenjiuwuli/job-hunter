@@ -781,7 +781,77 @@ function probePage() {
     }
   }
 
+  // —— 列表页探测（BOSS 搜索结果页 / 实习僧列表页）——
+  // 必须放在最后：它会覆盖 mode，因为「页面上一堆岗位卡」和「一条条投递记录」
+  // 长得完全一样（都是「只含自己一个链接的容器」），不明确标出来就会把岗位卡当投递记录。
+  const listing = probeListing()
+  if (listing) {
+    resp.mode = 'listing'
+    resp.listing = listing
+  }
+
   return resp
+}
+
+/**
+ * 列表页卡片探测：确认「一张卡的边界锁得准不准」。
+ *
+ * 为什么这件事比看起来重要：
+ *   采集器靠 `rowOfLink`（向上找到「只装了自己一个岗位链接」的最大容器）定位一行。
+ *   在搜索结果页，每张岗位卡同样满足这个条件 —— 所以同一套定位能复用；
+ *   但一旦锁大了（把整个列表区当一张卡），筛选就会拿**所有岗位混在一起的文本**
+ *   去判城市和方向：命中外地城市 → 整批跳过，或方向被别的岗位带跑。
+ *   这种错在页面上完全看不出来，只会表现为「怎么一家都没投」。
+ *
+ * 判据：不同岗位链接锁到同一个容器 = 锁错了。`sharedRows` 非空就是警报。
+ */
+function probeListing() {
+  const links = [...document.querySelectorAll('a[href]')].filter(isJobLink)
+  if (links.length < 2) return null
+
+  const F = window.JH_FILTERS
+  const allCities = F ? F.PROVINCES.flatMap((p) => p.cities) : []
+  const buckets = new Map() // 容器元素 → 落在它上面的 jobId
+  const cards = []
+
+  for (const a of links.slice(0, 40)) {
+    const href = a.getAttribute('href') || ''
+    const jobId = jobIdOfHref(href)
+    const row = rowOfLink(a)
+    if (!row) continue
+    if (!buckets.has(row)) buckets.set(row, [])
+    buckets.get(row).push(jobId || '(无id)')
+
+    const text = (row.innerText || '').trim()
+    const btns = [...row.querySelectorAll('button, a, [role="button"], [class*="btn"]')]
+      .map((el) => (el.innerText || '').trim())
+      .filter(Boolean)
+    cards.push({
+      jobId,
+      rowTag: row.tagName + (row.className ? '.' + String(row.className).split(/\s+/).filter(Boolean).slice(0, 2).join('.') : ''),
+      lines: linesOf(row).slice(0, 6),
+      textLen: text.length,
+      hasChatBtn: /立即沟通|立即打招呼|继续沟通/.test(btns.join('|')),
+      buttons: [...new Set(btns)].slice(0, 5),
+      // 筛选就是吃这些：城市命中几个、天/周与月数能不能读出来。
+      // 读不到 = 这两项门槛在列表页等于没生效（不会误杀，但也不会拦）。
+      cities: F ? F.detectCity(text, allCities).slice(0, 3) : [],
+      meta: F ? F.detectMeta(text) : null,
+    })
+  }
+
+  const sharedRows = [...buckets.values()].filter((ids) => ids.length > 1)
+  return {
+    links: links.length,
+    uniqueIds: new Set(links.map((a) => jobIdOfHref(a.getAttribute('href'))).filter(Boolean)).size,
+    rowCount: buckets.size,
+    // 空数组 = 每张卡各自锁到独立容器（正确）；有内容 = 多张卡挤在一个容器里（锁大了）
+    sharedRows,
+    cards: cards.slice(0, 8),
+    note: sharedRows.length
+      ? '⚠️ 多个岗位链接锁到了同一个容器 → 卡片边界锁大了，筛选会拿混在一起的文本判断，必须先修 rowOfLink'
+      : '每张卡各自独立，卡片边界正确',
+  }
 }
 
 // ============================================================
@@ -1286,6 +1356,7 @@ window.__jhCollector = {
   collectAllPages,
   collectAllTabs,
   probePage,
+  probeListing,
   // 纯函数也导出：单测与日后排查直接调，不用再复制一份规则
   parseRowLines,
   stageOfText,
