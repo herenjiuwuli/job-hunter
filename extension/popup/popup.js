@@ -1052,9 +1052,19 @@ async function runCollectAndUpload() {
   if (skipped > 0) {
     out.textContent = `已跳过 ${skipped} 条未变化的，剩余 ${collectPreview.length} 条待上报：\n\n` + out.textContent
   }
-  await uploadProgress()
-  // 上传成功后把本次的 jobId+阶段 记进缓存（无论 matched 还是 created，都算「已同步」）
-  await rememberSynced(collectPreview)
+  const up = await uploadProgress()
+  // ⚠️ 上传没成功就**绝不能记账**：记了就是假同步 —— 这条以后永远被当成「已同步」跳过，
+  // 数据静默丢失，而且页面上看起来一切正常。2026-11-03 就是这样丢掉了一条「初筛」。
+  if (!up || !up.ok) return
+  const ignored = ((up.data && up.data.results) || []).filter((r) => r.action === 'ignored')
+  const ignoredIds = ignored.map((r) => r.jobId).filter(Boolean)
+  // 只把后端确实收下的记成已同步
+  await rememberSynced(collectPreview.filter((it) => !it.jobId || !ignoredIds.includes(it.jobId)))
+  // 被忽略的从缓存里删掉，下次还会重新上报（直到它在账本里出现）
+  await forgetSynced(ignoredIds)
+  if (ignored.length) {
+    st.textContent += `｜${ignored.length} 条对不上账本，下次仍会重报`
+  }
 }
 
 // 「已同步」缓存：记下上次上传时「jobId + 阶段」的组合。
@@ -1079,8 +1089,32 @@ async function rememberSynced(items) {
   await chrome.storage.local.set({ jhSyncedJobs: next })
 }
 
+/**
+ * 把指定的 jobId 从「已同步」缓存里删掉。
+ *
+ * 用在哪：后端明确返回 ignored 的那些（账本里没有这条投递 / 缺字段 / 不属于当前账号）。
+ * 它们没入库，却被记成已同步的话，下次采集会被直接跳过 —— 页面上有这条，库里永远没有。
+ */
+async function forgetSynced(ids) {
+  if (!Array.isArray(ids) || !ids.length) return
+  const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
+  let changed = false
+  for (const id of ids) {
+    if (id in jhSyncedJobs) {
+      delete jhSyncedJobs[id]
+      changed = true
+    }
+  }
+  if (changed) await chrome.storage.local.set({ jhSyncedJobs })
+}
+
+/**
+ * 上传采集结果。
+ * @returns {Promise<{ok:boolean, data?:object}>} 调用方必须看返回值再决定要不要记账 ——
+ *   只有后端真的收下了才算「已同步」，否则就是假同步（见 forgetSynced 的注释）。
+ */
 async function uploadProgress() {
-  if (!collectPreview || !collectPreview.length) return
+  if (!collectPreview || !collectPreview.length) return { ok: false }
   const st = $('#collectStatus')
   const out = $('#collectOut')
   const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
@@ -1097,12 +1131,12 @@ async function uploadProgress() {
     })
     if (r.status === 401) {
       st.textContent = '❌ 401：先在下面「后端连接」里填 token'
-      return
+      return { ok: false }
     }
     const data = await r.json().catch(() => ({}))
     if (!r.ok) {
       st.textContent = `❌ 后端返回 ${r.status}：${data.error || ''}`
-      return
+      return { ok: false }
     }
     // 整体汇总：把上报条数 + 后端处理结果一起呈现，扫一眼就知道干了什么
     const lines = []
@@ -1111,6 +1145,20 @@ async function uploadProgress() {
     lines.push(`  · 推进 ${data.advancedCount || 0}（阶段往前走了）`)
     lines.push(`  · 新建 ${data.created || 0}（本地账本没有，新入库）`)
     lines.push(`  · 忽略 ${data.ignored || 0}（对不上，未入库）`)
+
+    // ⚠️ 被忽略的必须列出来：它们没进库，但页面上明明有这条投递 ——
+    // 不写清楚用户会以为「已同步 = 数据都在」，实际是静默丢失。
+    const ignored = (data.results || []).filter((x) => x.action === 'ignored')
+    if (ignored.length) {
+      lines.push('')
+      lines.push(`下面 ${ignored.length} 条对不上本地账本，没入库：`)
+      for (const x of ignored.slice(0, 12)) {
+        lines.push(`  · ${x.company || '?'} / ${x.jobTitle || '?'}｜${x.reason || '未匹配'}`)
+      }
+      if (ignored.length > 12) lines.push(`  … 还有 ${ignored.length - 12} 条`)
+      lines.push('')
+      lines.push('要收进来：先在 job-hunter 里手动记一条同名投递，或让后端开 createMissing。')
+    }
     if (data.matched && !data.advancedCount) lines.push('')
     if (data.matched && !data.advancedCount) lines.push('阶段没变化 = 平台还没往后走，正常。')
     st.textContent =
@@ -1118,9 +1166,30 @@ async function uploadProgress() {
       `｜新建 ${data.created || 0}｜忽略 ${data.ignored || 0}`
     out.textContent = lines.join('\n')
     $('#collectUploadBtn').disabled = true
+    return { ok: true, data }
   } catch (e) {
     st.textContent = `❌ 连不上 ${base}（后端没启动？）`
+    return { ok: false }
   }
+}
+
+/**
+ * 清空「已同步」缓存，让下次采集把所有投递重新上报一遍。
+ *
+ * 为什么需要这个按钮：缓存一旦被污染（比如假同步把 ignored 的也记进来），
+ * 「一键采集」会把它们全部过滤掉 → 根本走不到上传 → 缓存永远清不掉，形成死锁。
+ * 重复上报是幂等的：已入库的只算「匹配/未变化」，不会重复新建。
+ */
+async function resetSynced() {
+  const st = $('#collectStatus')
+  const out = $('#collectOut')
+  const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
+  const n = Object.keys(jhSyncedJobs).length
+  await chrome.storage.local.remove('jhSyncedJobs')
+  st.textContent = `✅ 已清空同步缓存（${n} 条记录）`
+  out.textContent =
+    '下次「一键采集全阶段并上传」会把全部投递重新上报一遍。\n' +
+    '重复上报是幂等的：已经入库的只会算「匹配 / 未变化」，不会重复新建。'
 }
 
 document.getElementById('collectBtn').addEventListener('click', () => collectProgress(false))
@@ -1128,5 +1197,6 @@ document.getElementById('collectAllBtn').addEventListener('click', collectAllPro
 document.getElementById('collectOneClickBtn').addEventListener('click', collectAndUpload)
 document.getElementById('collectProbeBtn').addEventListener('click', () => collectProgress(true))
 document.getElementById('collectUploadBtn').addEventListener('click', uploadProgress)
+document.getElementById('collectResetBtn').addEventListener('click', resetSynced)
 
 initConnection()

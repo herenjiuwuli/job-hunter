@@ -196,6 +196,24 @@ router.post('/api/applications/collect', async (req, res) => {
   const now = new Date().toISOString()
   const stats = { matched: 0, created: 0, advancedCount: 0, unchanged: 0, ignored: 0 }
   const advancedList = []
+  /**
+   * 每条上报的处置明细。
+   *
+   * 为什么必须返回：扩展端靠「jobId + 阶段」缓存判断「这条同步过了，下次别再报」。
+   * 只看 HTTP 200 就记账会把 ignored 的也记成已同步 —— 那条以后永远不再上报，静默丢数据。
+   * 2026-11-03 真机事故：法雷奥「测试实习生」被 ignored（本地账本没有这条投递），
+   * 却被记成已同步，「初筛」状态从此再也传不上来。
+   */
+  const results = []
+  const note = (raw, action, extra) => {
+    results.push({
+      jobId: String(raw.jobId || '').trim(),
+      company: String(raw.company || '').trim(),
+      jobTitle: String(raw.jobTitle || '').trim(),
+      action,
+      ...(extra || {}),
+    })
+  }
 
   await updateJSON(
     KEY,
@@ -206,6 +224,7 @@ router.post('/api/applications/collect', async (req, res) => {
         const jobTitle = String(raw.jobTitle || '').trim()
         if (!company && !jobTitle) {
           stats.ignored++
+          note(raw, 'ignored', { reason: '缺公司和岗位，当噪声行丢弃' })
           continue
         }
         const remote = {
@@ -220,10 +239,12 @@ router.post('/api/applications/collect', async (req, res) => {
         if (idx === -1) {
           if (!createMissing) {
             stats.ignored++
+            note(raw, 'ignored', { reason: '账本里没有这条投递（未开启 createMissing，不自动新建）' })
             continue
           }
           if (!company || !jobTitle) {
             stats.ignored++ // 新建必须有公司+岗位，否则是噪声行
+            note(raw, 'ignored', { reason: '新建必须有公司和岗位' })
             continue
           }
           const item = sanitize({
@@ -244,12 +265,14 @@ router.post('/api/applications/collect', async (req, res) => {
           item.direction = item.direction || lookupDirection(company, jobTitle)
           next.push(item)
           stats.created++
+          note(raw, 'created', { stage: boot })
           continue
         }
 
         const cur = next[idx]
         if (!isMine(cur, req.userId)) {
           stats.ignored++
+          note(raw, 'ignored', { reason: '不属于当前账号' })
           continue
         }
         let changed = false
@@ -265,9 +288,11 @@ router.post('/api/applications/collect', async (req, res) => {
           })
           advancedList.push({ company, jobTitle, from: cur.stage || null, to: stage })
           stats.advancedCount++
+          note(raw, 'advanced', { from: cur.stage || null, to: stage })
           changed = true
         } else {
           stats.unchanged++
+          note(raw, 'unchanged', { stage: stage, current: cur.stage || null })
         }
 
         // 已读：只记第一次。重复同步不能把时间刷成「今天」
@@ -302,7 +327,7 @@ router.post('/api/applications/collect', async (req, res) => {
     []
   )
 
-  res.json({ ok: true, ...stats, advanced: advancedList })
+  res.json({ ok: true, ...stats, advanced: advancedList, results })
 })
 
 export default router

@@ -340,3 +340,64 @@ def test_stage_text_parsing(raw, expect):
         assert after == before, f"{raw!r} 被误判成了 {after}"
     else:
         assert after == expect, f"{raw!r} 解析成 {after}，期望 {expect}"
+
+
+# ---------- collect 的逐条处置明细（扩展端靠它决定记不记「已同步」） ----------
+# 为什要单独守：扩展端把「jobId + 阶段」缓存起来，上次报过的下次跳过。
+# 只看 HTTP 200 就记账，会把 ignored 的也记成已同步 —— 那条以后永远不再上报，
+# 页面上有、库里永远没有，而且看起来一切正常（2026-11-03 丢过一条「初筛」）。
+
+
+def _result_of(data, job_title):
+    for r in data.get("results") or []:
+        if r.get("jobTitle") == job_title:
+            return r
+    return None
+
+
+def test_collect_reports_advanced_detail():
+    """阶段推进 → 明细里能看出 from/to，扩展端据此记账"""
+    _app(company="明细甲", jobTitle="推进岗")
+    r = _collect([{"platform": "实习僧", "company": "明细甲", "jobTitle": "推进岗", "stageRaw": "初筛"}])
+    assert r.status_code == 200, r.text
+    data = r.json()
+    item = _result_of(data, "推进岗")
+    assert item is not None, data
+    assert item["action"] == "advanced"
+    assert item["from"] == "submitted"
+    assert item["to"] == "screening"
+
+
+def test_collect_reports_unchanged_detail():
+    """阶段没变 → unchanged，仍算「后端收下了」，可以记账"""
+    _app(company="明细乙", jobTitle="不动岗")
+    _collect([{"platform": "实习僧", "company": "明细乙", "jobTitle": "不动岗", "stageRaw": "初筛"}])
+    r = _collect([{"platform": "实习僧", "company": "明细乙", "jobTitle": "不动岗", "stageRaw": "初筛"}])
+    item = _result_of(r.json(), "不动岗")
+    assert item["action"] == "unchanged"
+
+
+def test_collect_reports_ignored_with_reason():
+    """对不上账本 → ignored + 原因。扩展端必须据此**不记账**，否则永久跳过"""
+    r = _collect([{"platform": "实习僧", "company": "根本没有这家", "jobTitle": "也没有这个岗", "stageRaw": "初筛"}])
+    data = r.json()
+    assert data["ignored"] == 1
+    item = _result_of(data, "也没有这个岗")
+    assert item is not None, data
+    assert item["action"] == "ignored"
+    assert item.get("reason"), "ignored 必须带原因，否则前端没法给用户看"
+    # 没开 createMissing 时绝不能入库
+    assert not any(a["company"] == "根本没有这家" for a in requests.get(f"{BASE}/api/applications", timeout=10).json())
+
+
+def test_collect_reports_created_detail():
+    """开了 createMissing → created，同样可以记账"""
+    r = _collect(
+        [{"platform": "实习僧", "company": "新建丙", "jobTitle": "新建岗", "stageRaw": "笔试"}],
+        createMissing=True,
+    )
+    data = r.json()
+    assert data["created"] == 1
+    item = _result_of(data, "新建岗")
+    assert item["action"] == "created"
+    assert item["stage"] == "written"
