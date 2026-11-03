@@ -1064,10 +1064,25 @@ async function runCollectAndUpload() {
   // ⚠️ 上传没成功就**绝不能记账**：记了就是假同步 —— 这条以后永远被当成「已同步」跳过，
   // 数据静默丢失，而且页面上看起来一切正常。2026-11-03 就是这样丢掉了一条「初筛」。
   if (!up || !up.ok) return
-  const ignored = ((up.data && up.data.results) || []).filter((r) => r.action === 'ignored')
+  const results = (up.data && up.data.results) || []
+  const ignored = results.filter((r) => r.action === 'ignored')
   const ignoredIds = ignored.map((r) => r.jobId).filter(Boolean)
-  // 只把后端确实收下的记成已同步
-  await rememberSynced(collectPreview.filter((it) => !it.jobId || !ignoredIds.includes(it.jobId)))
+
+  // ⚠️ 记账必须用**后端确认落库的阶段**，不能用采集端看到的阶段。
+  //    后端可能因为「已经是更高阶段」「匹配到另一条记录」而没有接受这次上报；
+  //    此时若按采集端的值记账，缓存就比后端超前 → 以后每次采集都被自己过滤掉 →
+  //    那条状态永远传不上去，界面上还一直显示「无新变化」（2026-11-03 初筛卡住就是这么来的）。
+  //    results 里：advanced→to、unchanged→current、created→stage。
+  const landedStage = new Map()
+  for (const r of results) {
+    if (r.action === 'ignored') continue
+    const st = r.to || r.current || r.stage || null
+    if (r.jobId && st) landedStage.set(r.jobId, st)
+  }
+  const remembered = collectPreview
+    .filter((it) => it.jobId && landedStage.has(it.jobId))
+    .map((it) => ({ ...it, stage: landedStage.get(it.jobId) }))
+  await rememberSynced(remembered)
   // 被忽略的从缓存里删掉，下次还会重新上报（直到它在账本里出现）
   await forgetSynced(ignoredIds)
   if (ignored.length) {
@@ -1180,6 +1195,30 @@ async function uploadProgress() {
       if (ignored.length > 12) lines.push(`  … 还有 ${ignored.length - 12} 条`)
       lines.push('')
       lines.push('要收进来：先在 job-hunter 里手动记一条同名投递，或让后端开 createMissing。')
+    }
+
+    // 采集到的阶段 ≠ 后端落库的阶段 → 后端没接受这次上报。
+    // 一定要暴露：否则「页面上是初筛、库里还是已投递」这种偏差只能靠翻数据库才发现，
+    // 而界面上一直显示「无新变化」，看起来一切正常。
+    const asked = new Map()
+    for (const it of collectPreview) if (it.jobId && it.stage) asked.set(it.jobId, it.stage)
+    const mismatch = (data.results || []).filter((r) => {
+      if (!r.jobId || r.action === 'ignored') return false
+      const got = r.to || r.current || r.stage || null
+      const want = asked.get(r.jobId)
+      return want && got && want !== got
+    })
+    if (mismatch.length) {
+      lines.push('')
+      lines.push(`下面 ${mismatch.length} 条后端没接受这次上报的阶段（库里比页面旧）：`)
+      for (const r of mismatch.slice(0, 12)) {
+        const want = asked.get(r.jobId)
+        const got = r.to || r.current || r.stage
+        lines.push(
+          `  · ${r.company || '?'} / ${r.jobTitle || '?'}｜采集 ${STAGE_CN[want] || want}｜后端 ${STAGE_CN[got] || got}`
+        )
+      }
+      lines.push('这些没有真正入库，下次采集会继续上报。')
     }
     if (data.matched && !data.advancedCount) {
       const hasMoved = Object.keys(dist).some((k) => k !== 'submitted' && k !== 'unknown')
