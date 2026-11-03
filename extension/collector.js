@@ -161,17 +161,22 @@ function stageWordStats(root) {
 }
 
 /**
- * 基线 tab = 行数最多的那个。
- * 为什么要基线：平台上 7 个分类 pane 可能渲染的是**同一份全量列表**，
- * 拿这种「全量镜像」的 tab 名当阶段，会把所有投递都标成高阶段。
+ * 基线 tab = 「已投递」那个；没有就取行数最多的。
+ *
+ * 为什么优先「已投递」而不是单纯「行最多」：
+ *   真分组时已投递是**全集**（每条投过的都在），拿它当基线语义最对，用户看 debug 也一眼懂；
+ *   镜像时 7 个 pane 行数完全一样，取谁都等价，不影响守卫。
+ * 注意已投递采不到时（分页异常）自然退回「行最多」，不会返回 null。
  */
 function pickBaseTab(tabs) {
   let base = null
+  let submitted = null
   for (const t of Array.isArray(tabs) ? tabs : []) {
     if (!t || !Array.isArray(t.ids) || !t.ids.length) continue
     if (!base || t.ids.length > base.ids.length) base = t
+    if (t.stage === 'submitted' && (!submitted || t.ids.length > submitted.ids.length)) submitted = t
   }
-  return base
+  return submitted || base
 }
 
 /** 该 tab 的 jobId 集合是否与基线**完全相同**（= 全量镜像，阶段不可信） */
@@ -766,11 +771,56 @@ function probePage() {
 // 四、自动翻页采集（实习僧「我的投递」列表，标准 el-pagination 分页）
 // ============================================================
 
+/**
+ * 当前可见的分类面板。拿不到返回 null。
+ *
+ * 为什么需要它：7 个 pane 各自带一套 el-pagination，`document.querySelectorAll('.btn-prev')`
+ * 会把隐藏 pane 的按钮也找出来。隐藏 pane 若用 height:0 / overflow:hidden 隐藏（而不是 display:none），
+ * `isShown` 判不出来 → 点到别的 pane 的分页 → 当前列表一动不动 → 翻页判断失败 → 整个 tab 被跳过。
+ * 真机事故：2026-11-03「已投递」11 条一条没采到，就是这么来的。
+ *
+ * Element UI 里 pane 的 aria-labelledby 指向它自己的 tab 头 id，反查最准。
+ */
+function activePane() {
+  for (const h of document.querySelectorAll('.el-tabs__item.is-active, [role="tab"][aria-selected="true"]')) {
+    const id = h.id
+    if (!id) continue
+    let p = null
+    try {
+      p = document.querySelector(`[aria-labelledby="${id}"]`)
+    } catch (_) {
+      p = null
+    }
+    if (p) return p
+  }
+  // 兜底：可见的 pane，优先有岗位链接的那个
+  let fallback = null
+  for (const p of document.querySelectorAll('.el-tab-pane, [role="tabpanel"]')) {
+    if (!isShown(p)) continue
+    if (!fallback) fallback = p
+    if (jobLinksIn(p).length) return p
+  }
+  return fallback
+}
+
+/**
+ * 分页按钮该在哪个子树里找。
+ * 只有页面上真有多档分类 tab 时才收窄到当前 pane；单视图（BOSS）仍是整页找。
+ */
+function pagerScope() {
+  if (tabPanes().length >= 2) {
+    const p = activePane()
+    if (p) return p
+  }
+  return document
+}
+
 /** 找「下一页」按钮。标准 Element UI 分页是 <button class="btn-next">。 */
 function nextBtn() {
+  const scope = pagerScope()
   const cands = [
-    ...document.querySelectorAll('button.btn-next'),
-    ...document.querySelectorAll('.el-pagination .btn-next'),
+    ...scope.querySelectorAll('button.btn-next'),
+    ...scope.querySelectorAll('.el-pagination .btn-next'),
   ]
   for (const b of cands) {
     if (b.disabled) continue
@@ -782,9 +832,10 @@ function nextBtn() {
 
 /** 找「上一页」按钮。标准 Element UI 分页是 <button class="btn-prev">。 */
 function prevBtn() {
+  const scope = pagerScope()
   const cands = [
-    ...document.querySelectorAll('button.btn-prev'),
-    ...document.querySelectorAll('.el-pagination .btn-prev'),
+    ...scope.querySelectorAll('button.btn-prev'),
+    ...scope.querySelectorAll('.el-pagination .btn-prev'),
   ]
   for (const b of cands) {
     if (b.disabled) continue
@@ -807,7 +858,8 @@ async function gotoFirstPage(maxSteps = 12) {
     if (!b) return true
     const prev = idsOf(candidateRows()).join('|')
     b.click()
-    if (!(await waitForListChange(prev))) return false
+    // 超时给短一点：翻页确认本来就快，硬等 8 秒 x 多步会把整个采集拖成几分钟
+    if (!(await waitForListChange(prev, 3000))) return false
   }
   return false
 }
@@ -994,10 +1046,10 @@ async function collectAllTabs(opts = {}) {
       }
     }
 
-    // 分页可能停在用户上次翻到的页码 —— 不回到第 1 页就会静默漏掉前面的记录
+    // 分页可能停在用户上次翻到的页码 —— 不回到第 1 页就会静默漏掉前面的记录。
+    // ⚠️ 失败也**照样采**：漏一页好过漏掉整个 tab（真机事故里「已投递」11 条就是这么全丢的）。
     if (!(await gotoFirstPage())) {
-      tb.note = (tb.note ? tb.note + '；' : '') + '回不到第 1 页，跳过（怕漏数据）'
-      continue
+      tb.note = (tb.note ? tb.note + '；' : '') + '回不到第 1 页，可能漏前面几页'
     }
 
     const rows = candidateRows()
@@ -1037,7 +1089,7 @@ async function collectAllTabs(opts = {}) {
       continue
     }
     if (!(await gotoFirstPage())) {
-      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '回不到第 1 页，只保留已读到的'
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '回不到第 1 页，只保留第 1 页已读到的'
       continue
     }
 

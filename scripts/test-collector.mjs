@@ -209,6 +209,23 @@ eq(C.isMirrorOfBase(tCheckedReal, tDelivered), false, '集合是子集（不等�
 eq(C.isMirrorOfBase(tDelivered, tDelivered), false, '基线和自己比不算镜像')
 eq(C.isMirrorOfBase({ ids: [] }, tDelivered), false, '空 tab 不算镜像')
 eq(C.pickBaseTab([]), null, '没有 tab 时返回 null')
+// 真分组时基线优先「已投递」（全集），哪怕它行数不是最多
+eq(
+  C.pickBaseTab([
+    { name: '被查看', stage: 'viewed', ids: ['a', 'b', 'c'] },
+    { name: '已投递', stage: 'submitted', ids: ['a'] },
+  ]).name,
+  '已投递',
+  '有「已投递」就用它当基线，即使行数更少'
+)
+eq(
+  C.pickBaseTab([
+    { name: '被查看', stage: 'viewed', ids: ['a', 'b', 'c'] },
+    { name: '初筛', stage: 'screening', ids: ['d'] },
+  ]).name,
+  '被查看',
+  '没有「已投递」→ 退回行最多的那个'
+)
 // 同长度但内容不同（全部投递都推进到下一档）也不能算镜像
 eq(C.isMirrorOfBase({ ids: ['x', 'y', 'z'] }, tDelivered), false, '等长但内容不同 → 不是镜像')
 

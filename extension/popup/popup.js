@@ -959,16 +959,19 @@ function renderPreview(items, dbg) {
     lines.push('')
   }
 
-  const tabs = (dbg.tabs || []).filter((t) => t.rows)
+  // ⚠️ 这里必须列出**所有** tab，包括 0 条的 —— note（为什么被跳过/为什么没采到）
+  // 只挂在 0 条的那个 tab 上，过滤掉就等于把唯一的线索藏了。
+  const tabs = dbg.tabs || []
   if (tabs.length) {
-    lines.push('各分类 tab 命中：')
+    lines.push('各分类 tab：')
     for (const t of tabs) {
-      const tag = t.mirrored ? '镜像·只信行内文案' : t.paged ? '真分组·已翻页' : '仅第 1 页'
-      lines.push(`  ${t.name}（${tag}）→ ${t.rows} 条 / ${t.pages} 页` + (t.note ? `｜${t.note}` : ''))
+      const tag = t.rows ? (t.mirrored ? '镜像·只信行内文案' : t.paged ? '真分组·已翻页' : '仅第 1 页') : '未采到'
+      const body = t.rows ? `${t.rows} 条 / ${t.pages} 页` : '0 条'
+      lines.push(`  ${t.name}（${tag}）→ ${body}` + (t.note ? `｜${t.note}` : ''))
     }
   }
   if (dbg.baseTab) {
-    lines.push(`\n基线 tab：${dbg.baseTab}（行最多的那个；与它集合相同的 tab 判为镜像，tab 名不参与阶段判定）`)
+    lines.push(`\n基线 tab：${dbg.baseTab}（有「已投递」就用它，否则取行最多的；与它集合相同的 tab 判为镜像）`)
   }
   if (dbg.mirrored) {
     lines.push(`判定：${dbg.mirrored} 个 tab 与基线列表完全相同 → 全量镜像，阶段只信行内文案`)
