@@ -965,7 +965,15 @@ function renderPreview(items, dbg) {
   if (tabs.length) {
     lines.push('各分类 tab：')
     for (const t of tabs) {
-      const tag = t.rows ? (t.mirrored ? '镜像·只信行内文案' : t.paged ? '真分组·已翻页' : '仅第 1 页') : '未采到'
+      const tag = t.skipped
+        ? '未确认切换·已跳过'
+        : t.rows
+          ? t.mirrored
+            ? '镜像·只信行内文案'
+            : t.paged
+              ? '真分组·已翻页'
+              : '仅第 1 页'
+          : '未采到'
       const body = t.rows ? `${t.rows} 条 / ${t.pages} 页` : '0 条'
       lines.push(`  ${t.name}（${tag}）→ ${body}` + (t.note ? `｜${t.note}` : ''))
     }
@@ -1146,6 +1154,20 @@ async function uploadProgress() {
     lines.push(`  · 新建 ${data.created || 0}（本地账本没有，新入库）`)
     lines.push(`  · 忽略 ${data.ignored || 0}（对不上，未入库）`)
 
+    // 本次上报的阶段分布：判断「是不是某个阶段整档没采到」最快的一眼。
+    // 例如页面上有 1 条初筛，这里却只有「已投递/被查看/不合格」，就说明初筛那档漏了。
+    const dist = {}
+    for (const it of collectPreview) {
+      const k = it.stage || 'unknown'
+      dist[k] = (dist[k] || 0) + 1
+    }
+    const order = ['submitted', 'viewed', 'screening', 'written', 'interview', 'rejected', 'offer', 'unknown']
+    const distTxt = order
+      .filter((k) => dist[k])
+      .map((k) => `${STAGE_CN[k] || k} ${dist[k]}`)
+      .join(' / ')
+    if (distTxt) lines.push(`\n本次上报：${distTxt}`)
+
     // ⚠️ 被忽略的必须列出来：它们没进库，但页面上明明有这条投递 ——
     // 不写清楚用户会以为「已同步 = 数据都在」，实际是静默丢失。
     const ignored = (data.results || []).filter((x) => x.action === 'ignored')
@@ -1159,12 +1181,23 @@ async function uploadProgress() {
       lines.push('')
       lines.push('要收进来：先在 job-hunter 里手动记一条同名投递，或让后端开 createMissing。')
     }
-    if (data.matched && !data.advancedCount) lines.push('')
-    if (data.matched && !data.advancedCount) lines.push('阶段没变化 = 平台还没往后走，正常。')
+    if (data.matched && !data.advancedCount) {
+      const hasMoved = Object.keys(dist).some((k) => k !== 'submitted' && k !== 'unknown')
+      lines.push('')
+      lines.push(
+        hasMoved
+          ? '阶段没变化 = 后端已经是这些阶段了，正常。'
+          : '阶段没变化 = 平台还没往后走，正常。'
+      )
+    }
     st.textContent =
       `✅ 完成｜匹配 ${data.matched || 0}｜推进 ${data.advancedCount || 0}` +
       `｜新建 ${data.created || 0}｜忽略 ${data.ignored || 0}`
-    out.textContent = lines.join('\n')
+    // ⚠️ 汇总不能把采集明细冲掉：明细里的「各分类 tab」是排查漏采的唯一线索
+    // （哪个 tab 被跳过、为什么跳过），一旦盖掉就只剩一句「完成」，出事没法查。
+    const detail = out.textContent || ''
+    out.textContent =
+      lines.join('\n') + (detail ? `\n\n────────── 采集明细 ──────────\n${detail}` : '')
     $('#collectUploadBtn').disabled = true
     return { ok: true, data }
   } catch (e) {

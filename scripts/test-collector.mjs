@@ -226,6 +226,23 @@ eq(
   '被查看',
   '没有「已投递」→ 退回行最多的那个'
 )
+
+// ——————————————————————————————————————————————
+console.log('— resolveMirror：行内文案印证过的 tab 不能被集合巧合判成镜像 —')
+// 事故场景：初筛 tab 只有 1 条，点 tab 后列表没刷新就读到「已投递」整页 → 集合相同。
+// confirmed 表示我们确实等到列表换成了这个阶段的数据，此时集合雷同只是巧合。
+eq(
+  C.resolveMirror({ ids: ['a', 'b', 'c'], confirmed: true }, tDelivered),
+  false,
+  'confirmed 的 tab 即使集合与基线相同也不算镜像（2026-11-03 初筛丢失事故）'
+)
+eq(
+  C.resolveMirror({ ids: ['a', 'b', 'c'], confirmed: false }, tDelivered),
+  true,
+  '没确认过 + 集合相同 → 仍判镜像（平台改回全量渲染时兜底）'
+)
+eq(C.resolveMirror(tDelivered, tDelivered), false, '基线自己不是镜像')
+eq(C.resolveMirror({ ids: ['b'], confirmed: false }, tDelivered), false, '集合不同 → 不是镜像')
 // 同长度但内容不同（全部投递都推进到下一档）也不能算镜像
 eq(C.isMirrorOfBase({ ids: ['x', 'y', 'z'] }, tDelivered), false, '等长但内容不同 → 不是镜像')
 

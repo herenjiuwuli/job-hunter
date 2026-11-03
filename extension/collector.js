@@ -186,6 +186,23 @@ function isMirrorOfBase(tab, base) {
 }
 
 /**
+ * 最终判定：这个 tab 算不算镜像。
+ *
+ * 三条规则，顺序不能换：
+ *   ① 基线自己不是镜像；
+ *   ② **已被行内文案印证过的 tab（confirmed）永远不是镜像** —— 我们亲眼看到列表换成了这个阶段
+ *      的数据，集合和基线雷同只是巧合。这条是 2026-11-03 事故的修复：初筛 tab 只有 1 条投递，
+ *      点 tab 后列表还没刷新就读，读到的恰好是「已投递」整页 → 集合等于基线 → 被判镜像 →
+ *      tab 名失效 → 那条初筛永远记成 submitted（后端推进数恒为 0）；
+ *   ③ 其余按集合相同判镜像（平台哪天改回「7 个 pane 渲染同一份全量」时兜底）。
+ */
+function resolveMirror(tab, base) {
+  if (!tab || !base || tab === base) return false
+  if (tab.confirmed) return false
+  return sameIdSet(tab.ids, base.ids)
+}
+
+/**
  * 多来源采集结果合并：同一 jobId 只留一条，阶段取**权重最大**的那个。
  *
  * 为什么取最大而不是「最后采集到的」：
@@ -876,6 +893,41 @@ async function waitForListChange(prevKeys, timeoutMs = 8000) {
 }
 
 /**
+ * 轮询等待：可见列表换成了**别的 jobId 集合**（含变成空），或行内文案出现目标阶段词。
+ *
+ * 为什么需要它（2026-11-03 真机事故）：
+ *   `waitTabReady` 只确认「tab 头变成 active + loading 遮罩消失」，**不确认列表内容换了**。
+ *   点 tab 后请求可能几百毫秒才回来，此时读到的还是上一个 tab 的列表。
+ *   初筛 tab 只有 1 条，一旦读到「已投递」的 10 条，它的 jobId 集合就恰好等于基线 →
+ *   被镜像守卫误判成「全量镜像」→ tab 名失效 → 那条初筛被记成 submitted，推进永远是 0。
+ *
+ * @param {string[]} beforeIds 切换前的可见行 jobId
+ * @param {string} [stageKey]  目标阶段；行内文案命中它也算切换成功
+ */
+async function waitListReplaced(beforeIds, stageKey, timeoutMs = 3500) {
+  const before = new Set(Array.isArray(beforeIds) ? beforeIds : [])
+  const t0 = Date.now()
+  let emptyStreak = 0
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 250))
+    const rows = candidateRows()
+    if (!rows.length) {
+      // 空列表也是「切过去了」（该阶段确实没有投递），但要连续两次确认，防加载中闪空
+      emptyStreak++
+      if (emptyStreak >= 2) return true
+      continue
+    }
+    emptyStreak = 0
+    const ids = idsOf(rows)
+    const same = ids.length === before.size && ids.every((id) => before.has(id))
+    if (!same) return true
+    // 集合雷同也可能内容真换了（不同 tab 恰好同一批岗位）→ 用行内文案兜底
+    if (stageKey && rows.some((r) => stageOfText(r.lines.join(' ')) === stageKey)) return true
+  }
+  return false
+}
+
+/**
  * 自动翻页采集：采当前页 → 点「下一页」→ 等刷新 → 再采，直到没有下一页。
  *
  * 为什么默认只翻当前 tab：实习僧 7 个分类 tab 的列表是同一份数据复制（见真机 HTML），
@@ -1016,14 +1068,29 @@ async function collectAllTabs(opts = {}) {
   const initial = activeTab()
   const initialKey = initial ? initial.stage : null
 
-  /** 切到指定 tab；已经是 active 就不动。返回是否确实切过去了 */
+  /**
+   * 切到指定 tab，并确认**列表真的换成了这个阶段的数据**。
+   * @returns {Promise<'ok'|'uncertain'>} uncertain = 点了但列表没刷新，读到的可能是上一个 tab
+   */
   async function switchToTab(t) {
-    if (t.head.classList.contains('is-active')) return true
-    t.head.click()
-    const ok = await waitTabReady(t.name)
-    // 切换瞬间旧 pane 可能还没完成 display 切换，给一帧缓冲再读
-    if (ok) await new Promise((r) => setTimeout(r, 250))
-    return ok
+    const target = stageOfTabName(t.name)
+    const stageKey = target ? target.key : null
+    // 已经是 active 且行内文案对得上 → 不用动
+    if (t.head.classList.contains('is-active') && stageKey) {
+      const rows = candidateRows()
+      if (!rows.length || rows.some((r) => stageOfText(r.lines.join(' ')) === stageKey)) return 'ok'
+    }
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const before = idsOf(candidateRows())
+      t.head.click()
+      const ready = await waitTabReady(t.name)
+      if (ready && (await waitListReplaced(before, stageKey))) {
+        // 切换瞬间旧 pane 可能还没完成 display 切换，给一帧缓冲再读
+        await new Promise((r) => setTimeout(r, 250))
+        return 'ok'
+      }
+    }
+    return 'uncertain'
   }
 
   // ---- 阶段 A：逐个点开 tab，**只读第 1 页**，拿 jobId 集合 ----
@@ -1032,18 +1099,25 @@ async function collectAllTabs(opts = {}) {
   debug.phase = 'probe'
   const buckets = []
   for (const t of tabs) {
-    const tb = { name: t.name, stage: t.stage, pages: 0, rows: 0, ids: [], note: '', mirrored: false, paged: false }
+    const tb = {
+      name: t.name, stage: t.stage, pages: 0, rows: 0, ids: [],
+      note: '', mirrored: false, paged: false, confirmed: false, skipped: false,
+    }
     debug.tabs.push(tb)
 
     const isCur = initialKey && initialKey === t.stage && t.head.classList.contains('is-active')
-    if (!isCur) {
-      const ok = await switchToTab(t)
-      if (!ok) {
-        // ⚠️ 切换没确认成功时**必须跳过**：此时页面上还是上一个 tab 的列表，
-        // 直接采会把那些投递错标成本阶段的记录 —— 错的阶段比漏采一条严重得多。
-        tb.note = '切换 tab 失败，跳过（避免把上个 tab 的数据错标成本阶段）'
-        continue
-      }
+    if (isCur) {
+      // 用户本来就停在这个 tab，可见列表按定义就是它的数据
+      tb.confirmed = true
+    } else if ((await switchToTab(t)) !== 'ok') {
+      // ⚠️ 切换没确认成功时**必须跳过**：此时页面上还是上一个 tab 的列表，
+      // 直接采会把那些投递错标成本阶段的记录 —— 错的阶段比漏采一条严重得多。
+      // 注：这一档漏采了，note 里会写明，点第二次通常就能采到。
+      tb.skipped = true
+      tb.note = '切到本阶段后列表没刷新（读到的可能是上个 tab 的数据），已跳过'
+      continue
+    } else {
+      tb.confirmed = true
     }
 
     // 分页可能停在用户上次翻到的页码 —— 不回到第 1 页就会静默漏掉前面的记录。
@@ -1069,7 +1143,7 @@ async function collectAllTabs(opts = {}) {
   }
   const baseTb = pickBaseTab(nonEmpty.map((b) => b.tb))
   for (const b of nonEmpty) {
-    b.tb.mirrored = isMirrorOfBase(b.tb, baseTb)
+    b.tb.mirrored = resolveMirror(b.tb, baseTb)
     if (b.tb.mirrored) {
       b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '列表与基线完全相同 → 全量镜像，只信行内文案，不重复翻页'
     }
@@ -1084,8 +1158,8 @@ async function collectAllTabs(opts = {}) {
   for (const b of nonEmpty) {
     if (b.tb !== baseTb && b.tb.mirrored) continue
 
-    if (!(await switchToTab(b.tab))) {
-      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '翻页前切回该 tab 失败，只保留第 1 页'
+    if ((await switchToTab(b.tab)) !== 'ok') {
+      b.tb.note = (b.tb.note ? b.tb.note + '；' : '') + '翻页前切回该 tab 未确认，只保留第 1 页'
       continue
     }
     if (!(await gotoFirstPage())) {
@@ -1143,6 +1217,12 @@ async function collectAllTabs(opts = {}) {
   debug.parsed = merged.items.length
   debug.pages = debug.tabs.reduce((s, t) => s + (t.pages || 0), 0)
   debug.rows = debug.tabs.reduce((s, t) => s + (t.rows || 0), 0)
+  debug.uncertain = debug.tabs.filter((t) => t.skipped).length
+  if (debug.uncertain) {
+    debug.notes.push(
+      `${debug.uncertain} 个 tab 没能确认列表已切换，已跳过（避免错标阶段）；再点一次通常能补上`
+    )
+  }
   debug.phase = 'done'
   return { items: merged.items, debug }
 }
@@ -1160,6 +1240,7 @@ window.__jhCollector = {
   mergeEntries,
   pickBaseTab,
   isMirrorOfBase,
+  resolveMirror,
   sameIdSet,
   stageWordStats,
   splitCompanyCity,
