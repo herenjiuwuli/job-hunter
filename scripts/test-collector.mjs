@@ -304,5 +304,29 @@ const m6 = C.mergeEntries([
 ])
 eq(m6.items[0].read, true, '任一来源标了已读就保留已读')
 
+// ——————————————————————————————————————————————
+// 岗位 id 提取：BOSS 必须带 boss_ 前缀
+// 为什么守着：投递那一刻写进本地账本和后端的是 boss_xxx，采集端若返回裸 id，
+// 同一条投递会出现两个 id —— 后端 sameApply 只能退回「公司+岗位名」硬猜，
+// 岗位一改名就断，而且是静默的（没有任何报错）。
+// ——————————————————————————————————————————————
+console.log('— 岗位 id 提取 —')
+eq(
+  C.jobIdOfHref('https://www.zhipin.com/job_detail/7bd2d88a19b8f2ca0nJ729u1F1FY.html'),
+  'boss_7bd2d88a19b8f2ca0nJ729u1F1FY',
+  'BOSS 老版路径 → 带 boss_ 前缀'
+)
+eq(
+  C.jobIdOfHref('https://www.zhipin.com/job_detail/?jobId=abc123XYZ'),
+  'boss_abc123XYZ',
+  'BOSS 新版 query 形式 → 带 boss_ 前缀'
+)
+eq(
+  C.jobIdOfHref('https://www.shixiseng.com/intern/inn_waushlks3uhu'),
+  'inn_waushlks3uhu',
+  '实习僧保持裸 inn_ id，不加前缀'
+)
+eq(C.jobIdOfHref('https://example.com/nothing'), '', '认不出的链接返回空串，不瞎猜')
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} collector 解析用例：${pass} 通过 / ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

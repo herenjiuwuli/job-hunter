@@ -583,30 +583,67 @@ function fillGreeting(el, text) {
   el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }))
 }
 
+/**
+ * 把这条投递回写到后端。
+ *
+ * ⚠️ 走 background 转发，不在页面里直接 fetch：content script 的 fetch 受**页面 CSP** 管辖，
+ * BOSS 的 connect-src 不允许 localhost，请求会被静默拦掉（2026-11-03 真机：三家全显示
+ * 「已发送招呼语」、本地账本也有，后端一条记录都没有，因为下面只 console.warn，界面上看不见）。
+ *
+ * 返回值统一是 { ok, status, error }，调用方必须把它带进结果里 —— 回写失败是**用户该知道的事**，
+ * 不是日志里的一句 warn。
+ */
 async function writeback(info, greeting, jobId) {
+  const body = {
+    company: info.company,
+    jobTitle: info.jobTitle,
+    platform: platform(),
+    // jobId 必须带：采集进度时靠它精确对账。
+    // 早期没传，导致本地 18 条投递全是 jobId 空，同步只能拿名字硬猜
+    jobId: jobId || currentJobId() || '',
+    greeting,
+    status: '已投递',
+    appliedAt: new Date().toISOString(),
+  }
+
+  // 优先走 background（不受页面 CSP 限制）
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'backendPost', path: '/api/applications', body })
+    if (r && typeof r.ok === 'boolean') {
+      if (r.ok) return { ok: true }
+      // 401 = 没配 token / token 过期。本地账本照记，但网页端会有缺口，必须让人看得见
+      if (r.status === 401) {
+        return { ok: false, status: 401, error: '后端拒绝（401）：扩展里没配 token 或已过期' }
+      }
+      return { ok: false, status: r.status, error: r.error || `后端返回 ${r.status}` }
+    }
+  } catch {
+    /* 不在扩展环境（比如控制台粘贴、单测）→ 落到下面的直连兜底 */
+  }
+
+  // 兜底：直连。CSP 宽松的站点（实习僧）走这条一直没问题
   try {
     const r = await fetch(`${await backendBase()}/api/applications`, {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        company: info.company,
-        jobTitle: info.jobTitle,
-        platform: platform(),
-        // jobId 必须带：采集进度时靠它精确对账。
-        // 早期没传，导致本地 18 条投递全是 jobId 空，同步只能拿名字硬猜
-        jobId: jobId || currentJobId() || '',
-        greeting,
-        status: '已投递',
-        appliedAt: new Date().toISOString(),
-      }),
+      body: JSON.stringify(body),
     })
-    // 401 = 没配 token / token 过期。本地账本照记，但网页端会有缺口，必须让人看得见
-    if (r.status === 401) {
-      console.warn('[job-hunter] 回写被拒（401）：请在扩展弹窗「记录 → 后端连接」里填入 token')
-    }
+    if (r.ok) return { ok: true }
+    if (r.status === 401) return { ok: false, status: 401, error: '后端拒绝（401）：扩展里没配 token 或已过期' }
+    return { ok: false, status: r.status, error: `后端返回 ${r.status}` }
   } catch (e) {
-    console.warn('[job-hunter] 回写失败：', e.message)
+    return { ok: false, status: 0, error: `连不上后端（${e.message}）` }
   }
+}
+
+/**
+ * 发送成功但后端没写进去时，把这件事挂在结果消息上。
+ * 用户只看得到这条消息，看不到 console —— 回写失败必须在界面上说出来，
+ * 否则表现就是「我明明投了，漏斗里没有」，而且没有任何报错。
+ */
+function withBackendNote(message, wb) {
+  if (!wb || wb.ok) return message
+  return `${message}｜⚠️ 但没写进后端：${wb.error || '回写失败'}`
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -1280,7 +1317,7 @@ async function runBossApply(msg) {
       source: 'auto',
     })
   }
-  await writeback(info, greeting, jobId)
+  const wbBoss = await writeback(info, greeting, jobId)
 
   return {
     ok: result.state !== 'failed',
@@ -1291,12 +1328,15 @@ async function runBossApply(msg) {
     jobTitle: info.jobTitle,
     used: quota.used,
     limit: quota.limit,
-    message:
+    backendError: wbBoss && !wbBoss.ok ? wbBoss.error || '回写后端失败' : '',
+    message: withBackendNote(
       result.state === 'success'
         ? `已发送招呼语（${result.text}）`
         : result.state === 'unknown'
           ? `已点「发送」，${result.text}`
           : `发送失败：${result.text}`,
+      wbBoss
+    ),
   }
 }
 
@@ -1461,7 +1501,7 @@ async function runApply(msg) {
         source: 'auto',
       })
     }
-    await writeback(sxInfo, '', jobId)
+    const wbSx = await writeback(sxInfo, '', jobId)
 
     return {
       ok: sxResult.state !== 'pending',
@@ -1472,12 +1512,15 @@ async function runApply(msg) {
       jobTitle: sxInfo.jobTitle,
       used: sxQuota.used,
       limit: sxQuota.limit,
-      message:
+      backendError: wbSx && !wbSx.ok ? wbSx.error || '回写后端失败' : '',
+      message: withBackendNote(
         sxResult.state === 'success'
           ? `已投递成功（${sxResult.text}）`
           : sxResult.state === 'unknown'
             ? `已点「确认投递」，${sxResult.text}，已记为已投（未确认，建议抽查）`
             : `点击后${sxResult.text}，未计入已投`,
+        wbSx
+      ),
     }
   }
 
@@ -1536,7 +1579,7 @@ async function runApply(msg) {
       source: 'auto',
     })
   }
-  await writeback(info, greeting, bossJobId)
+  const wbSingle = await writeback(info, greeting, bossJobId)
 
   return {
     ok: true,
@@ -1545,6 +1588,8 @@ async function runApply(msg) {
     jobTitle: info.jobTitle,
     used: quota.used,
     limit: quota.limit,
+    backendError: wbSingle && !wbSingle.ok ? wbSingle.error || '回写后端失败' : '',
+    message: wbSingle && !wbSingle.ok ? `⚠️ 没写进后端：${wbSingle.error || '回写失败'}` : '',
   }
 }
 
@@ -2059,7 +2104,9 @@ async function bootPendingBoss() {
         source: 'jump',
       })
     }
-    await writeback({ company: p.company, jobTitle: p.jobTitle }, p.greeting || '')
+    // jobId 必须带上：批量路径原来只传公司+岗位名，BOSS 记录的 jobId 全是空，
+    // 之后「进度采集」拿平台 id 对账时对不上，岗位一改名就断（只能靠名字硬猜）
+    const wb = await writeback({ company: p.company, jobTitle: p.jobTitle }, p.greeting || '', p.jobId)
 
     const res = {
       ok: result.state !== 'failed',
@@ -2069,12 +2116,16 @@ async function bootPendingBoss() {
       jobTitle: p.jobTitle,
       used: quota && quota.used,
       limit: quota && quota.limit,
+      // 回写失败不影响「消息已发出」这个事实，但必须让人看见 —— 否则网页端漏记录，
+      // 表现是「我明明投了，漏斗里没有」。这和 2026-11-03 BOSS 三家的症状一模一样。
+      backendError: wb && !wb.ok ? wb.error || '回写后端失败' : '',
       message:
-        result.state === 'success'
+        (result.state === 'success'
           ? `已发送招呼语（${result.text}）`
           : result.state === 'unknown'
             ? `已点「发送」，${result.text}`
-            : `发送失败：${result.text}`,
+            : `发送失败：${result.text}`) +
+        (wb && !wb.ok ? `｜⚠️ 但没写进后端：${wb.error || '回写失败'}` : ''),
     }
     await chrome.storage.local.set({
       lastBossResult: { ...res, at: new Date().toISOString() },

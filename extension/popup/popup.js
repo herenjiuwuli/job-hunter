@@ -600,6 +600,73 @@ $('#clearAppliedBtn').addEventListener('click', async () => {
   refreshApplied()
 })
 
+/**
+ * 把本地账本补传后端。
+ *
+ * 为什么需要这个按钮：投递成功那一刻，消息发出去了、本地账本也记了，
+ * 但「回写后端」可能失败（页面 CSP 拦 fetch、后端没起、token 过期）。
+ * 那些记录在本地是有的、后端没有 → 漏斗里永远缺这几家，而且没有任何报错。
+ * 2026-11-03 BOSS 三家就是这个状况（页面上三家全「已发送招呼语」，后端一条都没有）。
+ *
+ * ⚠️ 必须走 collect（不是 POST /api/applications）：collect 有 sameApply 去重，
+ * 匹配到就更新、匹配不到才新建，重复点是幂等的。直接 POST 会造重复记录。
+ */
+$('#pushAppliedBtn').addEventListener('click', async () => {
+  const btn = $('#pushAppliedBtn')
+  const { applied = {} } = await chrome.storage.local.get('applied')
+  const keys = Object.keys(applied)
+  if (!keys.length) return log('账本是空的，没有可补传的记录')
+
+  // 账本 key = 平台前缀:jobId；item 里存了 platform/title/company/at
+  const items = []
+  for (const k of keys) {
+    const it = applied[k] || {}
+    if (!it.company && !it.title) continue
+    items.push({
+      platform: it.platform || (/^boss:/.test(k) ? 'BOSS直聘' : '实习僧'),
+      jobId: it.jobId || k.replace(/^[a-z]+:/, ''),
+      company: it.company || '',
+      jobTitle: it.title || '',
+      // 账本只记了「投过」，没有阶段信息 → 用人工 status 兜 submitted，
+      // 之后采集器采到真实阶段会按权重覆盖
+      stageRaw: '已投递',
+      appliedAt: it.at || '',
+    })
+  }
+  if (!items.length) return log('账本里没有可用的公司/岗位信息')
+
+  const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
+  const base = (jhBackend || 'http://localhost:3100').replace(/\/+$/, '')
+  btn.disabled = true
+  log(`补传 ${items.length} 条到后端…`)
+  try {
+    const r = await fetch(`${base}/api/applications/collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(jhToken ? { Authorization: `Bearer ${jhToken}` } : {}),
+      },
+      // createMissing:true —— 账本里这些投递后端本来就没有，必须允许新建
+      body: JSON.stringify({ items, createMissing: true }),
+    })
+    const data = await r.json().catch(() => ({}))
+    if (r.status === 401) return log('❌ 401：先在下面「后端连接」里填 token')
+    if (!r.ok) return log(`❌ 后端返回 ${r.status}：${data.error || ''}`)
+    log(
+      `✅ 补传完成｜新建 ${data.created || 0}｜推进 ${data.advancedCount || 0}` +
+        `｜已在库 ${data.unchanged || 0}｜忽略 ${data.ignored || 0}`
+    )
+    const bad = (data.results || []).filter((x) => x.action === 'ignored')
+    if (bad.length) {
+      log(`⚠️ ${bad.length} 条没进去（公司/岗位名为空）：` + bad.map((x) => x.company || '(无公司)').join('、'))
+    }
+  } catch (e) {
+    log(`❌ 连不上 ${base}（后端没启动？）：${e.message}`)
+  } finally {
+    btn.disabled = false
+  }
+})
+
 // ===================== 投递筛选面板（A 方案配置） =====================
 const F = window.JH_FILTERS
 const DAY_OPTIONS = [2, 3, 4, 5]

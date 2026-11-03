@@ -89,10 +89,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'clearApplied':
       clearApplied().then(sendResponse)
       return true
+    // ===== 后端回写代理 =====
+    // 为什么不在 content script 里直接 fetch：content script 的 fetch 走**页面上下文**，
+    // 受页面的 CSP `connect-src` 管辖；service worker 的 fetch 只受扩展 host_permissions 约束。
+    // BOSS（zhipin.com）的 CSP 比实习僧严，2026-11-03 真机就是这个症状：
+    // 页面上三家全部「已发送招呼语」、本地账本也记上了，后端一条记录都没有 ——
+    // 请求被页面 CSP 拦掉，而 writeback 的 catch 只 console.warn，界面上完全不可见。
+    case 'backendPost':
+      backendPost(msg.path, msg.body).then(sendResponse)
+      return true
     default:
       return false
   }
 })
+
+/**
+ * 代 content script 打后端。返回结构固定：{ ok, status, data, error }，
+ * 让调用方能区分「没发出去（status 0）」和「发出去了但被拒（401/400）」。
+ */
+async function backendPost(path, body) {
+  try {
+    const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
+    const base = String(jhBackend || 'http://localhost:3100').replace(/\/+$/, '')
+    const r = await fetch(base + path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(jhToken ? { Authorization: `Bearer ${jhToken}` } : {}),
+      },
+      body: JSON.stringify(body || {}),
+    })
+    const text = await r.text()
+    let data = null
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+    return {
+      ok: r.ok,
+      status: r.status,
+      data,
+      error: r.ok ? '' : (data && data.error) || String(text).slice(0, 120),
+    }
+  } catch (e) {
+    // fetch 抛错 = 后端没启动 / 地址写错。和 HTTP 4xx 区分开，否则用户会去查 token
+    return { ok: false, status: 0, error: `连不上后端（${e.message}）` }
+  }
+}
 
 // ===================== 本地投递账本 =====================
 // 结构：{ "sx:inn_xxx": {platform, jobId, title, company, url, at, verified} }

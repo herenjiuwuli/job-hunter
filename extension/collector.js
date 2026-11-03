@@ -396,14 +396,22 @@ function rowOfLink(a) {
   return best
 }
 
+/**
+ * 从岗位链接里取平台岗位 id。
+ *
+ * ⚠️ BOSS 必须带 `boss_` 前缀：投递那一刻 content.js 的 `jobIdOf()` 写进本地账本的就是
+ * `boss_xxx`，后端也是按这个 id 存的。采集端如果只返回裸 id，同一条投递会出现两个 id，
+ * `sameApply` 就只能退回「公司+岗位名」硬猜 —— 岗位一改名就断，而且是静默的。
+ * （2026-11-03 发现两套格式并存，统一到这里。）
+ */
 function jobIdOfHref(href) {
   const s = String(href || '')
   const sx = s.match(/inn_[a-z0-9]+/i)
   if (sx) return sx[0]
   const boss = s.match(/job_detail\/([a-z0-9~_-]+)\.html/i)
-  if (boss) return boss[1]
+  if (boss) return `boss_${boss[1]}`
   const q = s.match(/[?&]jobId=([a-z0-9~_-]+)/i)
-  if (q) return q[1]
+  if (q) return `boss_${q[1]}`
   return ''
 }
 
