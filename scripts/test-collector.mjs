@@ -243,6 +243,22 @@ eq(
 )
 eq(C.resolveMirror(tDelivered, tDelivered), false, '基线自己不是镜像')
 eq(C.resolveMirror({ ids: ['b'], confirmed: false }, tDelivered), false, '集合不同 → 不是镜像')
+
+// ——————————————————————————————————————————————
+console.log('— isDisabledBtn：分页按钮的「假可点」—')
+// 真机误报的根因：第一页的 prev 只加了 is-disabled 类，没设 disabled 属性。
+// 只看 b.disabled 会以为可点 → 点一下没反应 → 误报「回不到第 1 页，可能漏前面几页」。
+const btn = (attrs = {}, cls = '') => ({
+  disabled: !!attrs.disabled,
+  className: cls,
+  getAttribute: (k) => (k in attrs ? attrs[k] : null),
+  hasAttribute: (k) => k in attrs,
+})
+eq(C.isDisabledBtn(btn({ disabled: true })), true, '有 disabled 属性 → 禁用')
+eq(C.isDisabledBtn(btn({}, 'btn-prev is-disabled')), true, '只有 is-disabled 类 → 也算禁用（真机第一页就是这种）')
+eq(C.isDisabledBtn(btn({}, 'btn-prev')), false, '没有禁用标记 → 可点')
+eq(C.isDisabledBtn(btn({ 'aria-disabled': 'true' }, 'btn-prev')), true, 'aria-disabled=true → 禁用')
+eq(C.isDisabledBtn(null), true, '没有按钮就当禁用，别去点')
 // 同长度但内容不同（全部投递都推进到下一档）也不能算镜像
 eq(C.isMirrorOfBase({ ids: ['x', 'y', 'z'] }, tDelivered), false, '等长但内容不同 → 不是镜像')
 

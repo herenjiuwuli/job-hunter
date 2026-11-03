@@ -832,6 +832,51 @@ function pagerScope() {
   return document
 }
 
+/**
+ * 按钮是不是禁用态。
+ * Element UI 的「第一页」只给 prev 加 `is-disabled` 类，**不一定设 disabled 属性** ——
+ * 只看 `b.disabled` 会把它当可点，点一下没反应，于是误报「回不到第 1 页」。
+ */
+function isDisabledBtn(b) {
+  if (!b) return true
+  if (b.disabled) return true
+  if (b.getAttribute && b.getAttribute('aria-disabled') === 'true') return true
+  if (b.hasAttribute && b.hasAttribute('disabled')) return true
+  const cls = String((b.className && b.className.baseVal) || b.className || '')
+  return /(^|\s)(is-disabled|disabled)(\s|$)/.test(cls)
+}
+
+/**
+ * 读当前页码。返回 null = 页面上读不到页码（自定义分页 / 只有前后按钮）。
+ * 为什么要读页码：判「已经在第 1 页」比「猜 prev 能不能点」可靠得多。
+ */
+function currentPage() {
+  const scope = pagerScope()
+  const sels = [
+    'ul.el-pager li.active',
+    'ul.el-pager li.is-active',
+    '.el-pager .number.active',
+    '.el-pager .number.is-active',
+    '.el-pagination li.active',
+  ]
+  const roots = scope === document ? [document] : [scope, document]
+  for (const root of roots) {
+    if (!root) continue
+    for (const s of sels) {
+      let el = null
+      try {
+        el = root.querySelector(s)
+      } catch (_) {
+        el = null
+      }
+      if (!el) continue
+      const n = parseInt(String(el.textContent || '').trim(), 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+  }
+  return null
+}
+
 /** 找「下一页」按钮。标准 Element UI 分页是 <button class="btn-next">。 */
 function nextBtn() {
   const scope = pagerScope()
@@ -840,7 +885,7 @@ function nextBtn() {
     ...scope.querySelectorAll('.el-pagination .btn-next'),
   ]
   for (const b of cands) {
-    if (b.disabled) continue
+    if (isDisabledBtn(b)) continue
     if (!isShown(b)) continue
     return b
   }
@@ -855,7 +900,7 @@ function prevBtn() {
     ...scope.querySelectorAll('.el-pagination .btn-prev'),
   ]
   for (const b of cands) {
-    if (b.disabled) continue
+    if (isDisabledBtn(b)) continue
     if (!isShown(b)) continue
     return b
   }
@@ -870,15 +915,23 @@ function prevBtn() {
  * 前两页静默漏掉 —— 不报错，只表现为「怎么只有这么几条」，最难查的一类 bug。
  */
 async function gotoFirstPage(maxSteps = 12) {
+  // 页码可读时先信它：已经在第 1 页就直接收工，别去点那个「假可点」的 prev
+  if (currentPage() === 1) return true
   for (let i = 0; i < maxSteps; i++) {
     const b = prevBtn()
-    if (!b) return true
+    if (!b) return true // 没有可点的上一页 = 已经在第 1 页
     const prev = idsOf(candidateRows()).join('|')
     b.click()
-    // 超时给短一点：翻页确认本来就快，硬等 8 秒 x 多步会把整个采集拖成几分钟
-    if (!(await waitForListChange(prev, 3000))) return false
+    if (await waitForListChange(prev, 3000)) {
+      if (currentPage() === 1) return true
+      continue
+    }
+    // 点了没反应，两种可能：① 本来就在第 1 页（按钮只是样式禁用）；② 点到别的 pane 的分页。
+    // 页码是唯一能区分两者的证据。
+    if (currentPage() === 1) return true
+    return false
   }
-  return false
+  return currentPage() === 1
 }
 
 /** 轮询等待：列表刷新（行集合变化）或超时。返回「是否还在刷新」。 */
@@ -1241,6 +1294,8 @@ window.__jhCollector = {
   pickBaseTab,
   isMirrorOfBase,
   resolveMirror,
+  isDisabledBtn,
+  currentPage,
   sameIdSet,
   stageWordStats,
   splitCompanyCity,
