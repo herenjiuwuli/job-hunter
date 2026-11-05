@@ -41,16 +41,28 @@
 
   // ===== 方向分组（关键词取自实习僧真实岗位名 + 简历技能）=====
   // 岗位标题或 JD 命中任一关键词 → 认为属于该方向
+  //
+  // ⚠️ 英文词必须写进来，而且按**词边界**匹配（见下面的 hitKeyword）。
+  //    2026-11-05 真机：搜「SDET」搜出来的几条是英文岗名（Quality Assurance / Test Engineer），
+  //    词表里全是中文 + 几个工具名 → 3 家全被判「没有方向词」，一个都没投。
+  //    英文岗在深圳的外企/外包里不算少见，中文词表等于对它们全盲。
+  //    词边界是为了避免 `test` 命中 `latest`/`contest` —— 所以可以用宽词。
   const DIRECTIONS = [
     {
       id: 'qa',
       label: '测试开发 / 软件测试',
-      keywords: ['测试开发', '测开', '软件测试', '测试实习', '测试工程师', '测试/测试开发', 'QA', '质量保障', '测试'],
+      keywords: [
+        '测试开发', '测开', '软件测试', '测试实习', '测试工程师', '测试/测试开发', 'QA', '质量保障', '测试',
+        'test engineer', 'qa engineer', 'quality assurance', 'software engineer in test', 'testing', 'test',
+      ],
     },
     {
       id: 'auto',
       label: '自动化测试 / SDET',
-      keywords: ['自动化测试', 'SDET', '自动化', 'selenium', 'playwright', 'pytest', 'vitest'],
+      keywords: [
+        '自动化测试', 'SDET', '自动化', 'selenium', 'playwright', 'pytest', 'vitest',
+        'sdet', 'test automation', 'automation engineer', 'automation',
+      ],
     },
     {
       id: 'api',
@@ -86,6 +98,32 @@
 
   // 城市名归一化：页面上的写法五花八门（北京市 / 深圳市 / 北京·朝阳 / 北京市-北京市）
   const CITY_SUFFIX = /(市|地区|特别行政区|省)$/
+
+  /**
+   * 关键词命中判断（纯函数）。
+   *
+   * 中文用**包含**，英文用**词边界**——这两个口径不能统一：
+   *   - 中文不分词，「测试工程师」里包含「测试」是对的，用边界反而全漏；
+   *   - 英文若也包含判断，`test` 会命中 `latest` / `contest`，`qa` 会命中 `qax`，
+   *     标题里只要出现这类词就把岗位放行 = 方向筛选形同虚设。
+   *
+   * 2026-11-05 真机背景：搜「SDET」出来的几条是英文岗名（Quality Assurance / Test Engineer），
+   * 词表当时只有中文 + 几个工具名 → 3 家全被判「没有方向词」。英文岗不能靠中文词表兜。
+   *
+   * @param {string} text 已经 toLowerCase 过的文本（调用方统一小写，避免两处各转一遍）
+   * @param {string} kw 词表里的词（大小写都行，这里自己转小写）
+   */
+  function hitKeyword(text, kw) {
+    const k = String(kw || '').toLowerCase()
+    if (!k) return false
+    const t = String(text || '').toLowerCase()
+    // 纯 ASCII（英文/数字/技术符号）→ 词边界；含中文 → 包含
+    if (!/[^\x00-\x7f]/.test(k)) {
+      const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(t)
+    }
+    return t.includes(k)
+  }
 
   function normalizeCity(raw) {
     let s = String(raw || '').trim()
@@ -152,6 +190,13 @@
         if (!best || at < best.at) best = { city: c, at }
       }
     }
+    // 「全国」也是一格城市位：实习僧在深圳的搜索结果里会掺「全国」岗位，
+    // 卡片上的城市位直接写「全国」。同位置时优先认具体城市（条件用 <，不是 <=）。
+    //
+    // ⚠️ 只认「全国」，**不能**把「不限」也算进来：BOSS 卡片上「学历不限」到处都是，
+    //    那会把一堆正常岗位误判成「全国」全塞进待定。
+    const atN = t.indexOf('全国')
+    if (atN !== -1 && (!best || atN < best.at)) best = { city: '全国', at: atN }
     return best ? best.city : ''
   }
 
@@ -161,16 +206,27 @@
    * 语义：**先找出岗位城市，再比是不是你要的**。顺序反了就会退化成
    * 「文本里出现过我选的城市就算过」—— 而页面上永远有你的城市（站点切换器/推荐/页脚）。
    *
+   * 三态而不是两态：
+   *   - blocked=false          城市对 → 正常投
+   *   - nationwide=true        写的是「全国/不限」→ **既不是异地也不是本地**，交给上层列成「待定」
+   *   - blocked=true           明确在别的城市 → 直接拦
+   *
+   * 为什么「全国」要单独一态：实习僧在「深圳」的搜索结果里会掺「全国」岗位
+   * （2026-11-05 实测：20 条里 2 条是全国，其中东方金信那条详情页写着北京）。
+   * 当异地丢掉会漏掉真在深圳的，直接投又可能投到外地，所以只能让人来决定。
+   *
    * @param {string} metaText 岗位头部那段文本（越窄越准，别喂整页）
    * @param {string[]} cities 只投这些城市
-   * @returns {{blocked:boolean, city:string}} city 为空 = 认不出，交由 strictMeta 决定
+   * @returns {{blocked:boolean, city:string, nationwide:boolean}} city 为空 = 认不出，交由 strictMeta 决定
    */
   function checkCity(metaText, cities) {
     const mine = (cities || []).map(normalizeCity).filter(Boolean)
-    if (!mine.length) return { blocked: false, city: '' }
+    if (!mine.length) return { blocked: false, city: '', nationwide: false }
     const city = firstCity(metaText)
-    if (!city) return { blocked: false, city: '' }
-    return { blocked: !mine.includes(normalizeCity(city)), city }
+    if (!city) return { blocked: false, city: '', nationwide: false }
+    const norm = normalizeCity(city)
+    if (norm === '全国' || norm === '不限') return { blocked: true, city, nationwide: true }
+    return { blocked: !mine.includes(norm), city, nationwide: false }
   }
 
   // 从卡片/详情文本里提取「x天/周」与「x个月」
@@ -250,12 +306,87 @@
     }
   }
 
+  /**
+   * 关键词输入 → 关键词数组。
+   *
+   * 为什么要有：一个搜索词在实习僧上、一个城市里通常只对应 20~40 个岗位，投完就没了
+   * （2026-11-05：「测试 + 深圳 + 校招」翻两页共 0 家可投）。想要量就得排几个词轮着跑，
+   * 所以输入框允许一行写多个词，这里统一切分。
+   *
+   * 分隔符：英文逗号 / 中文逗号 / 顿号 / 分号 / 换行。去空、去重（保留首次出现顺序）、最多 10 个。
+   * 刻意**不按空格切**：像「测试 开发」这种带空格的写法是一个词，切了会搜出两个不相干的结果。
+   *
+   * @param {string} input
+   * @returns {string[]}
+   */
+  function parseKeywords(input) {
+    const out = []
+    const seen = new Set()
+    for (const raw of String(input || '').split(/[,，、;；\n\r]+/)) {
+      const k = raw.trim()
+      if (!k || seen.has(k)) continue
+      seen.add(k)
+      out.push(k)
+      if (out.length >= 10) break
+    }
+    return out
+  }
+
+  /**
+   * 一个搜索任务叫什么。城市和关键词都可能为空：
+   * - 都有 → 「深圳·软件测试」
+   * - 只有词 → 「软件测试」（老的单城市模式）
+   * - 只有城市 → 「深圳」
+   * 从 URL 现读，不另存一份，避免两处不一致。
+   * @param {string} url
+   * @returns {string}
+   */
+  function taskNameOf(url) {
+    try {
+      const u = new URL(String(url || ''))
+      const k = u.searchParams.get('keyword') || ''
+      const c = u.searchParams.get('city') || ''
+      if (k && c) return `${c}·${k}`
+      return k || c || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
+  /**
+   * 把「城市 × 关键词」展开成一串搜索任务。
+   *
+   * 为什么必须展开：实习僧的 `city` 是**单值** query 参数，一个地址只能搜一个城市。
+   * 界面上勾了 2 个城市，不是「一次搜两个城市」，而是「跑两轮」。
+   * 展开后交给现有的关键词轮换机制（batch.kwUrls / kwIndex）串行跑完，
+   * 不需要另写一套城市轮换 —— 城市在外层、关键词在内层：先把深圳的 4 个词跑完，再跑广州。
+   *
+   * @param {string[]} kws 关键词列表（空 = 不带 keyword，即该城市全部岗位）
+   * @param {string[]} cities 城市列表（空 = 不限城市）
+   * @param {(p:{city:string,keyword:string})=>string} urlOf 拼地址的回调（模板逻辑在 popup 里）
+   * @returns {{city:string,keyword:string,url:string}[]}
+   */
+  function expandSearchTasks(kws, cities, urlOf) {
+    if (typeof urlOf !== 'function') return []
+    const K = (Array.isArray(kws) ? kws : []).filter(Boolean)
+    const C = (Array.isArray(cities) ? cities : []).filter(Boolean)
+    const ks = K.length ? K : ['']
+    const cs = C.length ? C : ['']
+    const out = []
+    for (const c of cs) {
+      for (const k of ks) out.push({ city: c, keyword: k, url: urlOf({ city: c, keyword: k }) })
+    }
+    return out
+  }
+
   const DEFAULT_FILTERS = {
     enabled: true,
     cities: ['深圳'],
     daysPerWeek: 4, // 我每周能到岗的天数
     months: 3, // 我能连续实习的月数
-    directions: ['qa', 'auto', 'api', 'fe'],
+    // 只留测试类：前端 / 产品 / 新媒体运营 / 数据分析这些也在总表里，
+    // 一旦勾上，搜索里混进来的非测试岗就会被放行（2026-11-05 用户 7 个方向全勾，自己没意识到）
+    directions: ['qa', 'auto', 'api', 'game'],
     minScore: 0, // 0 = 不用 B 方案打分门槛
     resumeId: '', // B 方案用哪份简历打分
     strictMeta: false, // true = 城市/天数/月数识别不到时也拦截
@@ -273,7 +404,11 @@
     detectCity,
     firstCity,
     checkCity,
+    hitKeyword,
     detectMeta,
     detectBossMeta,
+    parseKeywords,
+    taskNameOf,
+    expandSearchTasks,
   }
 })()

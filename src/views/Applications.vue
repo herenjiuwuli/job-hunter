@@ -3,20 +3,17 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api.js'
 import { COMMON_JOBS } from '../jobs.js'
 import { PLATFORMS } from '../options.js'
+import { STAGES, STAGE_LABELS, STAGE_KEYS, stagePath, needsMyAction } from '../stages.js'
 
+// status 是**人工标记**（我想不想去 / 是不是我主动放弃的），采集器从不写它。
+// 平台真实进度在 stage 里 —— 所以列表主列是 stage，status 只在编辑弹窗里改。
 const STATUSES = ['待投递', '已投递', '已沟通', '已面试', '已offer', '已拒绝', '已淘汰']
 const RESULTS = ['待处理', '已确认提交', '跳过', '被拦截', '需用户']
-const RESULT_CLASS = {
-  '待处理': 'res-pending',
-  '已确认提交': 'res-submitted',
-  '跳过': 'res-skipped',
-  '被拦截': 'res-blocked',
-  '需用户': 'res-needs-user',
-}
 
 const apps = ref([])
 const resumes = ref([])
-const filterStatus = ref('全部')
+// '' = 全部；'__action' = 待我回复；其余是 stage key
+const filterStage = ref('')
 const keyword = ref('')
 const showForm = ref(false)
 const saving = ref(false)
@@ -24,6 +21,8 @@ const message = ref('')
 const messageError = ref(false)
 const tailoring = ref(false)
 const matchPoints = ref([])
+// 编辑时把平台进度**只读**地摆出来，否则用户会以为「状态」下拉就是进度
+const editingStage = ref('')
 
 const emptyForm = () => ({
   id: '',
@@ -42,16 +41,29 @@ const emptyForm = () => ({
 const form = reactive(emptyForm())
 const isNew = computed(() => !form.id)
 
-const statusCounts = computed(() => {
+/**
+ * 统计卡按**平台阶段**分档。
+ * 之前按人工 status 分，而采集器只写 stage，于是 46 条全落在「已投递」——
+ * 界面上看不到「3 条不合格、3 条被查看、1 条初筛」，这是「进度没同步」的直接原因。
+ */
+const stageCounts = computed(() => {
   const map = {}
-  for (const s of STATUSES) map[s] = 0
-  for (const a of apps.value) if (map[a.status] != null) map[a.status]++
+  for (const k of STAGE_KEYS) map[k] = 0
+  for (const a of apps.value) if (a.stage && map[a.stage] != null) map[a.stage]++
   return map
 })
 
+// 平台已经看过/推进，但我还没回话 —— 这类最容易被漏掉，单独给一个筛选入口
+const actionCount = computed(() => apps.value.filter((a) => needsMyAction(a)).length)
+
 const filtered = computed(() => {
   return apps.value.filter((a) => {
-    if (filterStatus.value !== '全部' && a.status !== filterStatus.value) return false
+    const f = filterStage.value
+    if (f === '__action') {
+      if (!needsMyAction(a)) return false
+    } else if (f && a.stage !== f) {
+      return false
+    }
     if (keyword.value.trim()) {
       const k = keyword.value.trim().toLowerCase()
       const hit = (a.company || '').toLowerCase().includes(k) || (a.jobTitle || '').toLowerCase().includes(k)
@@ -60,6 +72,12 @@ const filtered = computed(() => {
     return true
   })
 })
+
+/** 人工标记只在「不是默认值」时显示，否则满屏「已投递」等于没有信息 */
+function customStatus(a) {
+  const s = a.status || ''
+  return s && s !== '已投递' && s !== '待投递' ? s : ''
+}
 
 // 公司名联想：从已有投递记录去重，越用越省事（仍可自由输入新公司）
 const companyOptions = computed(() => {
@@ -77,11 +95,13 @@ async function load() {
 
 function openNew() {
   Object.assign(form, emptyForm())
+  editingStage.value = ''
   if (resumes.value.length) form.resumeId = resumes.value[0].id
   showForm.value = true
 }
 
 function openEdit(a) {
+  editingStage.value = a.stage || ''
   Object.assign(form, {
     id: a.id,
     resumeId: a.resumeId,
@@ -155,11 +175,6 @@ async function tailor() {
   }
 }
 
-async function changeStatus(a, status) {
-  await api.applications.update(a.id, { ...a, status })
-  await load()
-}
-
 async function remove(a) {
   if (!confirm(`确定删除「${a.company} · ${a.jobTitle}」这条投递记录？`)) return
   await api.applications.remove(a.id)
@@ -184,29 +199,39 @@ onMounted(load)
       <button class="btn btn-primary" @click="openNew">+ 新建投递</button>
     </div>
 
-    <!-- 状态统计 -->
+    <!-- 按平台阶段分档：这是采集器真正写进去的进度 -->
     <div class="stats">
-      <div
-        class="stat-card"
-        :class="{ active: filterStatus === '全部' }"
-        @click="filterStatus = '全部'"
-      >
+      <div class="stat-card" :class="{ active: !filterStage }" @click="filterStage = ''">
         <div class="stat-num">{{ apps.length }}</div>
         <div class="stat-label">全部</div>
       </div>
       <div
-        v-for="s in STATUSES"
-        :key="s"
+        v-for="s in STAGES"
+        :key="s.key"
         class="stat-card"
-        :class="{ active: filterStatus === s }"
-        @click="filterStatus = s"
+        :class="{ active: filterStage === s.key }"
+        @click="filterStage = s.key"
       >
-        <div class="stat-num">{{ statusCounts[s] }}</div>
+        <div class="stat-num">{{ stageCounts[s.key] }}</div>
         <div class="stat-label">
-          <span class="badge" :class="`badge-class-${s}`">{{ s }}</span>
+          <span class="badge" :class="`stage-${s.key}`">{{ s.label }}</span>
         </div>
       </div>
+      <div
+        v-if="actionCount"
+        class="stat-card action"
+        :class="{ active: filterStage === '__action' }"
+        @click="filterStage = '__action'"
+      >
+        <div class="stat-num">{{ actionCount }}</div>
+        <div class="stat-label">待我回复</div>
+      </div>
     </div>
+
+    <p class="hint-line">
+      进度来自平台（实习僧七档 / BOSS 已读），只由扩展采集写入，网页上改不了。
+      右侧「新建 / 编辑」里的「状态」是<b>你自己的标记</b>，和上面的平台进度是两回事。
+    </p>
 
     <!-- 搜索 -->
     <div style="margin: 16px 0;">
@@ -219,8 +244,7 @@ onMounted(load)
       <table v-else class="table">
         <thead>
           <tr>
-            <th>状态</th>
-            <th>投递结果</th>
+            <th>平台进度</th>
             <th>公司</th>
             <th>岗位</th>
             <th>平台</th>
@@ -232,12 +256,17 @@ onMounted(load)
         <tbody>
           <tr v-for="a in filtered" :key="a.id">
             <td>
-              <select class="select status-select" :value="a.status" @change="changeStatus(a, $event.target.value)">
-                <option v-for="s in STATUSES" :key="s" :value="s">{{ s }}</option>
-              </select>
-            </td>
-            <td>
-              <span class="badge" :class="RESULT_CLASS[a.result] || 'res-pending'">{{ a.result || '待处理' }}</span>
+              <span v-if="a.stage" class="badge" :class="`stage-${a.stage}`">{{ STAGE_LABELS[a.stage] }}</span>
+              <span v-else class="badge badge-pending">待投递</span>
+              <!-- 我主动放弃 ≠ 被拒：HR 没拒我，是我不去了。单开一个标记，
+                   不塞进 stage（塞进去「不合格」那层会凭空多一批，被拒率算高）。 -->
+              <span v-if="a.withdrawnAt" class="badge badge-withdrawn" title="我在聊天里主动说不合适">我放弃</span>
+              <!-- 到达轨迹：判了不合格的记录也曾经到过面试，只看当前态会把这段抹掉 -->
+              <div v-if="a.stage" class="stage-path">{{ stagePath(a) }}</div>
+              <div v-if="customStatus(a)" class="my-mark">我的标记：{{ customStatus(a) }}</div>
+              <div v-if="a.result && a.result !== '待处理'" class="my-mark">
+                投递结果：{{ a.result }}
+              </div>
             </td>
             <td class="strong">{{ a.company }}</td>
             <td>{{ a.jobTitle }}</td>
@@ -283,10 +312,18 @@ onMounted(load)
               </select>
             </div>
             <div class="field">
-              <label class="label">状态</label>
+              <label class="label">我的标记</label>
               <select v-model="form.status" class="select">
                 <option v-for="s in STATUSES" :key="s" :value="s">{{ s }}</option>
               </select>
+              <div class="field-hint">你自己的想法（想不想去、是不是你放弃了）。它不改平台进度，采集也不会覆盖它</div>
+            </div>
+            <div v-if="editingStage" class="field">
+              <label class="label">平台进度（只读）</label>
+              <div>
+                <span class="badge" :class="`stage-${editingStage}`">{{ STAGE_LABELS[editingStage] }}</span>
+              </div>
+              <div class="field-hint">由扩展从实习僧 / BOSS 采集，网页上改不了</div>
             </div>
             <div class="field">
               <label class="label">投递结果</label>
@@ -341,7 +378,7 @@ onMounted(load)
 <style scoped>
 .stats {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 10px;
 }
 .stat-card {
@@ -358,6 +395,15 @@ onMounted(load)
 .stat-card.active {
   border-color: var(--primary);
   background: #eef2ff;
+}
+/* 「待我回复」是动作项不是状态项，用暖色区分，避免和 7 个阶段混在一起 */
+.stat-card.action {
+  border-style: dashed;
+  border-color: #f0c48a;
+}
+.stat-card.action.active {
+  background: #fff7ed;
+  border-style: solid;
 }
 .stat-num {
   font-size: 22px;
@@ -394,6 +440,19 @@ onMounted(load)
   width: auto;
   padding: 4px 6px;
   font-size: 12px;
+}
+
+/* 到达轨迹：小一号、灰一档，不抢主徽章的注意力 */
+.stage-path {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.3;
+}
+.my-mark {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #b45309;
 }
 
 /* 投递结果徽章（applypilot 五态） */

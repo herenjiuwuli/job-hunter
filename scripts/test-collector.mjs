@@ -20,7 +20,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const SRC = join(__dirname, '..', 'extension', 'collector.js')
 
 // collector.js 顶层只挂 window.__jhCollector，DOM 全在函数里 → 给个空壳就能加载
-const ctx = { window: {}, document: {}, NodeFilter: { SHOW_TEXT: 4 }, location: { hostname: '', href: '' } }
+// URL 必须给：vm 的空上下文里没有它，searchScopeOf 会全都走 catch 返回空，
+// 看着像「函数写错了」，其实只是测试环境缺浏览器自带的内建对象
+const ctx = {
+  window: {},
+  document: {},
+  NodeFilter: { SHOW_TEXT: 4 },
+  location: { hostname: '', href: '' },
+  URL,
+  // vm 上下文是隔离的，不继承 Node 的全局 —— 采集器里 sleepMs 用 setTimeout，
+  // 不补的话「点开会话」那批用例直接 ReferenceError（看着像函数写错了）。
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+}
 createContext(ctx)
 runInContext(readFileSync(SRC, 'utf-8'), ctx)
 
@@ -327,6 +338,898 @@ eq(
   '实习僧保持裸 inn_ id，不加前缀'
 )
 eq(C.jobIdOfHref('https://example.com/nothing'), '', '认不出的链接返回空串，不瞎猜')
+
+// ——————————————————————————————————————————————
+// 翻页自检：翻页最大的坑是「看着翻了、其实没翻」
+// 为什么守着：站点忽略 page 参数时，批量会把同一页反复投，而且每条都显示成功 ——
+// 没有报错、没有异常，只有拿「这一页的 jobId 集合」和上一页比才能发现。
+// ——————————————————————————————————————————————
+console.log('— 翻页自检 —')
+eq(
+  C.checkPageFresh(['a', 'b', 'c'], [], ['a']),
+  { ok: true, reason: '', fresh: ['b', 'c'] },
+  '新页有没见过的岗位 → 放行，fresh 只给新的'
+)
+eq(C.checkPageFresh([], ['a', 'b'], ['a', 'b']), { ok: false, reason: 'empty', fresh: [] }, '一个岗位都没抓到 → 到底了')
+eq(
+  C.checkPageFresh(['c', 'b', 'a'], ['a', 'b', 'c'], ['a', 'b', 'c']),
+  { ok: false, reason: 'same-as-prev', fresh: [] },
+  '和上一页集合完全相同（顺序不同）→ 翻页没生效'
+)
+eq(
+  C.checkPageFresh(['a', 'b', 'a'], ['a', 'b'], ['a', 'b', 'c']),
+  { ok: false, reason: 'all-seen', fresh: [] },
+  '条数不同但全是见过的 → 到底了，不能当成翻页成功'
+)
+eq(
+  C.checkPageFresh(['d', 'a'], [], ['a', 'b', 'c']),
+  { ok: true, reason: '', fresh: ['d'] },
+  '上一页为空时不误判「没翻」'
+)
+eq(
+  C.checkPageFresh(['a', 'b'], ['x', 'y'], []),
+  { ok: true, reason: '', fresh: ['a', 'b'] },
+  '和上一页不同、也没见过 → 正常翻页'
+)
+eq(
+  C.checkPageFresh([null, '', 'a'], [], []),
+  { ok: true, reason: '', fresh: ['a'] },
+  '空 id 被忽略，不会把整页误判成空'
+)
+
+// ——————————————————————————————————————————————
+// 搜索范围：从 URL 读「这批投什么」
+// 2026-11-05 真机：表单只填了城市，算出的地址没有 keyword，
+// 于是「投测试」变成了「投深圳全部实习岗」—— 日志里只有一句「正在跳到起点」看不出来。
+// ——————————————————————————————————————————————
+console.log('— 搜索范围 —')
+eq(
+  C.searchScopeOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B%E8%AF%95&city=%E6%B7%B1%E5%9C%B3&type=school').text,
+  '关键词 测试｜城市 深圳｜类型 校招',
+  '中文参数解码后拼成一句人话'
+)
+eq(
+  C.searchScopeOf('https://www.shixiseng.com/interns?city=%E6%B7%B1%E5%9C%B3&type=intern').keyword,
+  '',
+  '缺 keyword 时读成空串（不是 undefined）'
+)
+eq(
+  C.searchScopeOf('https://www.shixiseng.com/interns?city=%E6%B7%B1%E5%9C%B3&type=intern').risky,
+  '关键词为空：这一批是「该城市全部岗位」，不是某个方向',
+  '关键词为空必须标红：全城岗位 ≠ 某个方向'
+)
+eq(
+  C.searchScopeOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B%E8%AF%95').risky,
+  '',
+  '有关键词就不算风险范围'
+)
+eq(
+  C.searchScopeOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B%E8%AF%95').text,
+  '关键词 测试｜城市 ⚠️ 不限｜类型 ⚠️ 未指定',
+  '缺项用 ⚠️ 标出，不静默当成「不限」'
+)
+eq(C.searchScopeOf('not a url').text, '', '地址不合法返回空，不抛错')
+eq(C.searchScopeOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B&type=company').typeName, '企业', 'type=company 也认得')
+
+// ===== 一页全投不了时，原因要说全（emptyPageReason） =====
+eq(
+  C.emptyPageReason({ total: 20, appliedSkip: 15, blockedCount: 3, pendingCount: 2, blockedFirst: '城市不符（岗位在 北京）' }),
+  '本页 20 家：15 家本地已投过、2 家写「全国」待定（没自动投）、3 家不符合筛选（例如：城市不符（岗位在 北京））',
+  '三类原因叠加时必须全说出来 —— 只报「都投过了」会盖住另外两类'
+)
+eq(
+  C.emptyPageReason({ total: 20, appliedSkip: 20, blockedCount: 0, pendingCount: 0 }),
+  '本页 20 家：20 家本地已投过',
+  '只有一类原因时只报那一类'
+)
+eq(
+  C.emptyPageReason({ total: 0, appliedSkip: 0, blockedCount: 0, pendingCount: 0 }),
+  '当前页面没抓到岗位链接（新建一批要在搜索结果列表页启动）',
+  '一个岗位都没认到：说的是「没抓到链接」，不是「都投过了」'
+)
+// 2026-11-05 真机：SDET 只有 1 页，翻到第 2 页空 → 原来报的也是「新建一批要在结果页启动」，
+// 用户在列表页上看到这句会以为插件认错了页面。第 2 页起空了只有一个含义：到底了。
+eq(
+  C.emptyPageReason({ total: 0, page: 2 }),
+  '第 2 页没有岗位了（这个搜索条件只有 1 页，已经到底）',
+  '翻到第 2 页空 = 到底了，不能说成「不在列表页」'
+)
+eq(
+  C.emptyPageReason({ total: 0, page: 4 }),
+  '第 4 页没有岗位了（这个搜索条件只有 3 页，已经到底）',
+  '第 N 页空 → 只有 N-1 页，数字要跟着页号走'
+)
+eq(
+  C.emptyPageReason({ total: 4, page: 3, blockedCount: 4, blockedFirst: '「环境可靠性工程师」' }),
+  '第 3 页 4 家：4 家不符合筛选（例如：「环境可靠性工程师」）',
+  '翻页后的「为什么不能投」也要标出页号，并且举例用标题（用户才知道是不是误杀）'
+)
+eq(
+  C.emptyPageReason({ total: 5, appliedSkip: 0, blockedCount: 0, pendingCount: 5 }),
+  '本页 5 家：5 家写「全国」待定（没自动投）',
+  '全是「全国」岗位时不能报成 0 家'
+)
+eq(
+  C.emptyPageReason({ total: 20, appliedSkip: 15, blockedCount: 2, pendingCount: 2 }),
+  '本页 20 家：15 家本地已投过、2 家写「全国」待定（没自动投）、2 家不符合筛选、另有 1 家原因不明（可能是标题没解析出来）',
+  '三类原因之和对不上总数 → 必须点名「原因不明」，不允许静默吞岗位'
+)
+
+console.log('\n— 关键词轮换的边界 —')
+// 写错的两种表现都不报错，只体现在「投递量莫名其妙多一批/少一批」，所以必须卡边界
+eq(C.nextKeywordIndex(3, 0), 1, '3 个词，第 1 个跑完 → 第 2 个')
+eq(C.nextKeywordIndex(3, 2), -1, '最后一个词跑完 → 没有了（不能回绕到第 1 个）')
+eq(C.nextKeywordIndex(1, 0), -1, '只有 1 个词 = 不轮换')
+eq(C.nextKeywordIndex(2, 1), -1, '2 个词的最后一个 → 没有了')
+eq(C.nextKeywordIndex(5, 9), -1, '序号越界（配置被改小过）→ 当没有，别抛错')
+eq(C.nextKeywordIndex(0, 0), -1, '空列表 → 没有')
+
+console.log('\n— 结构兜底探测（BOSS 对话列表：没有岗位链接、也认不出阶段词）—')
+// 这一组守的是「探测一次就能定位」：如果分组规则把全局容器当成列表项，
+// 用户看到的是「div.container 有 1 条样本」，等于还是没说。
+const G = (key, count) => ({ key, tag: key.split('.')[0], cls: key.split('.')[1], count })
+eq(
+  C.rankBlockGroups([G('DIV.item', 20), G('DIV.card', 5), G('DIV.app', 900), G('DIV.x', 2)]).map((g) => g.key),
+  ['DIV.item', 'DIV.card'],
+  '只留「重复 3~60 次」的组：太少的（2）是散件，太多的（900）是全局容器'
+)
+eq(
+  C.rankBlockGroups([G('DIV.card', 5), G('DIV.item', 20), G('DIV.row', 8)]).map((g) => g.count),
+  [20, 8, 5],
+  '按出现次数降序 —— 列表项一定是最多的那一批'
+)
+eq(C.rankBlockGroups([G('DIV.item', 20), G('DIV.row', 8)]).length, 2, '默认只吐前 3 组，别把弹窗撑爆')
+eq(C.rankBlockGroups([]).length, 0, '空输入不报错')
+eq(C.rankBlockGroups(null).length, 0, 'null 不报错（探测跑在页面异常时）')
+
+// 样本像不像「一行」：BOSS 会话行 = 公司 + 岗位 + 时间 + 已读，2~10 行
+eq(C.looksLikeRow(['某某科技', '测试工程师', '昨天']), true, '三行文本 = 像一行')
+eq(C.looksLikeRow(['某某科技']), false, '只有一行 → 可能是按钮/标题，不当成行')
+eq(C.looksLikeRow([]), false, '空 → 不是行')
+eq(C.looksLikeRow(Array.from({ length: 15 }, (_, i) => `第${i}行`)), false, '十几行 = 整个列表区，锁大了')
+eq(C.looksLikeRow(['长'.repeat(400)]), false, '单块三百字以上 → 是容器不是一行')
+
+// ——————————————————————————————————————————————
+// 探测报告里的元素标签：说得清「哪一块」，且不会因为没 class / class 一堆而崩
+// （2026-11-05 真机：探测只回了 stageHits:1，因为命中落在筛选栏的「未读」tab 上，
+//   而当时输出结构信息的条件是 `!hits.length` —— 一条都不许漏，否则就白跑一趟）
+const el = (tag, cls, id) => ({ tagName: tag, className: cls || '', id: id || '' })
+eq(C.shortLabel(el('DIV', 'chat-user-item active')), 'DIV.chat-user-item.active', 'tag + 前两个 class，够定位又不啰嗦')
+eq(C.shortLabel(el('LI', 'item')), 'LI.item', '单个 class 也照常')
+eq(C.shortLabel(el('DIV', '')), 'DIV', '没 class 不崩，至少还知道是 DIV')
+eq(C.shortLabel(el('DIV', 'x', 'panel')), 'DIV#panel.x', '有 id 时带 id（id 比 class 更能唯一定位）')
+eq(C.shortLabel(null), '', 'null 返回空串 —— 探测里 rowOfStageNode 常返回 null')
+
+// ——————————————————————————————————————————————
+// 真的跑一遍结构扫描。
+// 这段代码在真机上「只要命中 1 个阶段词就不执行」，所以从写出来那天起从没被走到过 ——
+// v0.7.3 去掉抑制条件后第一次执行就炸 `g.els is not iterable`：
+// rankBlockGroups 是纯函数，只回 key/tag/cls/count，元素实例留在 groups 里，必须按 key 取回来。
+// 这类「从没执行过的分支」只能靠 DOM stub 逼它跑，靠真机试错太贵（用户点一次、我改一版）。
+console.log('\n— 探测：跑一遍结构扫描（防止「从没执行过的分支」再炸）—')
+
+const mkEl = (tag, cls, text, children) => {
+  const el = {
+    tagName: tag,
+    className: cls || '',
+    id: '',
+    innerText: text || '',
+    children: children || [],
+    parentElement: null,
+    querySelectorAll: () => [],
+    // 会话采集里会 querySelector('.chat-position-content') / ('.salary') 等。
+    // 默认返回 null（真机没这个节点也是这样），要测具体分支就在用例里覆盖。
+    querySelector: () => null,
+    // 逐条点开会话用；默认不做事，用例里覆盖来统计「到底点了哪几行」
+    click: () => {},
+    getAttribute: () => '',
+    // 用在「排除列表自己那条分支」这类判断上：探测代码靠 contains 区分容器归属
+    contains: (n) => {
+      if (!n) return false
+      if (el === n) return true
+      return el.children.some((c) => c.contains && c.contains(n))
+    },
+  }
+  for (const c of el.children) c.parentElement = el
+  return el
+}
+
+// 一个聊天列表：UL 装 5 个会话行，每行 3 行文本（公司 / 岗位 / 时间或已读）
+const chatRows = [
+  mkEl('DIV', 'chat-user-item active', 'A公司\n测试实习生\n已读'),
+  mkEl('DIV', 'chat-user-item', 'B公司\n测试开发\n昨天'),
+  mkEl('DIV', 'chat-user-item', 'C公司\n自动化测试\n昨天'),
+  mkEl('DIV', 'chat-user-item', 'D公司\n软件测试\n前天'),
+  mkEl('DIV', 'chat-user-item', 'E公司\n测试工程师\n前天'),
+]
+const chatList = mkEl('UL', 'chat-list', '', chatRows)
+
+ctx.getComputedStyle = () => ({ display: 'block', visibility: 'visible' })
+ctx.document = {
+  querySelectorAll: (sel) => {
+    if (sel === 'div,li,article,section,tr,a,span') return chatRows
+    if (sel === 'div,ul,ol,section,aside,main,form,table,tbody,dl') return [chatList]
+    return []
+  },
+  body: { innerText: '' },
+}
+
+let layout = null
+try {
+  layout = C.probeLayout()
+} catch (e) {
+  console.log(`  ❌ probeLayout 抛错：${e.message}`)
+}
+eq(!!(layout && Array.isArray(layout.groups)), true, 'probeLayout 跑完不抛错（以前这里会 g.els is not iterable）')
+eq(layout && layout.groups.length, 1, '5 个同 class 的会话行 → 合成 1 组重复结构')
+eq(layout && layout.groups[0].count, 5, '带 active 的那行首个 class token 相同 → 仍算同一组')
+eq(layout && layout.groups[0].samples.length, 3, '每组最多 3 条样本，别把弹窗撑爆')
+eq(layout && layout.groups[0].samples[0].lines[1], '测试实习生', '样本带得出岗位名 —— 一眼认出这是会话行')
+
+const boxes = C.probeContainers()
+eq(boxes.list.length, 1, '5 个同构子元素 → 认出 1 个列表容器')
+eq(boxes.list[0].itemKey, 'DIV.chat-user-item', '容器报的是每行的 tag+class')
+eq(boxes.list[0].count, 5, '容器计数 = 5')
+eq(boxes.list[0].ofChildren, 5, '父子比例 5/5 —— 说明这容器基本就是列表本体')
+eq(boxes.list[0].parent, 'UL.chat-list', 'parent 是能定位到的容器标签')
+
+eq(C.probeFrames().count, 0, '没有 iframe 时返回 count:0，不报错')
+
+ctx.document.querySelectorAll = (sel) =>
+  sel === 'iframe'
+    ? [{ getAttribute: () => 'about:blank', contentDocument: { body: { innerText: '会话列表' }, querySelectorAll: () => ({ length: 7 }) } }]
+    : []
+const fr = C.probeFrames()
+eq(fr.count, 1, '有 1 个 iframe 就报 1 个')
+eq(fr.list[0].accessible, true, '同源 iframe 能读到 contentDocument → accessible:true')
+eq(fr.list[0].divs, 7, '报出 iframe 内部 div 数 —— 判断「列表是不是被塞进 iframe 了」')
+
+const cross = { getAttribute: () => 'https://other.example/x' }
+Object.defineProperty(cross, 'contentDocument', {
+  get: () => {
+    throw new Error('SecurityError')
+  },
+})
+ctx.document.querySelectorAll = (sel) => (sel === 'iframe' ? [cross] : [])
+eq(C.probeFrames().list[0].accessible, false, '跨域 iframe 读不到 → accessible:false，不抛错')
+
+// ——————————————————————————————————————————————
+// BOSS 会话列表：结构取自 2026-11-05 真机探测（UL > LI > .friend-content，
+// 状态是 <i class="message-status status-read|status-delivery">，页面上的字是 [已读]/[送达]）。
+console.log('\n— BOSS 会话列表探测 —')
+
+const mkChatRow = (who, status, msg) => {
+  const icon = status && {
+    tagName: 'I',
+    className: `message-status status-${status}`,
+    id: '',
+    innerText: status === 'read' ? '[已读]' : '[送达]',
+    children: [],
+    parentElement: null,
+    attributes: [],
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => '',
+  }
+  const li = {
+    tagName: 'LI',
+    className: '',
+    id: '',
+    innerText: '',
+    children: [],
+    parentElement: null,
+    attributes: [
+      { name: 'class', value: '' },
+      { name: 'data-id', value: `id-${who}` },
+      { name: 'title', value: who },
+    ],
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => '',
+  }
+  const content = {
+    tagName: 'DIV',
+    className: 'friend-content',
+    id: '',
+    innerText: ['11月03日', who, status === 'read' ? '[已读]' : status === 'delivery' ? '[送达]' : '', msg]
+      .filter(Boolean)
+      .join('\n'),
+    children: [],
+    parentElement: li,
+    attributes: [],
+    querySelector: () => icon,
+    querySelectorAll: () => [],
+    closest: () => li,
+    getAttribute: () => '',
+  }
+  li.children.push(content)
+  return content
+}
+
+const chatContents = [
+  mkChatRow('秦女士KeepHR', 'delivery', '您好，我是计算机应用工程大四在读…'),
+  mkChatRow('张先生万兴科技招聘者', 'read', '您好，我是计算机应用工程大四在读…'),
+  mkChatRow('周先生AnkerHR', null, '你好，方便发一份简历吗'),
+]
+
+ctx.getComputedStyle = () => ({ display: 'block', visibility: 'visible' })
+ctx.document = {
+  querySelectorAll: (sel) => (sel === '.friend-content' ? chatContents : []),
+  querySelector: () => null,
+  body: { innerText: '' },
+}
+
+const cl = C.probeChatList()
+eq(cl.count, 3, '认出 3 条会话')
+eq(cl.rows[0].read, false, 'status-delivery → read:false（只送达，对方还没看）')
+eq(cl.rows[1].read, true, 'status-read → read:true（我方最后一条被读）')
+eq(cl.rows[2].read, null, '没有送达图标 → read:null（多半是对方最后发的 ≈ 已回复）')
+eq(cl.rows[0].attrs['data-id'], 'id-秦女士KeepHR', 'li 上的 data-* 带得出来 —— 加密 jobId 就藏在这里')
+eq(cl.rows[0].lines[1], '秦女士KeepHR', '保留「对方 + 公司 + 角色」那行，公司名要从这里剥')
+eq(cl.rows[2].lines.slice(-1)[0], '你好，方便发一份简历吗', '对方最后说的话也带得出来')
+
+ctx.document.querySelectorAll = () => []
+eq(C.probeChatList().count, 0, '没有 .friend-content（左栏空着）→ count:0，不报错')
+
+const panel = C.probeChatPanel()
+eq(!!panel.note, true, '找不到右侧会话区时给 note，不抛错')
+
+// ——————————————————————————————————————————————
+// 右侧对话区：BOSS 上 .chat-content 只装着左栏（.user-list），
+// 真实的「当前会话」是它的**兄弟**节点。v0.7.5 把 .chat-content 当对话区，
+// 于是「点开也拿不到岗位」这个结论是错的 —— 当时根本没打开会话。
+console.log('\n— 右侧对话区探测（容器分层 + 消息行）—')
+
+const buildChatDom = (withPanel) => {
+  const listEl = mkEl('DIV', 'user-list', '11月03日 秦女士KeepHR [送达] 您好…')
+  const holder = mkEl('DIV', 'chat-content', '')
+  const outer = mkEl('DIV', 'chat-im', '')
+  holder.children.push(listEl)
+  listEl.parentElement = holder
+  holder.parentElement = outer
+  outer.children.push(holder)
+  if (!withPanel) return { listEl, holder, outer }
+
+  const msgList = mkEl('DIV', 'message-list', '')
+  for (const t of ['你好，方便聊一下吗', '方便发一份简历吗', '好的，稍后发您']) {
+    const row = mkEl('DIV', 'message-item', t)
+    msgList.children.push(row)
+  }
+  const jobTag = mkEl('SPAN', 'job-name', '软件测试工程师 15-25K·13薪')
+  const panelEl = mkEl('DIV', 'chat-record', '沟通职位 软件测试工程师 15-25K 你好，方便聊一下吗')
+  panelEl.parentElement = outer
+  panelEl.querySelectorAll = (sel) => {
+    if (sel === 'div,ul,ol,section,aside,main') return [msgList]
+    if (sel === 'div,span,a,p,h1,h2,h3') return [jobTag]
+    if (sel.indexOf('message') >= 0) return msgList.children
+    if (sel.indexOf('job') >= 0) return [{}, {}]
+    return []
+  }
+  panelEl.getAttribute = () => ''
+  outer.children.push(panelEl)
+  return { listEl, holder, outer, panelEl, msgList }
+}
+
+// ① 没点开会话：只有左栏 → 必须明说「点开一条再探」
+let dom = buildChatDom(false)
+ctx.document.querySelector = (sel) => (sel === '.user-list' ? dom.listEl : null)
+let noPane = C.probeChatPanel()
+eq(noPane.panel, null, '只找到左栏时 panel:null —— 不假装拿到了对话区')
+eq(/不在列表的兄弟节点/.test(noPane.note), true, 'note 说清「是结构问题」而不是「你没点开」—— 点开了却找不到，怪用户是错的')
+eq(Array.isArray(noPane.jobLinkList), true, '找不到对话区时仍给出岗位链接明细（这是唯一可能带岗位名的地方）')
+eq(noPane.shadowCount, 0, '没有 shadow root 时报 0（排除「对话区藏在 web component 里」）')
+eq(noPane.upChain.length >= 2, true, '往上爬的层级照常输出，方便判断右侧到底挂在哪一层')
+
+// ② 点开会话：右侧是左栏的兄弟 → 认出对话区 + 消息行结构
+dom = buildChatDom(true)
+ctx.document.querySelector = (sel) => (sel === '.user-list' ? dom.listEl : null)
+const pane = C.probeChatPanel()
+eq(pane.panel !== null, true, '打开会话后能定位到右侧对话区')
+eq(/chat-record/.test(pane.panel.el), true, 'panel.el 指向真正的对话区（.chat-record），不是 .user-list')
+eq(pane.panel.groups[0].itemKey, 'DIV.message-item', '消息行结构认得出来 —— 以后抓「对方最后一句」靠这个')
+eq(pane.panel.groups[0].count, 3, '3 条消息全部计入')
+eq(pane.panel.hints.some((h) => /15-25K/.test(h.text)), true, '薪资短文本被当成岗位线索捞出来')
+eq(pane.panel.msgNodes, 3, 'msgNodes 报消息节点数（判断对话区有没有内容）')
+
+// ③ 局部聚类不能把左栏算进来 —— 这是「一个页面两组列表」最容易串的地方
+const groupsInPanel = C.localRowGroups(dom.panelEl, 4)
+eq(
+  groupsInPanel.every((g) => g.itemKey.indexOf('message') >= 0),
+  true,
+  '只在传进来的节点内部找结构，左栏的会话行不会混进来'
+)
+
+// ④ 标签栏陷阱：真机 .label-list（全部/未读/新招呼/仅沟通/更多）是左栏的兄弟、16 个字，
+// 却是那层最长的那个 —— 只比字数就会把它当对话区，后面结论全歪。
+const labelList = mkEl('DIV', 'label-list', '全部 未读 新招呼 仅沟通 更多')
+const holder2 = mkEl('DIV', 'chat-content', '')
+const outer2 = mkEl('DIV', 'chat-user', '')
+const listEl2 = mkEl('DIV', 'user-list', '11月03日 秦女士KeepHR [送达] 您好…')
+holder2.children.push(listEl2)
+listEl2.parentElement = holder2
+holder2.parentElement = outer2
+outer2.children.push(holder2, labelList)
+labelList.parentElement = outer2
+ctx.document.querySelector = (sel) => (sel === '.user-list' ? listEl2 : null)
+const labelPane = C.probeChatPanel()
+eq(labelPane.panel, null, '16 字的标签栏不会被当成对话区（只比字数是错的）')
+eq(C.looksLikeChatPanel(labelList, 16), false, 'looksLikeChatPanel：没消息节点 + 字数少 → false')
+eq(C.looksLikeChatPanel(dom.panelEl, 200), true, '字数够多 → true（新建会话可能没有消息节点）')
+
+// ⑤ 真机结构（2026-11-05 第三次探测）：
+//   .chat-wrap > [ .list-warp > .chat-user > .chat-content > .user-list , .chat-conversation ]
+// 对话区在**往上三层**的祖先兄弟上 —— 只看「直接父级的兄弟」永远找不到。
+const deepList = mkEl('DIV', 'user-list', '11月03日 秦女士KeepHR [送达] 您好…')
+const deepContent = mkEl('DIV', 'chat-content', '', [deepList])
+const deepUser = mkEl('DIV', 'chat-user', '', [deepContent])
+const deepWarp = mkEl('DIV', 'list-warp', '', [deepUser])
+const conv = mkEl(
+  'DIV',
+  'chat-conversation',
+  '沟通职位 软件测试工程师 20-30K·13薪 已查看你的简历 你好，方便聊一下吗 方便发一份简历吗 好的稍后发您 我们这边做智能硬件，测试团队六个人'
+)
+const chatWrap = mkEl('DIV', 'chat-wrap', '', [deepWarp, conv])
+ctx.document.querySelector = (sel) => (sel === '.user-list' ? deepList : null)
+ctx.document.querySelectorAll = () => []
+const deepPane = C.probeChatPanel()
+eq(deepPane.panel !== null, true, '对话区挂在更高层祖先的兄弟上时也能找到（真机就是这结构）')
+eq(/chat-conversation/.test(deepPane.panel.el), true, 'panel.el 指到 .chat-conversation')
+
+// ⑥ 已知 class 优先：结构推不出来时，靠 .chat-conversation 选择器兜底
+ctx.document.querySelector = (sel) =>
+  sel === '.user-list' ? deepList : sel === '.chat-conversation' ? conv : null
+const byClass = C.probeChatPanel()
+eq(/chat-conversation/.test(byClass.panel.el), true, '已知 class 优先命中，不依赖结构推断')
+eq(byClass.panel.empty, false, '对话区有内容时 empty:false（别把正常会话标成空）')
+
+// ⑧ 空状态占位：没选中会话时，对话区只有一句「与您进行过沟通的 Boss 都会在左侧列表中显示」。
+// 这是「定位到了但没数据」，必须和「真的有消息」分开报，否则探测看着成功其实什么都没拿到。
+const emptyConv = mkEl('DIV', 'chat-conversation', '与您进行过沟通的 Boss 都会在左侧列表中显示')
+mkEl('DIV', 'chat-wrap', '', [deepWarp, emptyConv])
+ctx.document.querySelector = (sel) =>
+  sel === '.user-list' ? deepList : sel === '.chat-conversation' ? emptyConv : null
+const emptyPane = C.probeChatPanel()
+eq(emptyPane.panel !== null, true, '空状态时容器照样定位得到')
+eq(emptyPane.panel.empty, true, '空状态占位被标成 empty:true')
+eq(emptyPane.panel.msgNodes, 0, '空状态 0 条消息')
+eq(emptyPane.panel.hints.length, 0, '空状态捞不到岗位线索（这才是「需要点开会话」的证据）')
+
+// ⑨ 岗位卡 + 消息行：结构取自 2026-11-05 真机（赵怡和智传信那条会话）
+//    panel.lines = ["赵怡","和智传信","招聘者","更多","社媒运营实习生（多平台 / 发布与维护）","120-150元/天","深圳","查看职位"]
+//    panel.groups 里消息行 = UL.im-list > LI.message-item（3 条）
+console.log('\n— 岗位卡 + 消息行（点开会话后能拿到什么）—')
+
+const posLeft = mkEl('DIV', 'left-content', '社媒运营实习生（多平台 / 发布与维护）\n120-150元/天\n深圳')
+const posRight = mkEl('DIV', 'right-content', '查看职位')
+const posEl = mkEl(
+  'DIV',
+  'chat-position-content',
+  '社媒运营实习生（多平台 / 发布与维护）\n120-150元/天\n深圳\n查看职位',
+  [posLeft, posRight]
+)
+posEl.querySelector = () => null // 「查看职位」不是 <a> —— 真机 jobLinks 也是 0
+
+const statusIcon = mkEl('I', 'message-status status-delivery', '[送达]')
+const selfRow = mkEl('LI', 'message-item', '[送达] 您好，我是计算机应用工程大四在读…')
+selfRow.querySelector = (sel) => (String(sel).indexOf('status') >= 0 ? statusIcon : null)
+const otherRow = mkEl('LI', 'message-item', '16:12 Hello，你好啊，看到你的简历，觉得蛮合适的~')
+otherRow.querySelector = () => null
+const otherRow2 = mkEl('LI', 'message-item', '16:20 方便发一份简历吗')
+otherRow2.querySelector = () => null
+const imList = mkEl('UL', 'im-list', '', [selfRow, otherRow, otherRow2])
+
+const convPanel = mkEl('DIV', 'chat-conversation', '赵怡 和智传信 招聘者 社媒运营实习生 120-150元/天 深圳 查看职位')
+convPanel.querySelector = (sel) => {
+  if (sel === '.chat-position-content') return posEl
+  if (sel === '.im-list') return imList
+  return null
+}
+
+const card = C.probePositionCard(convPanel)
+eq(card !== null, true, '认出岗位卡（.chat-position-content）')
+eq(card.lines[0], '社媒运营实习生（多平台 / 发布与维护）', '第 1 段是岗位名 —— 方向筛选就靠它')
+eq(card.lines[1], '120-150元/天', '第 2 段是薪资')
+eq(card.lines[2], '深圳', '第 3 段是城市')
+eq(card.kids.length, 2, '岗位卡拆成 left-content / right-content 两块')
+eq(card.link, null, '「查看职位」不是 <a> 时 link:null —— 说明拿不到 jobId，只能靠岗位名匹配')
+
+const msgs = C.probeMessageRows(convPanel)
+eq(msgs.count, 3, '消息列表报**全部**行数（不是只取前 10 条）')
+eq(msgs.rows[0].hasStatus, true, '带 [送达] 图标 → 我方发的')
+eq(msgs.rows[0].statusText, '[送达]', '状态文案原样带出来')
+eq(msgs.rows[1].hasStatus, false, '没有状态图标 → 对方发的')
+eq(/方便发一份简历/.test(msgs.rows[2].text), true, '消息正文拿得到（判断「最后一句是谁说的」靠它）')
+
+// ⑦ 导航栏的假岗位链接必须滤掉：真机上 a[href*=job] 命中「职位 / 海归 / 无障碍专区」
+// 4 条导航，报成「岗位链接 4 条」会把人往错的方向带。
+const navA = mkEl('A', '', '职位')
+navA.getAttribute = (k) => (k === 'href' ? '/web/geek/jobs' : '')
+const navLi = mkEl('LI', '', '', [navA])
+const navUl = mkEl('UL', '', '', [navLi])
+const navDiv = mkEl('DIV', 'nav', '', [navUl])
+ctx.document.querySelectorAll = (sel) => (String(sel).indexOf('a[href') === 0 ? [navA] : [])
+ctx.document.querySelector = (sel) => (sel === '.user-list' ? deepList : null)
+const navPane = C.probeChatPanel()
+eq(navPane.jobLinks, 0, '导航类假链接不算岗位链接')
+eq(navPane.navSkipped, 1, '被滤掉的数量单独报出来，别让它凭空消失')
+eq(navPane.jobLinkList.length, 0, 'jobLinkList 里不出现导航链接')
+
+// ——————————————————————————————————————————————
+// 会话逐条采集（v0.7.12）
+// 这块最容易出的错不是「读不到」，而是**读错对象**：
+//   ① 按位置数第几段取薪资 → 岗位只写「面议」时整体错位，城市被当成薪资；
+//   ② 点了会话但右栏还没换 → 把上一条的岗位名记到这一条头上（和实习僧切 tab 同一个坑）；
+//   ③ 把系统消息「发送了面试结果」当成对方回复 → repliedAt 全脏、面试层虚高。
+// 三条各钉一个用例，全是真机样本的变体。
+// ——————————————————————————————————————————————————————————————
+// 公司名取值：BOSS 一键投递跑在「左侧列表 + 右侧详情」页面上
+//
+// 2026-11-05 真机事故：`extractJobInfo` 用 document.querySelector 做全页通配，
+// 文档序第一个 `[class*="company-name"]` 落在**左侧列表别的卡片**上 →
+// 账本记下别人的公司。10 条 BOSS 记录错了 4 条，岗位名却全对，
+// 所以界面上完全看不出问题。铁证是同一个内部编号 A69277 挂在两家公司名下。
+//
+// 用例直接复刻那个页面结构：左栏 3 张卡（各有公司名）在前，右侧详情区在后。
+// ——————————————————————————————————————————————————————————————
+console.log('\n— 公司名取值（只在岗位名所在容器里找，绝不取全页第一个）—')
+
+{
+  // 迷你 DOM：只实现这套逻辑真正用到的 querySelector / querySelectorAll
+  const isCompanyNode = (n) => {
+    const cls = String(n.className || '')
+    return /company-name/.test(cls) || cls === 'cname' || cls === 'com-name'
+  }
+  const descendants = (n, out = []) => {
+    for (const c of n.children || []) {
+      out.push(c)
+      descendants(c, out)
+    }
+    return out
+  }
+  const mk = (tag, cls, text, children = []) => {
+    const el = {
+      tagName: tag,
+      className: cls || '',
+      innerText: text || '',
+      textContent: text || '',
+      children,
+      parentElement: null,
+    }
+    el.querySelectorAll = () => descendants(el).filter(isCompanyNode)
+    el.querySelector = () => el.querySelectorAll()[0] || null
+    for (const c of children) c.parentElement = el
+    return el
+  }
+  const makeRoot = (children) => {
+    const r = mk('DIV', 'root', '', children)
+    return r
+  }
+
+  // 左栏 3 张卡：每张都有公司名（真机上它们排在前，所以旧实现永远取到「别的公司A」）
+  const card = (co, title) =>
+    mk('DIV', 'job-card-wrapper', `${title} ${co}`, [
+      mk('SPAN', 'job-name', title),
+      mk('SPAN', 'company-name', co),
+    ])
+  const list = mk('DIV', 'job-list', '', [
+    card('别的公司A', '数据分析助理'),
+    card('别的公司B', '用户运营实习'),
+    card('别的公司C', '编导创意实习生'),
+  ])
+
+  // 右侧详情：岗位名在 .job-banner 里，公司名在它的兄弟 .company-info 里（同一个 .job-detail-box 下）
+  const titleEl = mk('SPAN', 'name', '【日常实习】数据运营实习生(A69277)')
+  const banner = mk('DIV', 'job-banner', '【日常实习】数据运营实习生(A69277) 200-250元/天 深圳', [titleEl])
+  const info = mk('DIV', 'company-info', '正浩创新 智能硬件 1000-9999人', [
+    mk('SPAN', 'company-name', '正浩创新'),
+  ])
+  const detail = mk('DIV', 'job-detail-box', '', [banner, info])
+
+  const root = makeRoot([list, detail])
+
+  eq(
+    C.findCompanyName(titleEl, root),
+    '正浩创新',
+    '★ 列表在前、详情在后：取详情区那家，不取全页第一个「别的公司A」'
+  )
+  eq(
+    C.namesIn(root).length,
+    4,
+    '全页有 4 个不同公司名（3 张卡的 + 详情区那家）→ 全页唯一候选那条兜底不成立'
+  )
+
+  // 岗位名往上 4 层都是「多家公司」的范围 → 必须留空，而不是随手挑一个
+  const orphanTitle = mk('SPAN', 'name', '测试实习生')
+  const orphanBox = mk('DIV', 'job-banner', '测试实习生 深圳', [orphanTitle])
+  const root2 = makeRoot([list, orphanBox])
+  eq(
+    C.findCompanyName(orphanTitle, root2),
+    '',
+    '★ 找不到「只含一家公司」的容器时返回空 —— 宁可「未知公司」也不要一个错的'
+  )
+
+  // 真正的单岗位详情页（全页只有一家公司）→ 唯一候选兜底可以用
+  const soloTitle = mk('SPAN', 'name', '软件测试工程师')
+  const soloBanner = mk('DIV', 'job-banner', '软件测试工程师 15-20K 深圳', [soloTitle])
+  const soloCo = mk('DIV', 'company-info', '桥介数物', [mk('SPAN', 'company-name', '桥介数物')])
+  const soloRoot = makeRoot([soloBanner, soloCo])
+  eq(C.findCompanyName(soloTitle, soloRoot), '桥介数物', '单岗位详情页：全页唯一候选，可以用')
+
+  // 候选过滤：区块标题不算公司名
+  eq(C.looksLikeCompany('公司信息'), false, '「公司信息」是区块标题，不是公司名')
+  eq(C.looksLikeCompany('正浩创新'), true, '正常公司名通过')
+  eq(C.looksLikeCompany('12345'), false, '纯数字不是公司名')
+  eq(
+    C.looksLikeCompany('深圳 智能硬件 1000-9999人 已融资 查看全部'),
+    false,
+    '被拼成一整段的整块文本不算公司名（长度超 30）'
+  )
+}
+
+console.log('\n— 会话逐条采集（点开 → 读岗位卡 → 判谁说的）—')
+
+const mkMsg = (cls, text, hasStatus) => {
+  const row = mkEl('LI', cls, text)
+  row.querySelector = (sel) =>
+    hasStatus && String(sel).indexOf('status') >= 0
+      ? mkEl('I', 'message-status status-read', '[已读]')
+      : null
+  return row
+}
+
+const mkPanel = (opts) => {
+  const card = mkEl('DIV', 'chat-position-content', opts.card || '')
+  if (opts.salaryText) {
+    card.querySelector = (sel) =>
+      sel === '.salary' ? mkEl('SPAN', 'salary', opts.salaryText) : null
+  }
+  const im = mkEl('UL', 'im-list', '', opts.msgRows || [])
+  const base = mkEl('DIV', 'base-info', opts.baseText || '')
+  base.querySelector = (sel) => (sel === '.base-title' ? opts.titleEl || null : null)
+  base.querySelectorAll = () => opts.spans || []
+  const panel = mkEl('DIV', 'chat-conversation', '')
+  panel.querySelector = (sel) => {
+    if (sel === '.chat-position-content') return card
+    if (sel === '.im-list') return im
+    if (sel === '.base-info') return base
+    return null
+  }
+  return panel
+}
+
+// ① 真机样本：赵怡和智传信 / 社媒运营实习生 / 120-150元/天 / 深圳
+{
+  const panel = mkPanel({
+    card: '社媒运营实习生（多平台 / 发布与维护）\n120-150元/天\n深圳\n查看职位',
+    msgRows: [mkMsg('message-item', '16:12 Hello，你好啊，看到你的简历', false)],
+    baseText: '赵怡 和智传信 招聘者',
+    spans: [mkEl('SPAN', '', '赵怡'), mkEl('SPAN', '', '和智传信'), mkEl('SPAN', 'base-title', '招聘者')],
+    titleEl: mkEl('SPAN', 'base-title', '招聘者'),
+  })
+  const chat = C.readOpenChat(panel)
+  eq(chat.jobTitle, '社媒运营实习生（多平台 / 发布与维护）', '岗位名 = 岗位卡第 1 段')
+  eq(chat.salary, '120-150元/天', '薪资取到了')
+  eq(chat.city, '深圳', '城市取到了')
+  eq(chat.lastFrom, 'other', '最后一条没有状态图标 → 对方说的')
+  const who = C.readRecruiter(panel)
+  eq(who.name, '赵怡', '招聘者姓名从 .base-info 的 span 分字段读')
+  eq(who.company, '和智传信', '公司名分字段读 —— 不靠拆文本猜')
+  eq(who.guess, false, '分字段读出来的不算「猜」，预览里不该标警告')
+}
+
+// ①-b 谁先开口 / 我发过几条 —— 区分「我投的」和「HR 主动找我的」
+//     HR 群发的招呼也算「对方最后发言」，但它没进过我的投递漏斗，
+//     不区分就会把「投递量」撑大（珍岛那种「五险一金、股票期权…」就是群发）。
+{
+  const panel = mkPanel({
+    card: '用户运营实习\n200-250元/天\n深圳',
+    msgRows: [
+      mkMsg('message-item', '11-02 16:49 您好，我们是一家互联网企业', false), // HR 先开口
+      mkMsg('message-item', '', '11-02 17:02 您好，我是计算机应用工程大四在读', true),
+    ],
+    baseText: '刘女士珍岛集团集团校园招聘经理',
+  })
+  const chat = C.readOpenChat(panel)
+  eq(chat.firstFrom, 'other', '第一条没有状态图标 → HR 先开口（这多半是群发招呼）')
+  eq(chat.myMsgCount, 1, '带状态图标的消息计 1 条（我发过的）')
+  eq(chat.lastFrom, 'me', '最后一条带图标 → 我方发的')
+}
+
+// ①-c 一句话都没发过 = 纯 HR 主动找我，不是我投的
+{
+  const panel = mkPanel({
+    card: 'AI编剧实习生（海外短剧）\n200-300元/天\n深圳',
+    msgRows: [
+      mkMsg('message-item', '10-30 你去可以确认下哦', false),
+      mkMsg('message-item', '10-30 那个岗位还看吗', false),
+    ],
+  })
+  const chat = C.readOpenChat(panel)
+  eq(chat.myMsgCount, 0, '一条带状态图标的都没有 → 我没发过言')
+  eq(chat.firstFrom, 'other', '对方先开口')
+}
+
+// ①-d 系统消息不参与「谁先开口」—— 否则第一句是「发送了面试结果」就会被当成对方开口
+{
+  const panel = mkPanel({
+    card: '编导创意实习生\n200-250元/天\n深圳',
+    msgRows: [
+      mkMsg('message-item system-notice', '系统消息', false),
+      mkMsg('message-item', '', '10-30 您好，我是计算机应用工程', true),
+    ],
+  })
+  const chat = C.readOpenChat(panel)
+  eq(chat.firstFrom, 'me', '跳过系统消息后，第一条是带图标的我方消息')
+}
+
+// ② 没写薪资：按位置取会把城市当薪资，所以必须按正则挑
+{
+  const panel = mkPanel({ card: '软件测试工程师\n深圳\n查看职位' })
+  const chat = C.readOpenChat(panel)
+  eq(chat.jobTitle, '软件测试工程师', '岗位名')
+  eq(chat.salary, '', '没写薪资就留空 —— 不能把「深圳」当薪资')
+  eq(chat.city, '深圳', '城市仍然落在城市位上')
+}
+
+// ③ .salary 元素比文本更准（「面议」旁边的那个 SPAN 才是真薪资）
+{
+  const panel = mkPanel({
+    card: '测试工程师\n面议\n上海\n查看职位',
+    salaryText: '15-20K·13薪',
+  })
+  const chat = C.readOpenChat(panel)
+  eq(chat.salary, '15-20K·13薪', '.salary 元素优先于岗位卡里的文本')
+  eq(chat.city, '上海', '薪资换来源也不影响城市')
+}
+
+// ④ 系统消息不是「对方回复」—— 否则 repliedAt 全脏
+{
+  const panel = mkPanel({
+    card: '测试工程师\n10-15K\n深圳\n查看职位',
+    msgRows: [mkMsg('message-item system-notice', '发送了面试结果', false)],
+  })
+  eq(C.readOpenChat(panel).lastFrom, 'system', '「发送了面试结果」是系统消息，既不是我方也不是对方')
+}
+
+// ⑤ 我方消息靠状态图标认，不靠 class 后缀（真机两侧 class 一样）
+{
+  const panel = mkPanel({
+    card: '测试工程师\n10-15K\n深圳\n查看职位',
+    msgRows: [mkMsg('message-item', '对方说：你好', false), mkMsg('message-item', '我回的：方便发简历', true)],
+  })
+  eq(C.readOpenChat(panel).lastFrom, 'me', '最后一条带 [已读] → 我方发的，不算对方回复')
+}
+
+// ⑥ 公司名拆文本：只在分字段失败时才用，规则必须窄
+{
+  const a = C.splitNameCompany('刘女士珍岛集团集团校园招聘经理')
+  eq(a.name, '刘女士', '「X女士」这种确定是姓名的前缀可以剥')
+  eq(a.company, '珍岛集团', '角色词连剥两层（集团校园招聘经理 → 集团）')
+  const b = C.splitNameCompany('周先生AnkerHR')
+  eq(b.company, 'Anker', 'HR 后缀也要剥掉')
+  const c = C.splitNameCompany('刘静腾讯音乐招聘专家')
+  eq(c.name, '', '没有「先生/女士」就不猜姓名 —— 2 字名和 3 字名互相矛盾，猜必错一半')
+  eq(c.guess, true, '拆文本的结果必须标成「猜的」，预览里要能看见')
+}
+
+// ⑦ 只点「已读 / 对方最后发言」的，不碰「我发了对方还没看」的
+{
+  let activeRow = -1
+  const clicked = []
+  const mkRow = (idx, iconCls) => {
+    const icon = iconCls ? mkEl('I', iconCls, '[x]') : null
+    const content = mkEl('DIV', 'friend-content', `公司${idx}\n招聘者${idx}`)
+    content.querySelector = (sel) => (icon && String(sel).indexOf('status') >= 0 ? icon : null)
+    content.click = () => {
+      clicked.push(idx)
+      activeRow = idx
+    }
+    const li = mkEl('LI', '', '', [content])
+    li.click = content.click
+    return content
+  }
+  const rows = [
+    mkRow(0, 'message-status status-read'), // 已读 → 要采
+    mkRow(1, 'message-status status-delivery'), // 我发了对方没看 → 不点
+    mkRow(2, null), // 对方最后发言 → 要采
+  ]
+  const panelAt = (idx) =>
+    mkPanel({
+      card: `岗位${idx}\n10-15K\n深圳\n查看职位`,
+      baseText: `公司${idx} 招聘者${idx}`,
+      spans: [mkEl('SPAN', '', `招聘者${idx}`), mkEl('SPAN', '', `公司${idx}`)],
+      msgRows: [mkMsg('message-item', `你好${idx}`, false)],
+    })
+  ctx.document.querySelectorAll = (sel) => (sel === '.friend-content' ? rows : [])
+  ctx.document.querySelector = (sel) =>
+    sel === '.chat-conversation' ? (activeRow < 0 ? mkPanel({}) : panelAt(activeRow)) : null
+
+  const r = await C.collectChatDetails({ scope: 'interactive', stepMs: 300, waitMs: 200 })
+  eq(clicked, [0, 2], '只点了已读和对方最后发言的那两行，「送达未读」一次都没点')
+  eq(r.items.length, 2, '采到 2 条（送达未读那条不进）')
+  eq(r.items[0].company, '公司0', '第 1 条抓到公司名')
+  eq(r.items[0].jobTitle, '岗位0', '岗位名来自点开后的岗位卡，不是列表')
+  eq(r.items[0].read, true, '已读标记带上了')
+  eq(r.items[1].replied, true, '对方最后发言 → replied:true（后端记 repliedAt）')
+  eq(r.items[1].read, false, '没读过就报 false，不当成「已读」')
+  eq(r.debug.failed.length, 0, '两条都点开了，没有失败')
+  eq(r.debug.opened, 2, 'opened 计数 = 2')
+}
+
+// ⑧ 点了但右栏没换内容 → 必须跳过，绝不能把上一条的岗位名错标给它
+{
+  const fixed = mkPanel({
+    card: '不会变的岗位\n10-15K\n深圳\n查看职位',
+    baseText: '不动的公司 招聘者',
+    spans: [mkEl('SPAN', '', '招聘者'), mkEl('SPAN', '', '不动的公司')],
+    msgRows: [mkMsg('message-item', '你好', false)],
+  })
+  const content = mkEl('DIV', 'friend-content', '不动的公司\n招聘者')
+  content.querySelector = () => null
+  content.click = () => {} // 点了没反应
+  ctx.document.querySelectorAll = (sel) => (sel === '.friend-content' ? [content] : [])
+  ctx.document.querySelector = (sel) => (sel === '.chat-conversation' ? fixed : null)
+
+  const r = await C.collectChatDetails({ scope: 'all', waitMs: 200 })
+  eq(r.items.length, 0, '点了没换内容 → 一条都不入（错标阶段比漏采严重）')
+  eq(r.debug.failed.length, 1, '记进 failed，预览里会列出来')
+}
+
+// ⑨ 本来就开着的那条不能被当成「点了没反应」
+// 真实场景：刚跟某个 HR 聊完就点采集，第一条八成就是开着的 ——
+// 点它内容不会变，指纹不变，会被稳定误判成失败，白白丢掉最新那条。
+{
+  const openPanel = mkPanel({
+    card: '开着的岗位\n10-15K\n深圳\n查看职位',
+    baseText: '开着的公司 招聘者',
+    spans: [mkEl('SPAN', '', '招聘者'), mkEl('SPAN', '', '开着的公司')],
+    msgRows: [mkMsg('message-item', '你好', false)],
+  })
+  const content = mkEl('DIV', 'friend-content active', '开着的公司\n招聘者')
+  content.querySelector = () => null
+  content.click = () => {
+    throw new Error('已经开着的会话不该再点')
+  }
+  ctx.document.querySelectorAll = (sel) => (sel === '.friend-content' ? [content] : [])
+  ctx.document.querySelector = (sel) => (sel === '.chat-conversation' ? openPanel : null)
+
+  const r = await C.collectChatDetails({ scope: 'interactive', waitMs: 200 })
+  eq(r.items.length, 1, '当前开着的会话直接读，不需要点')
+  eq(r.debug.reused, 1, 'reused 计数 = 1（和「点开成功」分开统计）')
+  eq(r.debug.failed.length, 0, '不能判成「点开没反应」')
+  eq(r.items[0].jobTitle, '开着的岗位', '岗位名照样读得到')
+}
+
+// ⑩ 届别标签不能当岗位名（2026-11-03 华曦达 3 条：标题全是「27届」）
+// 真实形态：岗位名元素的 innerText 是「27届\n测试实习生」—— 届别在第一行。
+// 这判定错了两层：方向判不出来（3 条留空）+ 界面上像三条重复记录。
+{
+  eq(C.firstTitleLine('27届\n测试实习生'), '测试实习生', 'skip 第一行的届别标签，取真正的岗位名')
+  eq(C.firstTitleLine('27届校园招聘-测试实习生'), '27届校园招聘-测试实习生', '真标题里含届别的不受影响')
+  eq(C.firstTitleLine('测试实习生'), '测试实习生', '单行没标签就原样返回')
+  eq(C.firstTitleLine('27届'), '27届', '整块只有标签 → 退回原文（有总比没有强，调用方会标可疑）')
+  eq(C.isPureTagLine('2027届'), true, '2027届 也是标签')
+  eq(C.isPureTagLine('27届 春招'), true, '带批次的也算')
+  eq(C.isPureTagLine('测试实习生'), false, '岗位名不是标签')
+
+  // 列表卡里岗位名压根没渲染时 → 宁可漏这一条，也不上报「27届 / 华曦达」
+  const r = C.parseRowLines(['27届', 'SDMC华曦达科技', '深圳'], { tabStage: 'submitted' })
+  eq(r, null, '首行是届别标签且没有别的标题行 → 整条丢弃，不硬记')
+  const r2 = C.parseRowLines(['27届', '测试实习生', 'SDMC华曦达科技', '深圳'], { tabStage: 'submitted' })
+  eq(r2, null, '即使后面有真标题也不猜位置（猜错就是张冠李戴）')
+}
+
+// ⑪ 「我放弃」≠「被拒」（2026-10-30 惊叹科技：我发「不太适合我，祝您早日找到」）
+// 混进 rejected 会把被拒率算高；而它恰恰是「我主动筛掉」的唯一数据，值得单记。
+{
+  const me = '不好意思，我觉得该职位不太适合我，祝您早日找到满意的工作人选'
+  eq(C.looksWithdrawn('me', me), true, '我最后说不合适 → 我放弃')
+  eq(C.looksWithdrawn('me', '你好，请问这个岗位还招人吗？'), false, '我问问题不是放弃')
+  eq(C.looksWithdrawn('me', '我的经历是不是不合适？'), false, '问句里含「不合适」也不算（那是提问）')
+  eq(C.looksWithdrawn('other', '抱歉，你不太合适'), false, 'HR 说我不合适 = 被拒，不是我自己放弃')
+  eq(C.looksWithdrawn('me', ''), false, '空文本不判')
+  eq(C.looksWithdrawn('me', '好的，我明天过来面试'), false, '正常约面不判成放弃')
+}
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} collector 解析用例：${pass} 通过 / ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

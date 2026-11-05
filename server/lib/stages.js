@@ -87,6 +87,11 @@ const ALIASES = [
 export function parseStage(raw) {
   const s = String(raw || '').trim().toLowerCase().replace(/\s+/g, '')
   if (!s) return null
+  // ⭐ 先认「key 本体」：扩展上报的就是这几个 key（submitted/viewed/screening/written）。
+  // 只认中文别名的话，采集端算好、行内却没有阶段词的那些（只靠分类 tab 判的）会全被丢掉 ——
+  // 「切到初筛 tab 但那行文案还是旧的」是平台常态，丢掉等于这一档永远推不上去。
+  // 2026-11-05 回放真账本时暴露：9 条里 stage 一个都没推进，全因为这条。
+  if (STAGES[s]) return s
   for (const [word, key] of ALIASES) {
     if (s.includes(word)) return key
   }

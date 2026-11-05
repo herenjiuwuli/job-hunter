@@ -106,6 +106,18 @@ export const api = {
     request('/resume/export', { method: 'POST', body: JSON.stringify({ resumeId }) }),
   resumeImport: (data) =>
     request('/resume/import', { method: 'POST', body: JSON.stringify(data) }),
+  greeting: {
+    // 不带参数 = 只看默认话术；带上岗位 = 「这条投递的话术 / 默认话术」二选一
+    resolve: (company, jobTitle) => {
+      const q = new URLSearchParams()
+      if (company) q.set('company', company)
+      if (jobTitle) q.set('jobTitle', jobTitle)
+      const s = q.toString()
+      return request(`/greeting${s ? `?${s}` : ''}`)
+    },
+    getDefault: () => request('/greeting/default'),
+    saveDefault: (text) => request('/greeting/default', { method: 'PUT', body: JSON.stringify({ text }) }),
+  },
 }
 
 // 登录/注册成功后写入会话（Login.vue 只关心表单，不关心存哪）

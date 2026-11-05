@@ -36,18 +36,27 @@ def test_dashboard_application_distribution():
 
     body = requests.get(f"{BASE}/api/dashboard", timeout=10).json()
     bs = body["applications"]["byStatus"]
+    bst = body["applications"]["byStage"]
     br = body["applications"]["byResult"]
     assert bs["已投递"] == 1
     assert bs["已沟通"] == 1
     assert bs["已offer"] == 1
     assert bs["已拒绝"] == 1
     assert bs["已淘汰"] == 1
+    # byStage 才是页面展示的「平台进度」。新建时 stageFromStatus 会按 status 起一个初始阶段，
+    # 所以这里的分布应当与 status 一一对上（已拒绝/已淘汰都归 rejected）
+    assert bst["submitted"] == 1
+    assert bst["viewed"] == 1
+    assert bst["offer"] == 1
+    assert bst["rejected"] == 2
     assert br["已确认提交"] == 2
     assert br["待处理"] == 1
     assert br["跳过"] == 1
     assert br["被拦截"] == 1
-    # 进行中 = 排除「已拒绝/已淘汰」两个终态
-    assert body["applications"]["activeCount"] == 3
+    # 进行中 = 排除两个终态（不合格 / 录用）。
+    # 2026-11-05 起按 stage 判（原来按 status，导致「已offer」也被算成进行中，
+    # 且采集来的真实进度完全不影响这个数）。A 已投递 + B 已沟通 = 2。
+    assert body["applications"]["activeCount"] == 2
 
 
 def test_dashboard_interview_metrics():

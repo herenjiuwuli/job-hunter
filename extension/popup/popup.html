@@ -6,7 +6,7 @@
 </head>
 <body>
   <header>
-    <h1>求职自动化助手</h1>
+    <h1>求职自动化助手 <span id="extVer" class="ver"></span></h1>
     <div class="quota">
       <span id="quota-sx">实习僧 -/-</span>
       <span id="quota-boss">BOSS -/-</span>
@@ -14,72 +14,49 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="apply">单次投递</button>
-    <button class="tab" data-tab="batch">批量</button>
+    <button class="tab active" data-tab="apply">投递</button>
     <button class="tab" data-tab="filter">筛选</button>
-    <button class="tab" data-tab="records">记录</button>
+    <button class="tab" data-tab="records">同步</button>
   </nav>
 
-  <!-- ===== 单次投递 ===== -->
+  <!-- ===== 投递 ===== -->
   <section class="pane active" id="pane-apply">
-    <label class="lbl">当前岗位状态（本地账本为准）</label>
+    <label class="lbl">当前岗位（本地账本为准）</label>
     <div id="appliedInfo" class="statusbox">—</div>
 
     <label class="lbl">打招呼语（BOSS 必填：BOSS 的投递＝发出这条消息）</label>
-    <textarea id="greeting" placeholder="粘贴投递给 HR 的话（可在网页端「AI 定制」生成）。会自动保存，批量时复用。"></textarea>
+    <textarea id="greeting" placeholder="会自动从后端带出（网页端「AI 定制」生成过的用那条，否则用设置页的默认话术）。也可以在这里改。"></textarea>
+    <div class="row">
+      <button id="fetchGreetingBtn" class="mini">重新取话术</button>
+      <span id="greetStatus" class="limtag"></span>
+    </div>
+
+    <label class="lbl">投递范围（选一个，然后点「开始」）</label>
+    <div class="scopes">
+      <label class="scope"><input type="radio" name="scope" value="single" checked /><span>当前岗位</span></label>
+      <label class="scope"><input type="radio" name="scope" value="page" /><span>当前列表页</span></label>
+      <label class="scope"><input type="radio" name="scope" value="both" /><span>双线并发</span></label>
+      <label class="scope"><input type="radio" name="scope" value="onekey" /><span>一键（翻页/换词）</span></label>
+    </div>
+
+    <div class="row">
+      <span class="limtag">本轮每家</span>
+      <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
+      <button id="goBtn" class="primary">开始</button>
+      <button id="stopBtn" class="ghost">停止</button>
+    </div>
 
     <label class="check">
       <input type="checkbox" id="autoClick" />
       <span>自动提交（勾选 = 全自动；不勾 = 半自动，只填好并高亮，你手动点确认/发送）</span>
     </label>
+    <label class="check">
+      <input type="checkbox" id="batchForce" />
+      <span>跳过风控文本检测（确认页面上没有真验证码再勾）</span>
+    </label>
 
-    <div class="row">
-      <button id="applyBtn" class="primary">执行当前岗位</button>
-    </div>
-    <div class="row">
-      <button id="forceBtn" class="ghost">强制继续（跳过风控文本检测）</button>
-    </div>
-  </section>
-
-  <!-- ===== 批量 ===== -->
-  <section class="pane" id="pane-batch">
     <label class="lbl">今日额度（分平台记账，到线自动停）</label>
     <div id="quotaPanel"></div>
-
-    <label class="lbl">并行线路（两条线各跑各的进度，互不干扰）</label>
-
-    <div class="linebox" id="line-sx">
-      <div class="linehead">
-        <b>实习僧</b>
-        <span class="linestate" id="state-sx">未启动</span>
-      </div>
-      <div class="lineinfo" id="info-sx">—</div>
-      <div class="row">
-        <button class="mini" id="start-sx">启动这条线</button>
-        <button class="mini" id="stop-sx">停止</button>
-      </div>
-      <details>
-        <summary>队列</summary>
-        <pre id="queue-sx" class="inspect"></pre>
-      </details>
-    </div>
-
-    <div class="linebox" id="line-boss">
-      <div class="linehead">
-        <b>BOSS 直聘</b>
-        <span class="linestate" id="state-boss">未启动</span>
-      </div>
-      <div class="lineinfo" id="info-boss">—</div>
-      <div class="row">
-        <button class="mini" id="start-boss">启动这条线</button>
-        <button class="mini" id="stop-boss">停止</button>
-      </div>
-      <details>
-        <summary>队列</summary>
-        <pre id="queue-boss" class="inspect"></pre>
-      </details>
-    </div>
-
     <div class="row" style="align-items: center; gap: 6px">
       <span class="limtag">每日上限</span>
       <span class="limtag">实习僧</span>
@@ -88,27 +65,111 @@
       <input type="number" id="lim-boss" class="num" min="0" max="150" value="120" />
     </div>
 
-    <div class="row">
-      <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
-      <button id="batchBothBtn" class="primary">双线并发启动</button>
-    </div>
-    <div class="row">
-      <button id="batchBtn" class="ghost">只启动当前页</button>
-      <button id="batchStopBtn" class="ghost">停当前页</button>
-      <button id="resumeBtn" class="ghost">继续下一家</button>
-    </div>
+    <details>
+      <summary>高级 · 分线单独控制</summary>
+      <div class="linebox" id="line-sx">
+        <div class="linehead">
+          <b>实习僧</b>
+          <span class="linestate" id="state-sx">未启动</span>
+        </div>
+        <div class="lineinfo" id="info-sx">—</div>
+        <div class="row">
+          <button class="mini" id="start-sx">启动这条线</button>
+          <button class="mini" id="stop-sx">停止</button>
+        </div>
+        <details>
+          <summary>队列</summary>
+          <pre id="queue-sx" class="inspect"></pre>
+          <div id="pending-sx" class="pend"></div>
+        </details>
+      </div>
 
-    <label class="check">
-      <input type="checkbox" id="batchForce" />
-      <span>跳过风控文本检测（确认页面上没有真验证码再勾）</span>
-    </label>
+      <div class="linebox" id="line-boss">
+        <div class="linehead">
+          <b>BOSS 直聘</b>
+          <span class="linestate" id="state-boss">未启动</span>
+        </div>
+        <div class="lineinfo" id="info-boss">—</div>
+        <div class="row">
+          <button class="mini" id="start-boss">启动这条线</button>
+          <button class="mini" id="stop-boss">停止</button>
+        </div>
+        <details>
+          <summary>队列</summary>
+          <pre id="queue-boss" class="inspect"></pre>
+          <div id="pending-boss" class="pend"></div>
+        </details>
+      </div>
+
+      <div class="row">
+        <button id="batchBothBtn" class="ghost">双线并发启动</button>
+      </div>
+      <div class="row">
+        <button id="batchBtn" class="ghost">只投当前列表页</button>
+        <button id="batchStopBtn" class="ghost">停当前页</button>
+      </div>
+      <div class="row">
+        <button id="resumeBtn" class="ghost">继续下一家</button>
+      </div>
+      <div class="row">
+        <button id="applyBtn" class="primary">执行当前岗位</button>
+        <button id="forceBtn" class="ghost">强制继续</button>
+      </div>
+      <div class="tip">「强制继续」= 跳过风控文本检测，只在确认页面上没有真验证码时用。</div>
+    </details>
+
+    <details>
+      <summary>高级 · 一键投递的前置条件（关键词 / 城市 / 类型）</summary>
+      <div class="row" style="align-items: center; gap: 6px">
+        <span class="limtag">关键词</span>
+        <input
+          type="text"
+          id="kwInput"
+          class="urlinput"
+          placeholder="如 软件测试, 测试开发（逗号隔开，投完自动换下一个）"
+        />
+      </div>
+      <div class="row" style="align-items: center; gap: 6px">
+        <label class="check" style="margin: 0">
+          <input type="checkbox" id="kwAny" />
+          <span>关键词不限（留空时投该城市全部岗位）</span>
+        </label>
+      </div>
+      <div class="row" style="align-items: center; gap: 6px">
+        <span class="limtag">城市</span>
+        <select id="okProvSel" class="sel" style="flex: 1; min-width: 0"></select>
+        <select
+          id="typeSelect"
+          style="flex: none; padding: 7px 6px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12px; background: #fff"
+        >
+          <option value="intern">实习</option>
+          <option value="school">校招</option>
+        </select>
+      </div>
+      <div id="okCityList" class="chips"></div>
+      <div class="row" style="align-items: center; gap: 6px; margin-top: 2px">
+        <span id="okCityPicked" class="picked" style="flex: 1; margin: 0">已选：—</span>
+        <button id="okCityClear" class="mini">清空</button>
+      </div>
+      <div class="row" style="align-items: center; gap: 6px">
+        <label class="check" style="margin: 0">
+          <input type="checkbox" id="autoPage" />
+          <span>投完自动翻页</span>
+        </label>
+        <span class="limtag">最多</span>
+        <input type="number" id="maxPages" class="num" value="3" min="1" max="10" />
+        <span class="limtag">页</span>
+      </div>
+      <div class="row">
+        <button id="oneKeyBtn" class="primary">一键投递（实习僧）</button>
+        <button class="mini" id="pickUrlBtn">取当前页当模板</button>
+      </div>
+    </details>
 
     <div class="tip">
-      数字 = <b>每条线各投几家</b>；两条线<b>各自独立算额度</b>（实习僧默认 100、BOSS 默认 120）。<br />
-      上限填 <b>0 = 不限</b>。BOSS 官方每天 150 次沟通、到 120 会提醒，所以默认停在 120。<br />
-      启动前两个平台各开一个<b>搜索结果列表页</b>标签页，我会自己找。<br />
-      间隔：实习僧 15~30 秒，BOSS 30~60 秒。本地账本里投过的自动排除。<br />
-      <b>BOSS 必须先填打招呼语</b>（BOSS 的投递＝发出那条消息）。
+      数字 = <b>每条线各投几家</b>；两条线<b>各自独立算额度</b>。上限填 <b>0 = 不限</b>。<br />
+      「当前列表页 / 双线」需要两个平台各开一个<b>搜索结果列表页</b>标签页；「一键」会自己翻页、投完自动换关键词。<br />
+      间隔：实习僧 15~30 秒，BOSS 30~60 秒。本地账本里投过的自动排除。
     </div>
   </section>
 
@@ -140,6 +201,10 @@
 
     <label class="lbl">方向（勾选即只投这些方向）</label>
     <div id="dirList" class="chips"></div>
+    <div class="row" style="margin-top: 4px">
+      <button class="mini" id="dirTestOnly">只留测试类</button>
+      <button class="mini" id="dirClearAll">全不选（不限方向）</button>
+    </div>
 
     <label class="lbl">BOSS 专用（实习僧卡片上没有这两项，互不影响）</label>
     <div class="grid2">
@@ -173,59 +238,75 @@
     <textarea id="filterKeywords" placeholder="如：外包, 驻场, 销售岗"></textarea>
   </section>
 
-  <!-- ===== 记录 ===== -->
+  <!-- ===== 同步 ===== -->
   <section class="pane" id="pane-records">
-    <label class="lbl">投递账本</label>
+    <!-- 投递进度同步：常用功能只剩两个入口，其余收进「高级」 -->
+    <div class="syncbox">
+      <div class="synchead">
+        <b>投递进度同步</b>
+        <span class="syncnote">页面开着点一次即可</span>
+      </div>
+      <button id="collectOneClickBtn" class="primary big">同步（实习僧「我的投递」页）</button>
+      <button id="collectChatBtn" class="primary big">同步（BOSS 聊天页）</button>
+      <div id="collectStatus" class="statusbox">—</div>
+      <div class="outbar"><button class="copybtn" data-copy="collectOut">复制整段</button></div>
+      <pre id="collectOut" class="inspect tall"></pre>
+      <!-- ⚠️ 必须在主流程上、跟预览同屏。它在 v0.8.0 被收进「高级」折叠区，
+           而聊天页采集是「只预览、不自动传」，结果采完 9 条看着一切正常、一条也没进库。 -->
+      <button id="collectUploadBtn" class="primary big" hidden disabled>确认上传</button>
+      <!-- 对不上账本的那些（聊天页里明明有、库里从没记过）：默认不自动建，
+           但用户看得见就得给个出口，否则「页面上有、库里的数字里没有」永远修不掉。 -->
+      <button id="collectAdoptBtn" class="ghost big" hidden>补录账本里没有的投递</button>
+      <div class="tip">
+        <b>实习僧</b>：遍历 7 个分类 tab + 翻页 → 自动上传 → 显示汇总。约 10~30 秒，期间别关弹窗。<br />
+        <b>BOSS 聊天页</b>：逐条<b>点开</b>左侧会话读岗位名 / 已读 / 对方是否回过话（岗位名只在点开的右栏里）。
+        只点「已读」和「对方最后发言」的，不碰你发了还没人看的那批（点开会让对方看到「已读」）。<br />
+        采集只点「分类 tab」和「下一页」，<b>不会点投递 / 沟通 / 撤回</b>，采完会切回你原来那个 tab。
+      </div>
+
+      <details>
+        <summary>高级 · 预览 / 校准 / 重置</summary>
+        <div class="row">
+          <button id="collectBtn" class="ghost">只采当前视图</button>
+          <button id="collectAllBtn" class="ghost">全阶段采集（先看预览）</button>
+        </div>
+        <div class="row">
+          <button id="collectProbeBtn" class="ghost">探测（校准用）</button>
+          <button id="collectResetBtn" class="ghost">重置同步缓存</button>
+        </div>
+        <div class="tip">
+          采集完会先给预览，确认无误再点下面那个<b>「确认上传（N 条）」</b>。<br />
+          <b>重置同步缓存</b> 用在「明明页面上有变化，但一直说均已同步」的时候 ——
+          缓存被污染时只有这个出口。
+        </div>
+      </details>
+    </div>
+
+    <label class="lbl">投递账本（本地 chrome.storage）</label>
     <div id="appliedList" class="statusbox">—</div>
 
     <label class="lbl">近 7 天投递量（按平台）</label>
     <pre id="historyList" class="inspect">—</pre>
 
     <div class="row">
-      <button id="markAppliedBtn" class="ghost">标记当前岗位为已投</button>
       <button id="checkAppliedBtn" class="ghost">刷新</button>
-    </div>
-    <div class="row">
-      <button id="pushAppliedBtn" class="ghost">补传账本到后端</button>
-    </div>
-    <div class="row">
-      <button id="clearAppliedBtn" class="danger">清空记录</button>
-    </div>
-
-    <div class="tip">页面不显示「已投递」时，用「标记当前岗位为已投」补录，之后就不会重复投。</div>
-
-    <div class="row">
-      <button id="inspectBtn" class="ghost">探测页面结构</button>
-      <button id="resetBtn" class="ghost">重置额度</button>
-    </div>
-
-    <!-- ===== 投递进度同步（独立区块，常用功能平铺） ===== -->
-    <div class="syncbox">
-      <div class="synchead">
-        <b>投递进度同步</b>
-        <span class="syncnote">在「我的投递」页点一次</span>
-      </div>
-      <button id="collectOneClickBtn" class="primary big">一键采集全阶段并上传</button>
-      <div id="collectStatus" class="statusbox">—</div>
-      <pre id="collectOut" class="inspect tall"></pre>
-      <div class="row">
-        <button id="collectBtn" class="ghost">只采当前视图</button>
-        <button id="collectAllBtn" class="ghost">全阶段采集（先看预览）</button>
-        <button id="collectUploadBtn" class="ghost" disabled>确认上传</button>
-      </div>
-      <div class="row">
-        <button id="collectProbeBtn" class="ghost">探测（校准用）</button>
-        <button id="collectResetBtn" class="ghost">重置同步缓存</button>
-      </div>
-      <div class="tip">
-        一键 = 遍历 7 个分类 tab（已投递 / 被查看 / 初筛 / 笔试 / 面试 / 不合格 / 录用）+ 翻页
-        → 自动上传 → 显示汇总。约 10~30 秒，期间别关弹窗。<br />
-        采集只点「分类 tab」和「下一页」，<b>不会点投递 / 沟通 / 撤回</b>，采完会切回你原来那个 tab。
-      </div>
+      <button id="markAppliedBtn" class="ghost">标记当前岗位为已投</button>
     </div>
 
     <details>
-      <summary>页面结构（校准选择器用）</summary>
+      <summary>高级 · 补传 / 清空 / 页面结构</summary>
+      <div class="row">
+        <button id="pushAppliedBtn" class="ghost">补传账本到后端</button>
+      </div>
+      <div class="row">
+        <button id="clearAppliedBtn" class="danger">清空本地账本</button>
+      </div>
+      <div class="tip">页面不显示「已投递」时用「标记当前岗位为已投」补录，之后就不会重复投。</div>
+      <div class="row">
+        <button id="inspectBtn" class="ghost">探测页面结构</button>
+        <button id="resetBtn" class="ghost">重置额度</button>
+      </div>
+      <div class="outbar"><button class="copybtn" data-copy="inspectOut">复制整段</button></div>
       <pre id="inspectOut" class="inspect"></pre>
     </details>
 
@@ -249,6 +330,7 @@
     </details>
   </section>
 
+  <div class="outbar"><button class="copybtn" data-copy="log">复制日志</button></div>
   <div id="log" class="log"></div>
 
   <script src="../shared/filters-data.js"></script>

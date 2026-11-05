@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { listMine, readProfileOf } from '../lib/scope.js'
+import { STAGE_KEYS } from '../lib/stages.js'
 
 /**
  * 求职总览看板：聚合简历 / 投递 / 面试 / 画像四类数据，
@@ -38,8 +39,22 @@ router.get('/api/dashboard', async (req, res) => {
 
   const byStatus = countBy(apps, STATUSES, (a) => a.status)
   const byResult = countBy(apps, RESULTS, (a) => a.result)
-  // 进行中 = 排除「已拒绝 / 已淘汰」两个终态
-  const activeCount = apps.filter((a) => a.status !== '已拒绝' && a.status !== '已淘汰').length
+  /**
+   * 按平台阶段（stage）统计 —— 这才是「进度」的真实来源。
+   *
+   * status 是人工标注，采集器不写它，所以它长期停在初始值（实测 46 条全是「已投递」，
+   * 而 stage 是 39 已投递 / 3 被查看 / 3 不合格 / 1 初筛）。
+   * 页面只读 status 就等于把平台的真实进度全遮掉了，看起来像「没同步」。
+   */
+  const byStage = countBy(apps, STAGE_KEYS, (a) => a.stage)
+  // 进行中 = 排除两个终态（不合格 / 录用）。
+  // 有 stage 按 stage 判；没有 stage 的草稿回退到 status，避免把草稿算成「进行中」。
+  const activeCount = apps.filter((a) => {
+    // 我自己放弃的已经结束了（哪怕 stage 停在「被查看」）—— 算进「进行中」会把待办虚高
+    if (a.withdrawnAt) return false
+    if (a.stage) return a.stage !== 'rejected' && a.stage !== 'offer'
+    return a.status !== '已拒绝' && a.status !== '已淘汰'
+  }).length
 
   // 面试表现（records 原始未排序，这里按时间倒序取最新）
   const sortedRecs = byDateDesc(recs, 'createdAt')
@@ -70,14 +85,24 @@ router.get('/api/dashboard', async (req, res) => {
     },
     applications: {
       byStatus,
+      byStage,
       byResult,
       activeCount,
+      // 「该我动了」：平台已经看/推进，但我还没回话。判定只看平台事实，不看人工 status
+      needActionCount: apps.filter(
+        (a) =>
+          !a.withdrawnAt &&
+          a.stage &&
+          ['viewed', 'screening', 'written', 'interview'].includes(a.stage) &&
+          !a.repliedAt
+      ).length,
       recent: byDateDesc(apps, 'appliedAt')
         .slice(0, 5)
         .map((a) => ({
           company: a.company,
           jobTitle: a.jobTitle,
           status: a.status,
+          stage: a.stage || '',
           result: a.result,
           appliedAt: a.appliedAt,
         })),

@@ -1,23 +1,29 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
+import { STAGES, STAGE_LABELS, stageLabel } from '../stages.js'
 
-const STATUSES = ['待投递', '已投递', '已沟通', '已面试', '已offer', '已拒绝', '已淘汰']
+// 投递进度按**平台阶段**（stage）展示，不是人工 status。
+// status 采集器不写，长期停在「已投递」，拿它画进度条等于把真实进度全抹平。
+const STATUSES = STAGES.map((s) => s.label)
 const RESULTS = ['待处理', '已确认提交', '跳过', '被拦截', '需用户']
 
 const summary = ref(null)
 const loading = ref(true)
 const error = ref('')
 
-const STATUS_CLASS = {
-  '待投递': 'st-gray',
-  '已投递': 'st-blue',
-  '已沟通': 'st-cyan',
-  '已面试': 'st-amber',
-  '已offer': 'st-green',
-  '已拒绝': 'st-red',
-  '已淘汰': 'st-dark',
+// 条形颜色按 stage key 取；真正的色值在 style.css 的 .st-* 里
+const STAGE_TONE = {
+  submitted: 'st-blue',
+  viewed: 'st-cyan',
+  screening: 'st-amber',
+  written: 'st-amber',
+  interview: 'st-amber',
+  rejected: 'st-red',
+  offer: 'st-green',
 }
+
+const STAGE_ORDER = STAGES.map((s) => s.key)
 
 const RESULT_CLASS = {
   '待处理': 'res-pending',
@@ -39,11 +45,11 @@ async function load() {
   }
 }
 
-function statusPct(s) {
-  const byStatus = summary.value?.applications?.byStatus || {}
-  const total = Object.values(byStatus).reduce((a, b) => a + b, 0)
+function stagePct(key) {
+  const byStage = summary.value?.applications?.byStage || {}
+  const total = Object.values(byStage).reduce((a, b) => a + b, 0)
   if (!total) return 0
-  return Math.round(((byStatus[s] || 0) / total) * 100)
+  return Math.round(((byStage[key] || 0) / total) * 100)
 }
 
 function fmtDate(iso) {
@@ -81,7 +87,12 @@ onMounted(load)
         <div class="kpi">
           <div class="kpi-num">{{ summary.counts.applications }}</div>
           <div class="kpi-label">累计投递</div>
-          <div class="kpi-sub">进行中 {{ summary.applications.activeCount }} 个</div>
+          <div class="kpi-sub">
+            进行中 {{ summary.applications.activeCount }} 个
+            <b v-if="summary.applications.needActionCount" class="need-action">
+              · 待我回复 {{ summary.applications.needActionCount }}
+            </b>
+          </div>
         </div>
         <div class="kpi">
           <div class="kpi-num">{{ summary.counts.records }}</div>
@@ -103,15 +114,20 @@ onMounted(load)
       <!-- 投递 + 面试 双栏 -->
       <div class="two-col">
         <div class="card">
-          <div class="card-title">投递进度</div>
+          <div class="card-title">平台进度</div>
           <div v-if="!summary.counts.applications" class="empty">还没有投递记录，去「投递追踪」添加吧</div>
           <div v-else class="bar-list">
-            <div v-for="s in STATUSES" :key="s" class="bar-item">
-              <span class="bar-label">{{ s }}</span>
-              <div class="bar-track"><i :style="{ width: statusPct(s) + '%' }" :class="STATUS_CLASS[s]"></i></div>
-              <b class="bar-num">{{ summary.applications.byStatus[s] }}</b>
+            <div v-for="key in STAGE_ORDER" :key="key" class="bar-item">
+              <span class="bar-label">{{ STAGE_LABELS[key] }}</span>
+              <div class="bar-track">
+                <i :style="{ width: stagePct(key) + '%' }" :class="STAGE_TONE[key]"></i>
+              </div>
+              <b class="bar-num">{{ summary.applications.byStage[key] }}</b>
             </div>
           </div>
+          <p class="hint-line">
+            这个数字来自平台（实习僧七档 / BOSS 已读），不是手工标记。
+          </p>
 
           <div class="card-title" style="margin-top: 20px;">投递结果（这次成没成）</div>
           <div class="result-row">
@@ -156,13 +172,17 @@ onMounted(load)
         <div v-if="!summary.applications.recent.length" class="empty">暂无投递记录</div>
         <table v-else class="table">
           <thead>
-            <tr><th>公司</th><th>岗位</th><th>状态</th><th>结果</th><th>日期</th></tr>
+            <tr><th>公司</th><th>岗位</th><th>平台进度</th><th>我的标记</th><th>结果</th><th>日期</th></tr>
           </thead>
           <tbody>
             <tr v-for="(a, i) in summary.applications.recent" :key="i">
               <td class="strong">{{ a.company }}</td>
               <td>{{ a.jobTitle }}</td>
-              <td>{{ a.status }}</td>
+              <td>
+                <span v-if="a.stage" class="badge" :class="`stage-${a.stage}`">{{ stageLabel(a.stage) }}</span>
+                <span v-else class="muted">—</span>
+              </td>
+              <td class="muted">{{ a.status }}</td>
               <td><span class="badge" :class="RESULT_CLASS[a.result] || 'res-pending'">{{ a.result || '待处理' }}</span></td>
               <td class="muted">{{ fmtDate(a.appliedAt) }}</td>
             </tr>

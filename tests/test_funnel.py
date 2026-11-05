@@ -223,6 +223,60 @@ def test_collect_does_not_match_across_companies():
     assert got["stage"] == "submitted", "别家的同名岗位被误推进了"
 
 
+# ---------- 会话采集（BOSS 聊天页）：没有 jobId 时的匹配 ----------
+#
+# 聊天页拿不到 jobId，后端只能「公司 + 岗位名」匹配。而账本里那批一键投递的记录
+# 公司名是抓页面抓错的（2026-11-05 A69277 事故：投的是正浩创新，账本记成 RAK瑞科慧联），
+# 公司这一半对不上 → 已读/被拒的时间一条也传不进去 → 界面看起来「全都还是已投递」。
+
+def _chat(company, jobTitle, **kw):
+    """一条会话采集行：source=chat 且没有 jobId，这是它的真实形状"""
+    return {"platform": "BOSS直聘", "company": company, "jobTitle": jobTitle, "source": "chat", **kw}
+
+
+def test_collect_chat_matches_by_title_and_fixes_company():
+    """
+    账本公司名存错了，但岗位名在全库唯一 → 认它，并把公司名订正过来。
+    不认的话，这条会话的已读/被拒永远进不了面板。
+    """
+    a = _app(company="RAK瑞科慧联", jobTitle="【日常实习】数据运营实习生(A69277)", platform="BOSS直聘")
+    r = _collect([_chat("正浩创新", "【日常实习】数据运营实习生(A69277)", read=True)])
+    body = r.json()
+    assert body["matched"] == 1, f"公司名错但岗位名唯一，应当认这条：{body}"
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["company"] == "正浩创新", "订正公司名没生效"
+    assert got.get("readAt"), "已读时间没记上"
+
+
+def test_collect_chat_does_not_guess_when_title_is_ambiguous():
+    """
+    两条同名岗位（「测试实习生」在 BOSS 上满地都是）时**不许猜** ——
+    猜就是把 A 的进度写到 B 头上，比不匹配更糟。
+    """
+    _app(company="甲公司", jobTitle="测试实习生", platform="BOSS直聘")
+    _app(company="乙公司", jobTitle="测试实习生", platform="BOSS直聘")
+    r = _collect([_chat("丙公司", "测试实习生", read=True)])
+    body = r.json()
+    assert body["matched"] == 0
+    assert body["ignored"] == 1
+
+
+def test_collect_chat_skips_inbound_when_creating():
+    """
+    HR 主动找上门、我一句话没发过的会话不是我的投递。
+    开 createMissing 时也不能拿它建记录，否则「投递量」被撑大。
+    """
+    r = _collect(
+        [_chat("珍岛集团", "27届校招-TOB软件销售", myMsgCount=0, firstFrom="other")],
+        createMissing=True,
+    )
+    body = r.json()
+    assert body["created"] == 0
+    assert body["ignored"] == 1
+    assert "HR 主动" in (body["results"][0].get("reason") or "")
+
+
+
 def test_collect_understands_success_wording():
     """实习僧列表里行内状态写的是「投递成功」，不是「已投递」—— 认不出就只能丢掉这条"""
     _app(company="蓝网科技", jobTitle="测试实习生")
@@ -273,6 +327,49 @@ def test_funnel_group_by_direction():
     assert m["运营"] == 2
     assert m["数据/AI"] == 1
     assert data["groups"][0]["key"] == "运营", "分组应按投递量降序"
+
+
+def test_collect_keeps_direction_from_extension():
+    """
+    扩展在**投递那一刻**按标题判好了方向，采集/补传必须把它带进来。
+
+    不带的话，存量记录只能靠 data/jd/jobs.json 兜底 —— 那份语料只有 5 条且 direction 全空，
+    等于 36 条里 34 条没方向，`?groupBy=direction` 只剩「未分类」，漏斗最有价值那句话算不出来
+    （2026-11-05 实测）。
+    """
+    r = _collect(
+        [
+            {
+                "platform": "BOSS直聘",
+                "company": "方向甲",
+                "jobTitle": "数据运营实习",
+                "stageRaw": "已投递",
+                "direction": "数据分析 / 数据运营",
+            }
+        ],
+        createMissing=True,
+    )
+    assert r.json()["created"] == 1, r.text
+    got = [a for a in requests.get(f"{BASE}/api/applications", timeout=10).json() if a["company"] == "方向甲"]
+    assert got and got[0]["direction"] == "数据分析 / 数据运营"
+
+
+def test_collect_does_not_overwrite_direction():
+    """已有方向不覆盖：人工改过的值不许被一次采集刷回去（采集只知道标题，不知道你的判断）"""
+    _app(company="方向乙", direction="人工标注")
+    _collect(
+        [
+            {
+                "platform": "实习僧",
+                "company": "方向乙",
+                "jobTitle": "数据运营实习",
+                "stageRaw": "已投递",
+                "direction": "数据分析 / 数据运营",
+            }
+        ]
+    )
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["company"] == "方向乙"]
+    assert got and got[0]["direction"] == "人工标注"
 
 
 def test_funnel_without_stage_shows_zero():
@@ -401,3 +498,167 @@ def test_collect_reports_created_detail():
     item = _result_of(data, "新建岗")
     assert item["action"] == "created"
     assert item["stage"] == "written"
+
+
+def test_collect_self_heals_tag_as_title():
+    """
+    标题被「届别标签」占过时，jobId 精确命中要能自愈。
+
+    真机事故（2026-11-03，华曦达 3 条）：实习僧岗位名元素里是「27届\n测试实习生」，
+    采集端取第一行 → 三条不同岗位的标题全成了「27届」。
+    采集端已修，但**写坏的旧值不会自己好** —— 不覆盖就是永久错，
+    而且这三条会一直占着「方向判不出来」的位置。
+    """
+    a = _app(company="SDMC华曦达科技", jobTitle="27届", platform="实习僧", jobId="inn_tag_title_1")
+    r = _collect(
+        [
+            {
+                "company": "SDMC华曦达科技",
+                "jobTitle": "测试实习生",
+                "platform": "实习僧",
+                "jobId": "inn_tag_title_1",
+                "stage": "submitted",
+            }
+        ]
+    )
+    assert r.status_code == 200, r.text
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["jobTitle"] == "测试实习生", "jobId 硬命中却没订正标题"
+    body = r.json()
+    assert any(x.get("titleFixed") for x in body["results"]), "订正了标题但没在 results 里说明"
+
+
+def test_collect_does_not_overwrite_normal_title():
+    """
+    反过来：**正常标题不许乱改**。
+
+    标题是 sameApply 认人的主要依据（公司 + 岗位名），平台改一次文案就覆盖一次，
+    等于自己给自己制造错配。自愈只对「旧值确实是标签」生效。
+    """
+    a = _app(company="某公司", jobTitle="测试实习生", platform="实习僧", jobId="inn_keep_title_1")
+    _collect(
+        [
+            {
+                "company": "某公司",
+                "jobTitle": "测试实习生（急招）",
+                "platform": "实习僧",
+                "jobId": "inn_keep_title_1",
+                "stage": "submitted",
+            }
+        ]
+    )
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["jobTitle"] == "测试实习生", "正常标题被平台文案覆盖了（会破坏公司+岗位的认人规则）"
+
+
+def test_withdrawn_does_not_touch_stage():
+    """
+    我主动放弃 → 只写 withdrawnAt，**stage 一格都不许动**。
+
+    反例（真实数据 2026-10-30 惊叹科技）：我在聊天里说「不太适合我，祝您早日找到」。
+    若把它当 rejected，漏斗「不合格」那层会凭空多一批 —— HR 压根没拒我，
+    被拒率跟着虚高，简历上那句「被拒率 X%」就是假的。
+    """
+    a = _app(company="惊叹科技", jobTitle="编导创意实习生", platform="BOSS直聘")
+    r = _collect(
+        [
+            {
+                "company": "惊叹科技",
+                "jobTitle": "编导创意实习生",
+                "platform": "BOSS直聘",
+                "stage": "viewed",
+                "read": True,
+                "withdrawn": True,
+                "source": "chat",
+                "myMsgCount": 4,
+            }
+        ]
+    )
+    assert r.status_code == 200, r.text
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["withdrawnAt"], "没记下「我放弃」"
+    assert got["stage"] == "viewed", "我放弃不该改阶段（更不该变成 rejected）"
+
+
+def test_withdrawn_keeps_first_time_only():
+    """反复同步不能把「我哪天放弃的」刷成今天 —— 这跟已读/回复是同一类口径。"""
+    a = _app(company="某公司", jobTitle="运营实习生", platform="BOSS直聘")
+    item = {
+        "company": "某公司",
+        "jobTitle": "运营实习生",
+        "platform": "BOSS直聘",
+        "withdrawn": True,
+        "source": "chat",
+        "myMsgCount": 2,
+    }
+    _collect([item])
+    first = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0][
+        "withdrawnAt"
+    ]
+    assert first
+    import time
+
+    time.sleep(0.02)
+    _collect([{**item, "withdrawnAt": "2026-12-31T00:00:00.000Z"}])
+    again = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0][
+        "withdrawnAt"
+    ]
+    assert again == first, "「我放弃」的时间被后一次同步覆盖了"
+
+def test_collect_chat_can_adopt_when_user_asks():
+    """
+    用户点「补录」时（createMissing=True），我自己发过消息的会话要能建进账本。
+
+    这批是真实数据：炽光 / 惊叹 / 未来范式 / 知羽俊采 4 条在 BOSS 聊天页上确实存在，
+    但账本从来没记过（当时投递没回写成功）。不补进来的话，投递量永远比平台少 4 家，
+    漏斗分母偏小 → 所有转化率分母都错。
+    """
+    r = _collect(
+        [_chat("炽光时代", "用户运营实习生（双休/AI赛道）", myMsgCount=3, firstFrom="me", read=True)],
+        createMissing=True,
+    )
+    body = r.json()
+    assert body["created"] == 1, f"补录没建记录：{body}"
+    got = requests.get(f"{BASE}/api/applications", timeout=10).json()
+    hit = [x for x in got if x["company"] == "炽光时代"]
+    assert len(hit) == 1
+    assert hit[0]["stage"] == "submitted", "补录进来的没有阶段（漏斗里会变成草稿被排除）"
+    assert hit[0]["readAt"], "已读时间没跟着记上"
+
+
+def test_collect_chat_never_adopts_inbound_even_with_create_missing():
+    """补录也不许把「HR 主动找我」算成我的投递 —— 这条是 404 还是 201 都不能破的。"""
+    r = _collect(
+        [_chat("某某集团", "校招-销售", myMsgCount=0, firstFrom="other")],
+        createMissing=True,
+    )
+    body = r.json()
+    assert body["created"] == 0, "补录把进线会话也建了，投递量会虚高"
+    assert not [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["company"] == "某某集团"]
+
+
+def test_collect_advances_when_only_tab_gave_the_stage():
+    """
+    stageRaw 为空、只有 stage key 时必须照样推进。
+
+    真实形态：实习僧「初筛」tab 里那一行的文案**还是旧的**（「投递成功」），
+    阶段只能由分类 tab 判定 → 采集端发 `stageRaw: ''` + `stage: 'screening'`。
+    后端原来写 `raw.stageRaw ?? raw.stage`：空串不是 null，?? 不兜底 →
+    parseStage('') → null → **这一档永远推不上去**，而界面显示「无新变化」，看起来一切正常。
+    2026-11-05 回放真账本（9 条会话）时就是这么暴露的：推进数恒为 0。
+    """
+    a = _app(company="TCL实业", jobTitle="HR-数据运营实习生", platform="BOSS直聘")
+    r = _collect(
+        [
+            {
+                "company": "TCL实业",
+                "jobTitle": "HR-数据运营实习生",
+                "platform": "BOSS直聘",
+                "stageRaw": "",
+                "stage": "screening",
+            }
+        ]
+    )
+    assert r.status_code == 200, r.text
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["stage"] == "screening", "只靠 tab 判出来的阶段被丢掉了（stageRaw 空串没兜底）"

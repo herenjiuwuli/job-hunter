@@ -395,6 +395,8 @@ textarea:focus {
 .badge-offer { background: #f0fdf4; color: #16a34a; }
 .badge-rejected { background: #fef2f2; color: #dc2626; }
 .badge-failed { background: #faf5ff; color: #7e22ce; }
+/* 我放弃：中性灰，不能跟「不合格」的红色混 —— 这不是被拒，是我自己筛掉的 */
+.badge-withdrawn { background: #f5f5f4; color: #57534e; border: 1px solid #e7e5e4; }
 
 .badge-class-待投递 { background: #f3f4f6; color: #6b7280; }
 .badge-class-已投递 { background: #eff6ff; color: #2563eb; }
@@ -403,6 +405,27 @@ textarea:focus {
 .badge-class-已offer { background: #f0fdf4; color: #16a34a; }
 .badge-class-已拒绝 { background: #fef2f2; color: #dc2626; }
 .badge-class-已淘汰 { background: #faf5ff; color: #7e22ce; }
+
+/* ---- 平台阶段徽章（stage 维度，与上面的手工 status 是两套） ----
+   命名用 .stage-<key>，和 status 的 .badge-class-<中文> 区分开，
+   避免以后有人以为它们是一回事。 */
+.stage-submitted { background: #eff6ff; color: #2563eb; }
+.stage-viewed { background: #f0fdfa; color: #0d9488; }
+.stage-screening { background: #fef4e6; color: #b45309; }
+.stage-written { background: #f5f3ff; color: #6d28d9; }
+.stage-interview { background: #eef2ff; color: #4f46e5; }
+.stage-rejected { background: #fef2f2; color: #dc2626; }
+.stage-offer { background: #f0fdf4; color: #16a34a; }
+
+/* 「待我回复」：平台已经抛球过来，我还没回话 */
+.need-action { color: #b45309; }
+
+.hint-line {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
 
 /* ============ 标签（resume-interview 语义） ============ */
 .tag {

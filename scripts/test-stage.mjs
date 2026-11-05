@@ -8,6 +8,7 @@
  * 跑：node scripts/test-stage.mjs
  */
 import { parseStage, shouldAdvance, stageFromStatus, highestNormalStage, pushHistory, STAGES } from '../server/lib/stages.js'
+import { needsMyAction, isActive } from '../src/stages.js'
 
 let pass = 0
 let fail = 0
@@ -27,6 +28,13 @@ function ok(cond, name) {
 }
 
 console.log('— 平台文案解析 —')
+// 2026-11-05：回放真账本时 9 条一条都没推进，根因是这里只认中文别名。
+// 扩展上报的 stage 是 key（submitted/viewed/screening/written），必须原样认。
+eq(parseStage('viewed'), 'viewed', 'stage key 本身要认（扩展上报的就是它）')
+eq(parseStage('screening'), 'screening', 'screening key')
+eq(parseStage('written'), 'written', 'written key')
+eq(parseStage('submitted'), 'submitted', 'submitted key')
+eq(parseStage(''), null, '空串 = 没采到，不能瞎猜')
 eq(parseStage('已投递'), 'submitted', '已投递')
 eq(parseStage('待查看'), 'submitted', '待查看 → 还没被看，仍算已投递')
 eq(parseStage('简历被查看'), 'viewed', '简历被查看')
@@ -91,6 +99,20 @@ for (const [key, s] of Object.entries(STAGES)) {
 }
 ok(STAGES.offer.weight > STAGES.rejected.weight, 'offer 优先级高于 rejected（否则录用会被不合格盖掉）')
 ok(STAGES.rejected.weight > STAGES.interview.weight, 'rejected 优先级高于 interview（面试后不合格要能写进去）')
+
+console.log('— 我放弃（withdrawnAt）不进待办 —')
+// 真机样本（2026-10-30 惊叹科技）：我在聊天里说「不太适合我，祝您早日找到」——
+// 这条不是被拒。如果只按 stage 判，它会永远挂在「待我回复」里，每条都要人工看一眼才删得掉。
+{
+  const givenUp = { stage: 'viewed', repliedAt: '', withdrawnAt: '2026-10-30T19:59:00.000Z' }
+  eq(needsMyAction(givenUp), false, '我放弃的不算「待我回复」')
+  eq(isActive(givenUp), false, '我放弃的不算「进行中」')
+  const asked = { stage: 'viewed', repliedAt: '', withdrawnAt: '' }
+  eq(needsMyAction(asked), true, '被查看了还没回 → 仍要提醒（别把规则改宽了）')
+  eq(isActive(asked), true, '被查看仍是进行中')
+  const rejected = { stage: 'rejected', withdrawnAt: '' }
+  eq(needsMyAction(rejected), false, '不合格不用回')
+}
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

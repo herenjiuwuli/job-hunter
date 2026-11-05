@@ -25,6 +25,7 @@ import exportRouter from './routes/export.js'
 import importRouter from './routes/import.js'
 import backupRouter from './routes/backup.js'
 import dashboardRouter from './routes/dashboard.js'
+import greetingRouter from './routes/greeting.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = join(__dirname, '..', 'dist')
@@ -79,6 +80,7 @@ export function createApp({ serveStatic = false } = {}) {
   app.use(backupRouter)
   app.use(dashboardRouter)
   app.use(funnelRouter)
+  app.use(greetingRouter)
 
   // 生产模式：单端口同时提供前端静态资源与 API
   if (serveStatic) {

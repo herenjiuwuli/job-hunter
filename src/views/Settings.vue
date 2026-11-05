@@ -138,7 +138,50 @@ async function copyCode(code) {
   }
 }
 
+// ---------- 默认打招呼语 ----------
+// 存后端（greeting.json）而不是浏览器本地：扩展是另一个进程，只能从后端拿。
+const greetingText = ref('')
+const greetingLoading = ref(false)
+const greetingSaving = ref(false)
+const greetingMessage = ref('')
+const greetingFailed = ref(false)
+
+async function loadGreeting() {
+  if (greetingLoading.value) return
+  greetingLoading.value = true
+  greetingMessage.value = ''
+  try {
+    const d = await api.greeting.getDefault()
+    greetingText.value = d.text || ''
+  } catch (e) {
+    greetingMessage.value = e.message || '读取失败'
+    greetingFailed.value = true
+  } finally {
+    greetingLoading.value = false
+  }
+}
+
+async function saveGreeting() {
+  if (greetingSaving.value) return
+  greetingSaving.value = true
+  greetingMessage.value = ''
+  greetingFailed.value = false
+  try {
+    const d = await api.greeting.saveDefault(greetingText.value)
+    greetingText.value = d.text || ''
+    greetingMessage.value = greetingText.value
+      ? '已保存。扩展投递时会自动带出这段话。'
+      : '已清空。扩展那边会提示「先填话术」。'
+  } catch (e) {
+    greetingMessage.value = e.message || '保存失败'
+    greetingFailed.value = true
+  } finally {
+    greetingSaving.value = false
+  }
+}
+
 onMounted(() => {
+  loadGreeting()
   if (isOwner.value) loadInvites()
 })
 </script>
@@ -193,6 +236,34 @@ onMounted(() => {
         </div>
       </form>
       <p v-if="pwMessage" class="msg-inline" :class="{ bad: pwFailed }">{{ pwMessage }}</p>
+    </div>
+
+    <!-- 打招呼语（扩展投递时自动取用） -->
+    <div class="card">
+      <div class="card-title">默认打招呼语</div>
+      <p class="muted" style="margin: 4px 0 12px">
+        浏览器扩展投递时会自动取这段话，不用每次复制粘贴。BOSS 的「投递」就是发出这条消息，所以它是投递的前置条件。
+      </p>
+      <textarea
+        v-model="greetingText"
+        class="input"
+        rows="6"
+        placeholder="您好，我是计算机应用工程专业大四在读，看到贵司的{{岗位}}……"
+      ></textarea>
+      <p class="muted" style="margin: 8px 0 0; font-size: 13px">
+        可用占位符：<code>&#123;&#123;公司&#125;&#125;</code> <code>&#123;&#123;岗位&#125;&#125;</code>，扩展执行时会替换成当前岗位的真实名字。
+        <br />
+        优先级：<b>单条投递生成过的话术</b>（如「AI 定制」产出的）＞ 这里的默认话术。
+      </p>
+      <div class="pw-actions">
+        <button class="btn btn-primary" type="button" :disabled="greetingSaving" @click="saveGreeting">
+          {{ greetingSaving ? '保存中…' : '保存默认话术' }}
+        </button>
+        <button class="btn" type="button" :disabled="greetingLoading" @click="loadGreeting">
+          重新读取
+        </button>
+      </div>
+      <p v-if="greetingMessage" class="msg-inline" :class="{ bad: greetingFailed }">{{ greetingMessage }}</p>
     </div>
 
     <!-- 邀请码（仅管理员） -->

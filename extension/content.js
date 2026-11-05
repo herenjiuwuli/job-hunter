@@ -338,12 +338,33 @@ function extractJobInfo() {
   const jobEl = document.querySelector(
     '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
   )
-  const companyEl = document.querySelector(
-    '.job-banner .company-name, .company-info .company-name, [class*="company-name"], .company-name, .cname, .com-name'
-  )
+  // ⚠️ 不能直接取 innerText 第一行：实习僧岗位名元素里是「27届\n测试实习生」，
+  // 第一行是届别标签。真机上 3 条不同岗位的标题全成了「27届」（见 collector 的 PURE_TAG_LINE）。
+  const C0 = window.__jhCollector
+  const rawLabel = (jobEl && jobEl.innerText) || ''
+  const jobTitle =
+    (C0 && C0.firstTitleLine ? C0.firstTitleLine(rawLabel) : cleanLabel(rawLabel)) ||
+    title.split(/[-_—|｜]/)[0].trim() ||
+    '未知岗位'
+
+  // 公司名走 collector.js 的受控查找：只在「岗位名所在容器」里取，或全页唯一候选。
+  //
+  // ⭐ 原来这里是
+  //   querySelector('.job-banner .company-name, .company-info .company-name,
+  //                 [class*="company-name"], .company-name, .cname, .com-name')
+  // 最后那个通配是**全页**的。BOSS 一键投递跑在「左侧列表 + 右侧详情」页面上，
+  // 文档序第一个 `[class*="company-name"]` 常常是左侧列表里**别的卡片** ——
+  // 账本于是记下别人的公司。10 条 BOSS 记录错了 4 条，而界面上「解析一切正常」：
+  // 岗位名用的是精确选择器，所以全对，只有公司名错。
+  // 铁证：「【日常实习】数据运营实习生(A69277)」同一个内部编号挂在两家不同公司名下。
+  const C = window.__jhCollector
+  const company = C && C.findCompanyName ? C.findCompanyName(jobEl) : ''
+
   return {
-    company: cleanLabel(companyEl && companyEl.innerText) || '未知公司',
-    jobTitle: cleanLabel(jobEl && jobEl.innerText) || title.split(/[-_—|｜]/)[0].trim() || '未知岗位',
+    // 空 → 未知公司：宁可留空让人看见，也不要一个错的（错的会稳定匹配到错误的记录）
+    company: company || '未知公司',
+    jobTitle,
+    companyUnverified: !company,
   }
 }
 
@@ -412,10 +433,7 @@ function describeFilters(f) {
   const parts = []
   parts.push(f.cities && f.cities.length ? `城市 ${f.cities.join('/')}` : '⚠️ 城市不限')
   if (f.directions && f.directions.length) {
-    const labels = f.directions.map(
-      (id) => ((F && F.DIRECTIONS.find((d) => d.id === id)) || {}).label || id
-    )
-    parts.push(`方向 ${labels.join('/')}`)
+    parts.push(`方向 ${dirShort(f.directions)}`)
   } else {
     parts.push('⚠️ 方向不限')
   }
@@ -434,13 +452,24 @@ function describeFilters(f) {
   return parts.join('｜')
 }
 
-// 命中哪些方向组
+/**
+ * 命中哪些方向组。
+ *
+ * 命中判断走 filters-data 的 hitKeyword（纯函数、有单测）：中文包含、英文词边界。
+ * 英文必须按词边界 —— 直接 includes 时 `test` 会命中 `latest`，`qa` 会命中 `qax`，
+ * 标题里出现这类词就把岗位放行，方向筛选等于没有。
+ * （2026-11-05 真机：搜 SDET 出来的几条是英文岗名，词表里只有中文 + 工具名，全被判「没有方向词」）
+ */
 function matchedDirections(text) {
   const t = String(text || '').toLowerCase()
-  const list = (window.JH_FILTERS && window.JH_FILTERS.DIRECTIONS) || []
+  const F = window.JH_FILTERS
+  const list = (F && F.DIRECTIONS) || []
+  const hit = F && typeof F.hitKeyword === 'function'
+    ? F.hitKeyword
+    : (s, k) => String(s || '').includes(String(k || '').toLowerCase())
   const ids = []
   for (const d of list) {
-    if (d.keywords.some((k) => t.includes(String(k).toLowerCase()))) ids.push(d.id)
+    if (d.keywords.some((k) => hit(t, k))) ids.push(d.id)
   }
   return ids
 }
@@ -449,6 +478,60 @@ function dirLabel(id) {
   const list = (window.JH_FILTERS && window.JH_FILTERS.DIRECTIONS) || []
   const hit = list.find((d) => d.id === id)
   return hit ? hit.label : id
+}
+
+/**
+ * 这条岗位属于哪个方向（写进投递记录用）。
+ *
+ * 为什么要在**投递那一刻**算：筛选器刚刚为了放行这条岗，已经把标题里的方向词匹配过一遍，
+ * 这是最准的一手信息。不记下来的后果是后端只能拿「公司+岗位」去查 `data/jd/jobs.json`
+ * 那份语料补 —— 语料是 9 月的，对不上新岗位，于是 36 条里 34 条 direction 是空的，
+ * 漏斗的「按方向分组」直接废掉（2026-11-05 实测）。
+ *
+ * 只看标题不看 JD：这里可能已经在 BOSS 聊天页，页面正文是聊天记录，
+ * 拿它判方向会把「面试」这类词也当方向证据。标题判不出来就留空，交给后端语料兜底——
+ * 空着是「不知道」，瞎填是「知道错」，后者更难发现。
+ */
+function directionOf(jobTitle) {
+  const pool = matchedDirections(jobTitle)
+  return pool.length ? dirLabel(pool[0]) : ''
+}
+
+/**
+ * 方向标签压成一句话：超过 3 个只列前 3 个 + 「等 N 个」。
+ *
+ * 为什么：勾了 7 个方向时，「标题里没有『测试开发 / 软件测试/自动化测试 / SDET/前端开发/产品/…』这类词」
+ * 一句话能占两行，弹窗里被 truncate 截掉，反而看不出拦的是什么（2026-11-05 真机日志）。
+ */
+function dirShort(ids) {
+  const labels = (ids || []).map(dirLabel)
+  return labels.length > 3
+    ? `${labels.slice(0, 3).join('、')} 等 ${labels.length} 个`
+    : labels.join('、')
+}
+
+/**
+ * 「你勾的方向，插件到底在标题里找哪些词」——举例，最多 3 个。
+ *
+ * 为什么不再拿方向**标签**去拼原因：原来报的是
+ *   「标题里没有『测试开发 / 软件测试、自动化测试 / SDET、接口测试 / 性能测试 等 4 个』这类词」
+ * 标签是给人选的分类名，不是插件真正找的字符串；用户照着这句话去原文里找，
+ * 永远找不到「测试开发 / 软件测试」这串带斜杠的字（2026-11-05 真机日志）。
+ * 报**真实关键词**，用户一眼就能对照岗位标题判断是不是误杀。
+ */
+function dirSamples(ids, n = 2) {
+  const list = (window.JH_FILTERS && window.JH_FILTERS.DIRECTIONS) || []
+  const out = []
+  for (const id of ids || []) {
+    const d = list.find((x) => x.id === id)
+    if (!d || !d.keywords || !d.keywords.length) continue
+    const k = d.keywords[0]
+    if (!out.includes(k)) out.push(k)
+  }
+  if (!out.length) return ''
+  // 弹窗宽度见底：`等 4 组` 带空格会白占 2px，写紧凑点
+  const more = out.length > n ? `等${out.length}组` : ''
+  return `「${out.slice(0, n).join('」「')}」${more}`
 }
 
 // JD 正文容器（找不到就退回 body 前 4000 字）
@@ -489,6 +572,17 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
     const cc = typeof F.checkCity === 'function'
       ? F.checkCity(metaSrc, f.cities)
       : { blocked: false, city: '' }
+    // 「全国」不是异地，是「没写死在哪」：既可能真在深圳，也可能在外地。
+    // 不自动投，也不当垃圾丢掉 —— 交给上层收进「待定」让用户自己决定（2026-11-05 用户选的方案）
+    if (cc.nationwide) {
+      return {
+        pending: true,
+        mode: 'nationwide',
+        city: cc.city,
+        reason: `岗位写的是「${cc.city}」，可能在外地也可能在 ${f.cities.join('/')}，没自动投，等你决定`,
+        meta: {},
+      }
+    }
     if (cc.blocked) {
       return {
         blocked: true,
@@ -522,13 +616,38 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
   if (f.directions.length) {
     const inTitle = matchedDirections(title)
     const pool = inTitle.length ? inTitle : matchedDirections(String(jdText || '').slice(0, 1500))
+    const samples = dirSamples(f.directions)
     if (!pool.length) {
-      return { blocked: true, reason: '方向无法识别（标题与 JD 都没命中你勾选的方向）', meta }
-    }
-    if (!pool.some((id) => f.directions.includes(id))) {
+      // 「一个方向词都没有」和「明确是别的方向」是两件事，原来都报成「方向无法识别」：
+      // 列表页一页拦掉 16 家时，满屏「无法识别」看着像插件坏了，其实筛选在正常工作
+      // （2026-11-05 真机：第 2 页的岗位是「环境可靠性工程师」「技术质量工程师」这类，
+      //   标题本来就不含任何方向词，拦掉是对的）。
+      //
+      // 报的是**真实关键词**不是方向标签：标签里带斜杠的那种串在原文里根本不存在，
+      // 用户没法拿它去核对（真机日志里那句「标题里没有『测试开发 / 软件测试、…等 4 个』」）
+      // ⚠️ 文案要**短到弹窗放得下**：拦截清单每行只有一个说法位（约 30 字，CSS max-width 52%）。
+      // 上一版写「标题里没有你要的方向词（插件找的是「测试开发」…）」，光套话就吃掉 11 字，
+      // 结果真机里永远显示成「标题里没有你要的方向词（插件找的是 「测…」」——
+      // 想看「找的是什么词」的那半句恰好被截断，等于没写（2026-11-05）。
+      // 现在关键词前置、只列 2 组，完整版留给 hover（popup 的 title 属性）。
+      const lookFor = samples ? `（找${samples}）` : ''
       return {
         blocked: true,
-        reason: `方向不符（识别为「${pool.map(dirLabel).join('/')}」，你只投「${f.directions.map(dirLabel).join('/')}」）`,
+        reason: allowUnknown
+          ? `无方向词${lookFor}｜看不到 JD`
+          : `标题和 JD 都无方向词${lookFor}`,
+        meta,
+      }
+    }
+    if (!pool.some((id) => f.directions.includes(id))) {
+      // 标签本身带斜杠（「产品 / 新媒体运营」），用 '/' 连接多个会糊成一串认不出来，
+      // 所以只念第一个 + 「等 N 类」。这句话的作用是让用户一眼判断「是不是误杀」，不是报全量。
+      const first = dirLabel(pool[0])
+      const more = pool.length > 1 ? `等 ${pool.length} 类` : ''
+      return {
+        blocked: true,
+        // 同上：先说「它是什么方向」比说「你投什么」有用 —— 前者是判据，后者用户自己知道
+        reason: `是「${first}」${more}方向`,
         meta,
       }
     }
@@ -589,6 +708,9 @@ async function applyFilters() {
     },
     f
   )
+  // 「全国」岗位不自动投（列表页那关会把它收进待定）。走到详情页还判成
+  // pending 说明是在手动投/续跑旧队列 —— 这一家同样不投，理由照实说。
+  if (screen.pending) return { blocked: true, reason: `筛选跳过：${screen.reason}（不消耗额度）` }
   if (screen.blocked) return { blocked: true, reason: `筛选跳过：${screen.reason}（不消耗额度）` }
 
   return { blocked: false }
@@ -669,6 +791,8 @@ async function writeback(info, greeting, jobId) {
     // jobId 必须带：采集进度时靠它精确对账。
     // 早期没传，导致本地 18 条投递全是 jobId 空，同步只能拿名字硬猜
     jobId: jobId || currentJobId() || '',
+    // 方向：投的这一刻标题就在眼前，判得最准（后端语料兜底只对老岗位有效）
+    direction: directionOf(info.jobTitle),
     greeting,
     status: '已投递',
     appliedAt: new Date().toISOString(),
@@ -715,6 +839,13 @@ function withBackendNote(message, wb) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // 探活：popup 跳转页面后要等脚本注入完成才能发批量指令。
+  // 没有这个探针就只能「发一次失败 → 猜是不是没注入」，页慢一点就误报。
+  if (msg.action === 'ping') {
+    sendResponse({ ok: true, platform: platform() })
+    return
+  }
+
   // 投递进度采集：collect = 按业务文案抓；probe = 原样吐结构给人工校准
   if (msg.action === 'collect' || msg.action === 'probe') {
     const c = window.__jhCollector
@@ -747,6 +878,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           msg.action === 'collectPages'
             ? await c.collectAllPages({ maxPages: 30 })
             : await c.collectAllTabs({ maxPages: 30 })
+        sendResponse({ ok: true, data })
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e && e.message) })
+      }
+    })()
+    return true
+  }
+
+  // BOSS 聊天页逐条采集：**会真的点击左侧会话行**，点开才能拿到岗位名 / 已读 / 对方回复。
+  // ⚠️ 点开会把对方发来的未读消息标成已读（HR 那边能看到「已读」），所以筛选交给 collector，
+  // 默认只点「已读 / 对方最后发言」的，不碰「我发了对方还没看」的那批。
+  if (msg.action === 'collectChat') {
+    const c = window.__jhCollector
+    if (!c) {
+      sendResponse({ ok: false, error: '采集器脚本未加载，请重新加载扩展' })
+      return
+    }
+    ;(async () => {
+      try {
+        const data = await c.collectChatDetails({ scope: msg.scope || 'interactive', max: msg.max })
         sendResponse({ ok: true, data })
       } catch (e) {
         sendResponse({ ok: false, error: String(e && e.message) })
@@ -891,6 +1042,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })()
     return true
   }
+  // 当前页面的岗位信息（只读）：弹窗拿它去后端取「这个岗位该用什么话术」
+  if (msg.action === 'jobInfo') {
+    try {
+      const info = extractJobInfo() || {}
+      sendResponse({
+        ok: true,
+        platform: platform(),
+        jobId: currentJobId(),
+        company: info.company || '',
+        jobTitle: info.jobTitle || '',
+        url: location.href,
+      })
+    } catch (e) {
+      sendResponse({ ok: false, error: e.message })
+    }
+    return false
+  }
   // 手动标记当前岗位为「已投递」——页面不显示状态时，用它把账本补上，之后就不会重复投
   if (msg.action === 'markCurrentApplied') {
     ;(async () => {
@@ -919,11 +1087,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   // ===== 批量投递 =====
   if (msg.action === 'batchStart') {
-    startBatch(msg.limit, msg.force).then(sendResponse).catch((e) => sendResponse({ ok: false, error: e.message }))
+    startBatch(msg.limit, msg.force, {
+      pagingConfig: msg.pagingConfig,
+      kwUrls: msg.kwUrls,
+      kwIndex: msg.kwIndex,
+    })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: e.message }))
     return true
   }
   if (msg.action === 'batchStop') {
     stopBatch().then(sendResponse).catch((e) => sendResponse({ ok: false, error: e.message }))
+    return true
+  }
+  // 「全国」待定岗位：用户点了「加进队列」才投这几家
+  if (msg.action === 'batchAdoptPending') {
+    adoptPending(msg.indexes).then(sendResponse).catch((e) => sendResponse({ ok: false, error: e.message }))
     return true
   }
   if (msg.action === 'batchStatus') {
@@ -1789,6 +1968,7 @@ async function collectJobLinks() {
   const seen = new Set()
   const out = []
   const blocked = []
+  const pending = []
   let appliedSkip = 0
   document.querySelectorAll('a[href]').forEach((a) => {
     const href = a.href || ''
@@ -1826,24 +2006,513 @@ async function collectJobLinks() {
     const card = rowEl ? (rowEl.innerText || '').trim() : cardTextOf(a)
     // 列表页信息不全，识别不到城市/时长时不拦（allowUnknown=true），详情页会再校验一次
     const screen = screenJob({ jobTitle: title, company: '', jdText: card, metaText: card }, f, true)
+    // 「全国」岗位：不进队列（不自动投），但要留下列表让用户自己决定
+    if (screen.pending) {
+      pending.push({ id, url: clean, title: truncate(title, 40), city: screen.city || '全国', reason: screen.reason })
+      return
+    }
     if (screen.blocked) {
       blocked.push({ title: truncate(title, 40), reason: screen.reason })
       return
     }
     out.push({ id, url: clean, title: truncate(title, 40) })
   })
-  return { links: out, blocked, appliedSkip }
+  // allIds = 这一页**认到的全部岗位 id**（含已投过 / 被筛掉 / 待定的）。
+  // 「可投的」一条都没有时，只有它还能回答「翻页到底有没有换内容」
+  // —— 否则第 2 页全是已投过的岗位时，links 是空的，跟第 1 页一模一样，
+  //    永远分不清「翻页没生效」和「这页真的都是重复的」。
+  return { links: out, blocked, appliedSkip, pending, allIds: [...seen] }
 }
 
-async function startBatch(limit, force) {
-  const { links, blocked, appliedSkip = 0 } = await collectJobLinks()
+/**
+ * 在详情页点「启动」时接管旧队列：不重新抓链接，直接把上一批复活，从停下的那家继续。
+ *
+ * 为什么需要：「启动」的本质是**建队列**，队列只能从列表页 DOM 里抓出来；
+ * 详情页只有一个岗位链接，抓不出一页 → 以前一律拒绝，用户停在详情页想接着投
+ * 就必须先退回列表页重新抓一遍，直觉上说不通（2026-11-05 实测反馈）。
+ * 但只要还有没跑完的旧队列，重新抓本来就没必要。
+ *
+ * 返回 null = 没有可续跑的队列（交回调用方报「没抓到链接」）。
+ */
+// ===== 翻页：页码就在地址里 =====
+// 实习僧 / BOSS 的搜索页都用 `page` 参数翻页，所以翻页不用去点「下一页」按钮 ——
+// 改参数跳过去就行。好处是目标 URL 是确定的：可以用「新页抓到哪些岗位」反推它到底翻成功没有。
+function stripPageUrl(u) {
+  try {
+    const x = new URL(u)
+    for (const k of ['page', 'p', 'pageNum']) x.searchParams.delete(k)
+    x.hash = ''
+    return x.toString()
+  } catch {
+    return ''
+  }
+}
+
+function pageUrlOf(base, n) {
+  try {
+    const x = new URL(base)
+    x.searchParams.set('page', String(n))
+    return x.toString()
+  } catch {
+    return ''
+  }
+}
+
+// ===== 关键词轮换：一个词投到底，自动换下一个词 =====
+// 为什么需要：一个搜索词在某个城市通常只对应 20~40 个岗位，投完就没了
+// （2026-11-05：「测试 + 深圳 + 校招」翻两页共 0 家可投）。换词是唯一能继续加量的办法，
+// 但每换一次都要回网站改条件、回弹窗点启动 —— 所以排成队列，一批词自动一个个跑。
+//
+// 关键词列表存在 **batch** 上、不塞进 paging：翻页 / 扫描 / 续跑三条路径都会整体重写 paging，
+// 重写就丢字段；batch 是这三条路径共同的读写对象。
+function kwListOf(b) {
+  return b && Array.isArray(b.kwUrls) ? b.kwUrls : []
+}
+
+/**
+ * 第 i 个搜索任务叫什么（从地址里现读，不另存一份，避免两处不一致）。
+ * 多城市时 kwUrls 里每一项是「城市 × 关键词」的组合，所以要显示成「深圳·软件测试」，
+ * 否则跑到第 5 个时用户会以为插件把同一个词跑了两遍。
+ */
+function kwNameOf(b, i) {
+  const u = kwListOf(b)[Number(i) || 0]
+  if (!u) return ''
+  const F = window.JH_FILTERS
+  if (F && typeof F.taskNameOf === 'function') {
+    const n = F.taskNameOf(u)
+    if (n) return n
+  }
+  try {
+    return new URL(u).searchParams.get('keyword') || ''
+  } catch (_) {
+    return ''
+  }
+}
+
+/** 还有下一个关键词吗？有就给出「跳到哪、第几个、一共几个」 */
+function nextKeywordOf(b) {
+  const list = kwListOf(b)
+  const i = Number(b && b.kwIndex) || 0
+  // 边界判断走 collector 的纯函数（有单测）：写错只会让最后一个词跑两遍或少跑一个，
+  // 两种都不报错，只体现在投递量上 —— 那种 bug 在真机上极难发现
+  const C = window.__jhCollector
+  const nxt =
+    C && typeof C.nextKeywordIndex === 'function'
+      ? C.nextKeywordIndex(list.length, i)
+      : list.length >= 2 && i + 1 < list.length
+        ? i + 1
+        : -1
+  if (nxt < 0) return null
+  return { url: list[nxt], index: nxt, total: list.length }
+}
+
+/**
+ * 换词后的翻页状态：页码归 1、翻页计数归零、上一页集合清空。
+ *
+ * lastPageIds / lastAllIds 必须清空：它们是「这一页 vs 上一页有没有变」的对照物，
+ * 而新关键词的列表跟旧词本来就不是一回事 —— 留着会让自检误判成「翻页没生效」。
+ * seenIds 同理清空（跨词去重交给本地账本，不靠这个集合）。
+ */
+function resetPagingForKey(p, url) {
+  return {
+    ...p,
+    scanOnly: false,
+    page: 1,
+    pagesDone: 0,
+    baseUrl: stripPageUrl(url),
+    lastPageIds: [],
+    lastAllIds: [],
+    seenIds: [],
+    pendingPage: true,
+    stopped: '',
+  }
+}
+
+async function resumeExistingBatch() {
+  const old = await getBatch()
+  if (!old || !Array.isArray(old.queue) || !old.queue.length) return null
+  const total = old.queue.length
+  const index = Math.max(0, Number(old.index) || 0)
+  if (index >= total) return null // 上一批已经跑完，没得续
+
+  const now = Date.now()
+  const { greeting = '' } = await chrome.storage.local.get('greeting')
+  const samePage = jobIdOf(old.queue[index]) === jobIdOf(location.href)
+  const b = {
+    ...old,
+    running: true,
+    line: lineOfPlatform(platform()),
+    tabId: await myTabId(),
+    greeting: String(greeting || old.greeting || '').trim(),
+    stopReason: '',
+    failStreak: 0,
+    lastAt: new Date(now).toISOString(),
+    // 当前页就是该投的那家 → 跳转基准设成「刚刚」，别被当成还在加载；
+    // 不是那家 → 设成 1 分钟前，让 resumeBatch 立刻跳过去（否则要白等 15 秒）
+    jumpedAt: new Date(samePage ? now : now - 60000).toISOString(),
+    jumpAttempts: 0,
+    // 手动续跑时清掉「待翻页」：队列已经存在，再让 bootNextPage 抓一次会把同一页开成两批
+    paging: old.paging ? { ...old.paging, pendingPage: false } : old.paging,
+    startedAt: old.startedAt || new Date(now).toISOString(),
+  }
+  await setBatch(b)
+  // 页面早就加载完了，不会再触发 DOMContentLoaded 里的 resumeBatch → 主动推一把
+  setTimeout(resumeBatch, 300)
+
+  let filters = ''
+  try {
+    filters = describeFilters(await getJobFilters())
+  } catch (_) {
+    /* 描述筛选失败不该影响续跑 */
+  }
+  return {
+    ok: true,
+    resumed: true,
+    line: b.line,
+    total: total - index,
+    done: index,
+    all: total,
+    blocked: 0,
+    appliedSkip: 0,
+    filters,
+  }
+}
+
+/** 当前磁盘上这份扩展的版本号（弹窗用它区分「这批是不是旧脚本跑的」） */
+function scriptVersion() {
+  try {
+    return chrome.runtime.getManifest().version
+  } catch (_) {
+    return ''
+  }
+}
+
+/** 「这页为什么一家都投不了」—— 规则在 collector 的 emptyPageReason（纯函数、有单测） */
+function reasonOfPage({ allIds, blocked, appliedSkip, pending }) {
+  // 页号从地址里读（翻页是改 page 参数跳过来的，地址就是事实）。
+  // 判「第 2 页空了该怎么说」全靠它 —— 翻到后面空了是「到底了」，
+  // 起始页空了才是「不在列表页」，两句话不能混（2026-11-05 真机 SDET 只有 1 页）
+  let pageNo = 1
+  try {
+    pageNo = Math.max(1, Number(new URL(location.href).searchParams.get('page')) || 1)
+  } catch (_) {
+    pageNo = 1
+  }
+  const C = window.__jhCollector
+  if (C && typeof C.emptyPageReason === 'function') {
+    return C.emptyPageReason({
+      total: (allIds || []).length,
+      appliedSkip,
+      blockedCount: (blocked || []).length,
+      pendingCount: (pending || []).length,
+      // 举例用**岗位标题**而不是原因：用户看到「Quality Assurance Intern」才知道
+      // 是自己想投的被误杀、还是本来就该拦；只给原因（「标题里没有…这类词」）等于自证清白
+      blockedFirst: blocked && blocked[0] ? (blocked[0].title || blocked[0].reason) : '',
+      page: pageNo,
+    })
+  }
+  return `本页 ${(allIds || []).length} 家都没有可投的岗位`
+}
+
+/**
+ * 本页一家可投的都没有时，如果开了「投完自动翻页」，就跳去下一页继续找。
+ *
+ * 为什么必须自动翻：点一次「一键投递」的承诺是「它自己干完」。可
+ * 2026-11-05 真机卡在这里 —— 第 1 页 20 家里 15 家投过、2 家「全国」待定、
+ * 3 家不符合筛选，可投的 0 家，于是直接报错收工，让人手动去翻页。
+ * 既然翻页逻辑本来就有，就没有理由把「换一页」这件事丢回给人。
+ *
+ * @returns {Promise<object|null>} null = 不翻（没开翻页 / 已到上限 / 地址拼不出来）
+ */
+async function startPageScan({ why, limit, force, opts, allIds, pending, blocked, kw }) {
+  const cfg = opts && opts.pagingConfig && opts.pagingConfig.enabled ? opts.pagingConfig : null
+  const prev = opts && opts.paging && opts.paging.enabled ? opts.paging : null
+  // 两个入口：① 一键投递首次启动（只有 pagingConfig）；② 翻过去一页又是空页（bootNextPage 传来 paging）
+  if (!cfg && !prev) return null
+
+  const baseUrl = (prev && prev.baseUrl) || stripPageUrl(location.href)
+  if (!baseUrl) return null
+
+  let pageNo = 1
+  try {
+    pageNo = Math.max(1, Number(new URL(location.href).searchParams.get('page')) || 1)
+  } catch (_) {
+    pageNo = 1
+  }
+
+  const maxPages = Math.max(1, Math.min(10, Number((prev && prev.maxPages) || (cfg && cfg.maxPages)) || 3))
+  const pagesDone = Number((prev && prev.pagesDone) || 0)
+
+  // 关键词队列：调用方传（首次启动）或沿用上一次批次（翻页接力）
+  const oldB = await getBatch()
+  const kwUrls =
+    kw && Array.isArray(kw.kwUrls) && kw.kwUrls.length
+      ? kw.kwUrls
+      : oldB && Array.isArray(oldB.kwUrls)
+        ? oldB.kwUrls
+        : []
+  const kwIndex = kw && typeof kw.kwIndex === 'number' ? kw.kwIndex : Number(oldB && oldB.kwIndex) || 0
+
+  // maxPages 的语义 = **总共最多看几页（含当前这页）**，与「翻几次」不是一回事。
+  // 口径必须和「投完翻页」那段一致（那里判 pagesDone + 1 < maxPages），
+  // 否则同一次任务里，扫描能翻到第 3 页、投完翻页只能到第 2 页。
+  if (pagesDone + 1 >= maxPages) {
+    // 这个词的页数看完了 → 换下一个词；一个词的都没有了才真的收工
+    const nk = nextKeywordOf({ kwUrls, kwIndex })
+    if (!nk) return null
+    await jumpToNextKeyword({ nk, prev, limit, force, from: why, kwUrls })
+    return { ok: true, scanning: true, keyword: nk.index + 1, keywordTotal: nk.total, note: why }
+  }
+
+  const nextPage = pageNo + 1
+  const jump = pageUrlOf(baseUrl, nextPage)
+  if (!jump) return null
+
+  const scanPaging = {
+    enabled: true,
+    scanOnly: true, // 还没开投，只是在找「有活可干」的那一页
+    page: nextPage,
+    pagesDone: pagesDone + 1,
+    maxPages,
+    done: 0,
+    limit: Number(limit) || 10,
+    force: !!force,
+    baseUrl,
+    // 「翻没翻动」由 lastAllIds 判：它记的是**当前这一页**认到的全部岗位
+    // （含已投过 / 被筛掉的）。只记可投的没用 —— 扫描模式下可投的恒为 0。
+    lastPageIds: [],
+    lastAllIds: [...allIds],
+    seenIds: (prev && Array.isArray(prev.seenIds)) ? prev.seenIds : [],
+    pendingPage: true,
+    stopped: '',
+  }
+
+  const scope = (window.__jhCollector && window.__jhCollector.searchScopeOf)
+    ? window.__jhCollector.searchScopeOf(location.href)
+    : { text: '', risky: '' }
+
+  // 「全国」待定清单要**跨页累积**：第 1 页有 2 家、第 2 页有 1 家，
+  // 直接覆盖的话前面那 2 家就消失了 —— 而它们正是要用户逐条决定的东西
+  const prevPending = oldB && Array.isArray(oldB.pending) ? oldB.pending : []
+  const pSeen = new Set(prevPending.map((x) => x.id))
+  const mergedPending = [...prevPending]
+  for (const x of pending || []) {
+    if (!x || !x.id || pSeen.has(x.id)) continue
+    pSeen.add(x.id)
+    mergedPending.push(x)
+  }
+
+  // 被筛掉的岗位同理跨页累积（只按标题+原因去重，它们没有 id 之外的稳定标识）
+  const prevBlocked = oldB && Array.isArray(oldB.blockedList) ? oldB.blockedList : []
+  const bSeen = new Set(prevBlocked.map((x) => `${x.title}|${x.reason}`))
+  const mergedBlocked = [...prevBlocked]
+  for (const x of blocked || []) {
+    const k = `${x.title}|${x.reason}`
+    if (bSeen.has(k)) continue
+    bSeen.add(k)
+    mergedBlocked.push(x)
+  }
+  // 总数按页累加（跨页重复出现的岗位可能算两次 —— 这是给人看的量级，不做精确对账）
+  const blockedTotal = (Number(oldB && oldB.blockedTotal) || 0) + (blocked || []).length
+
+  await setBatch({
+    running: true,
+    codeVersion: scriptVersion(),
+    scope: scope.text || '',
+    scopeRisky: scope.risky || '',
+    line: lineOfPlatform(platform()),
+    tabId: await myTabId(),
+    greeting: '',
+    force: !!force,
+    queue: [],
+    titles: [],
+    index: 0,
+    results: [],
+    failStreak: 0,
+    // 扫描中不写 stopReason —— 它代表「结束了」。原因单放 scanNote，
+    // 否则弹窗里「原因：…」和「正在往后翻…」并排出现，像已经停了
+    stopReason: '',
+    scanNote: why,
+    jumpedAt: new Date().toISOString(),
+    jumpAttempts: 0,
+    startedAt: new Date().toISOString(),
+    total: 0,
+    paging: scanPaging,
+    // 关键词队列必须跟着走：翻页会把整个批次状态重写一遍，漏带就变成「只剩一个词」
+    kwUrls,
+    kwIndex,
+    // 同一个关键词的第 2、3 页：成功数和已跑完的词账都要接着带，否则「投 3 家」会变回「没投到」
+    kwOk: Number(oldB && oldB.kwOk) || 0,
+    kwStats: Array.isArray(oldB && oldB.kwStats) ? oldB.kwStats : [],
+    pending: mergedPending.slice(0, 20),
+    // 存 50 条而不是 20：一页就有 20 家、翻两页 40+，「只列前 20 条」等于后一半永远看不到 ——
+    // 而被拦的恰恰是需要人眼复核的东西（2026-11-05：56 家只露出 20 条）
+    blockedList: mergedBlocked.slice(0, 50),
+    blockedTotal,
+  })
+
+  setTimeout(() => {
+    location.href = jump
+  }, 150)
+
+  return { ok: true, scanning: true, page: nextPage, maxPages, note: why }
+}
+
+/**
+ * 一个关键词跑完后的「账」：翻了几页、投了几家、拦了几家。
+ *
+ * 为什么必须单独记：换词时 batch 被整体重置（queue / results / total 全部归零），
+ * 上一个词的战果就地蒸发 —— 用户按一次「一键投递」跑了 4 个词，
+ * 弹窗最后只剩第 4 个词的结果，前 3 个投了什么都看不见（2026-11-05 真机：
+ * 最后一句是 SDET 的「3 家都被筛选拦掉」，实际前 3 个词投没投过完全无从得知）。
+ * 一站式跑完，就得给一份一站的账。
+ */
+function kwStatLine(b, note) {
+  const i = Number(b && b.kwIndex) || 0
+  const n = kwListOf(b).length
+  const kw = kwNameOf(b, i) || `第 ${i + 1} 个`
+  const res = (b && b.results) || []
+  // kwOk = 这个词**跨页累积**的成功数。每页 startBatch 都会把 results 清零，
+  // 只数 results 会把「第 1 页投了 3 家」当成没投过
+  const ok = Number(b && b.kwOk) || res.filter((r) => r.ok).length
+  const skip = res.filter((r) => r.skipped).length
+  const pages = Number(b && b.paging && b.paging.page) || 1
+  const blocked = Number(b && b.blockedTotal) || ((b && b.blockedList) || []).length
+  const head = n > 1 ? `第 ${i + 1}/${n} 个「${kw}」` : `「${kw}」`
+  const parts = [`翻 ${pages} 页`, ok ? `投 ${ok} 家` : '没投到']
+  if (skip) parts.push(`跳过 ${skip}`)
+  if (blocked) parts.push(`拦 ${blocked} 家`)
+  return `${head}：${parts.join('、')}${note ? ` —— ${truncate(note, 40)}` : ''}`
+}
+
+/** 把某个词的账合并进 batch.kwStats（同一个词只留最后一次 —— 换词/收尾会重复调用） */
+function withKwStat(b, note) {
+  const i = Number(b && b.kwIndex) || 0
+  const line = kwStatLine(b, note)
+  const res = (b && b.results) || []
+  // ok / pages 单独存一份结构化字段：弹窗要按它们算「本轮一共投了几家」，
+  // 从人话字符串里正则抠数字迟早出错
+  const ok = Number(b && b.kwOk) || res.filter((r) => r.ok).length
+  const pages = Number(b && b.paging && b.paging.page) || 1
+  const list = (Array.isArray(b && b.kwStats) ? b.kwStats : []).filter((x) => x && x.i !== i)
+  list.push({ i, line, ok, pages })
+  list.sort((a, c) => a.i - c.i)
+  return list.slice(-20)
+}
+
+/**
+ * 换到下一个关键词：写状态 + 跳过去。
+ *
+ * 两条路共用：① 这个词翻到底了（扫描里发现没页可看）；② 这个词的队列投完、页数也翻满了。
+ * 换成两处各写一份的话，「换词时批次该长什么样」迟早会分叉 —— 这是本项目的老毛病。
+ *
+ * 关键：**队列清空、页码归 1、翻页计数归零**，否则新词会接着旧词的进度跑，
+ * 一落地就判「已经翻满」直接收工。
+ */
+async function jumpToNextKeyword({ nk, prev, limit, force, from, kwUrls }) {
+  const name = kwNameOf({ kwUrls }, nk.index)
+  const note = `${from}，换下一个搜索「${name || `第 ${nk.index + 1} 个`}」（第 ${nk.index + 1}/${nk.total} 个）`
+  const base =
+    prev && prev.enabled
+      ? prev
+      : {
+          enabled: true,
+          page: 1,
+          pagesDone: 0,
+          maxPages: 1,
+          done: 0,
+          limit: Number(limit) || 10,
+          force: !!force,
+          baseUrl: stripPageUrl(nk.url),
+        }
+  const old = (await getBatch()) || {}
+  await setBatch({
+    ...old,
+    running: true,
+    codeVersion: scriptVersion(),
+    line: lineOfPlatform(platform()),
+    tabId: await myTabId(),
+    queue: [],
+    titles: [],
+    index: 0,
+    results: [],
+    // 上一个词的账先落盘再清空 —— 顺序反了就什么都不剩
+    kwStats: withKwStat(old, from),
+    kwOk: 0,
+    // ⚠️ 拦截清单 / 计数必须按**词**清零：它们是「这个词为什么没投到」的证据，
+    // 留着上一个词的会串账 —— 新词第 1 页若 0 可投会走 startPageScan，那里做的是
+    // 「旧数 + 本页数」，于是「被筛选拦掉 56 家」里其实混着上个词的 40 家，
+    // 各词总账的「拦 N 家」也跟着虚高（2026-11-05 真机：56 家里有 40 家属上一个词）
+    blockedList: [],
+    blockedTotal: 0,
+    failStreak: 0,
+    total: 0,
+    stopReason: '',
+    scanNote: note,
+    // 范围必须清掉：这一批的 scope 是上一个词的，留着会让人以为现在还在跑旧词
+    scope: '',
+    scopeRisky: '',
+    kwUrls,
+    kwIndex: nk.index,
+    paging: resetPagingForKey(
+      { ...base, limit: Number(limit) || base.limit || 10, force: !!force },
+      nk.url
+    ),
+    jumpedAt: new Date().toISOString(),
+    jumpAttempts: 0,
+  })
+  setTimeout(() => {
+    location.href = nk.url
+  }, 200)
+  return true
+}
+
+async function startBatch(limit, force, opts = {}) {
+  // 关键词队列：一键投递时 popup 把每个词算成一条搜索页地址传进来，
+  // 这里只负责带着它走（这个词投完了由 applyBatchResult / bootNextPage 接力换下一个）
+  const kwUrls = Array.isArray(opts.kwUrls) ? opts.kwUrls.filter(Boolean).slice(0, 20) : []
+  const kwIndex = Math.max(0, Number(opts.kwIndex) || 0)
+  // 同一个关键词翻到下一批（pendingPage）时要把「这个词已经投了几家」带过来；
+  // 用户从 popup 新开一轮则不带（opts 里没有）→ 自然归零
+  const kwOk = Math.max(0, Number(opts.kwOk) || 0)
+  const kwStats = Array.isArray(opts.kwStats) ? opts.kwStats : []
+  opts = { ...opts, kwUrls, kwIndex, kwOk, kwStats }
+
+  // 先算好筛选描述：后面一旦 setBatch 落盘，就不能再抛错，
+  // 否则 popup 显示「启动失败」而批次其实已经在跑（状态和界面打架）
+  let filtersText = ''
+  try {
+    filtersText = describeFilters(await getJobFilters())
+  } catch (_) {
+    filtersText = '⚠️ 筛选条件读不出来'
+  }
+
+  const onDetail = !!jobIdOf(location.href)
+
+  // 详情页上「启动」＝ 接着投，不是重新开一批。
+  // 这里放在抓链接**之前**：详情页里那些 inn_/job_detail 链接多是右侧「相似岗位」推荐，
+  // 在这儿新建队列会把推荐位当成待投清单。
+  if (onDetail) {
+    const resumed = await resumeExistingBatch()
+    if (resumed) return resumed
+    return {
+      ok: false,
+      error:
+        '当前停在岗位详情页：这里没有「一批岗位」可抓（只有当前这家和右侧「相似岗位」推荐），所以新建不了批次。\n要开新一批 → 回到搜索结果列表页点启动；想在详情页接着投 → 需要上一批还没跑完（跑来一批后中途停了，回到任意岗位页点启动就会从那里继续）。',
+    }
+  }
+
+  const { links, blocked, appliedSkip = 0, pending = [], allIds = [] } = await collectJobLinks()
   if (!links.length) {
-    const why = appliedSkip
-      ? `本页 ${appliedSkip} 家本地记录里都投过了，没有新岗位可投（换一页或清空记录再试）`
-      : blocked.length
-        ? `本页 ${blocked.length} 家都不符合筛选条件（第 1 家：${blocked[0].reason}）`
-        : '当前页面没抓到岗位链接（请在搜索结果列表页启动）'
-    return { ok: false, error: why, blocked: blocked.length, appliedSkip }
+    // 一页岗位不能投，通常**几类原因叠加**（投过了 + 「全国」待定 + 被筛选拦）。
+    // 只报一类会把另外几类盖住，看着像「插件坏了」或「页面到底了」（2026-11-05 真机）
+    const why = reasonOfPage({ allIds, blocked, appliedSkip, pending })
+
+    // 开了「投完自动翻页」就别报错收工，自己往后翻去找
+    const scan = await startPageScan({ why, limit, force, opts, allIds, pending, blocked, kw: { kwUrls, kwIndex } })
+    if (scan) return scan
+
+    return { ok: false, error: why, blocked: blocked.length, appliedSkip, pending: pending.length, pendingList: pending.slice(0, 20) }
   }
 
   // BOSS 批量必须有招呼语：BOSS 没有「投递」这个动作，投递＝发出这条消息。
@@ -1868,15 +2537,70 @@ async function startBatch(limit, force) {
     }
   }
 
+  // 这一批投什么范围：读 URL（页面事实），不读插件配置（可能没存上）
+  const scope = (window.__jhCollector && window.__jhCollector.searchScopeOf)
+    ? window.__jhCollector.searchScopeOf(location.href)
+    : { text: '', risky: '' }
+  const scopeText = scope.text || ''
+  const scopeRisky = scope.risky || ''
+
   const asked = Math.min(Number(limit) || 10, BATCH_MAX)
   // remain = -1 表示该平台设成了「不限」
   const cap = remain > 0 ? Math.min(asked, remain) : asked
   const shrunk = cap < asked
   const queue = links.slice(0, cap)
+
+  // ===== 翻页状态 =====
+  // opts.paging       = 续页（bootNextPage 已经算好的完整对象，原样带过来）
+  // opts.pagingConfig = 首次启动时的配置 { enabled, maxPages }
+  //
+  // 为什么要存 baseUrl / lastPageIds / seenIds：
+  //   翻页最容易出的问题不是「翻不动」，而是**看着翻了、其实没翻**（站点忽略 page 参数）。
+  //   有了这三个字段，下一页抓完可以立刻自检：集合和第上一页一模一样 = 没翻成功；
+  //   全是见过的 = 已经到底了。两条都在**投任何一家之前**就能判出来，不用等跑空。
+  let paging = opts && opts.paging ? opts.paging : null
+  if (!paging && opts && opts.pagingConfig && opts.pagingConfig.enabled) {
+    const ids = queue.map((x) => jobIdOf(x.url)).filter(Boolean)
+    // 从**当前页**开始算：用户可能已经翻到第 3 页才点「只启动当前页」，
+    // 这里若固定写 1，翻页会从第 2 页接上，把前面几页重新投一遍
+    let startPage = 1
+    try {
+      startPage = Math.max(1, Number(new URL(location.href).searchParams.get('page')) || 1)
+    } catch (_) {
+      startPage = 1
+    }
+    paging = {
+      enabled: true,
+      page: startPage,
+      // pagesDone = 已经翻了几次；maxPages = 总共最多看几页（含起始页），两处判据必须同口径
+      pagesDone: 0,
+      maxPages: Math.max(1, Math.min(10, Number(opts.pagingConfig.maxPages) || 3)),
+      done: 0,
+      limit: asked,
+      force: !!force,
+      baseUrl: stripPageUrl(location.href), // 翻页基准（去掉 page，自己拼 page=N）
+      lastPageIds: ids,
+      lastAllIds: allIds,
+      seenIds: ids,
+      pendingPage: false,
+      stopped: '',
+    }
+  }
+
   const batch = {
     running: true,
+    // 跑这一批的脚本版本。popup 会拿它和当前版本比：
+    // 改完代码没重载扩展/没刷新页面时，页面里跑的还是旧脚本，
+    // 但旧批次在弹窗里看起来就像「刚跑的结果」—— 2026-11-05 就这么误判过一次。
+    codeVersion: scriptVersion(),
+    // 这一批投的是什么范围（关键词 / 城市 / 类型）—— 直接读 URL，不读插件配置：
+    // 配置可能没存上，URL 才是页面事实。留空关键词会投全城，必须一直显示着。
+    scope: scopeText,
+    scopeRisky: scopeRisky,
     // 这条线属于哪个平台：popup 与 resumeBatch 都靠它判断归属
-    line: lineOfPlatform(),
+    // ⚠️ 必须把 platform() 传进去：lineOfPlatform() 无参时返回 'other'，
+    // popup 就认不出这条批次属于实习僧还是 BOSS
+    line: lineOfPlatform(platform()),
     // 认领这个批次的标签页，其他同平台标签页看到就不许推进
     tabId: await myTabId(),
     // 整批复用的招呼语（实习僧可空，BOSS 必填）
@@ -1894,6 +2618,22 @@ async function startBatch(limit, force) {
     jumpAttempts: 0,
     startedAt: new Date().toISOString(),
     total: queue.length,
+    // 投完这一批要不要翻页（null = 不翻）
+    paging,
+    // 这轮一共排了几个关键词、现在是第几个（popup 显示「关键词 2/5」）。
+    // 空数组 = 单关键词模式（从「启动这条线」进来就是这种），不轮换。
+    kwUrls,
+    kwIndex,
+    // 跨页累积：这个词已经投了几家 + 前面几个词的账
+    kwOk,
+    kwStats,
+    // 写「全国」的岗位：没进队列（不自动投），留在这里等用户决定
+    // 上限 20 条：只是给人看的清单，不需要全量
+    pending: pending.slice(0, 20),
+    // 被筛选拦掉的岗位（同样只是给人看的）：
+    // 光有「16 家不符合筛选」用户没法判断是筛选正常工作还是误杀 —— 列出标题他一点就知道
+    blockedList: blocked.slice(0, 50),
+    blockedTotal: blocked.length,
   }
   await setBatch(batch)
   // 先让 sendResponse 回到 popup，再跳转
@@ -1911,15 +2651,104 @@ async function startBatch(limit, force) {
     quota: { used: q.used, limit: q.limit, remaining: remain },
     // 启动时把这次用的筛选条件说出来：筛选是静默生效的，配错了不会报错，
     // 只会安静放行不该投的岗位（2026-11-05 投出西安岗位就是这么来的）
-    filters: describeFilters(await getJobFilters()),
+    filters: filtersText,
+    // 这次投的范围（关键词 / 城市 / 类型）：直接从 URL 读，配错了一眼看得出
+    scope: scopeText,
+    scopeRisky: scopeRisky,
+    // popup 用来说清楚「这是第几页 / 一共打算翻几页」
+    paging: paging ? { page: paging.page, maxPages: paging.maxPages } : null,
+    // 这轮排了几个关键词（>1 = 会轮换），popup 用它提示「后面还有几个词」
+    keywords: kwUrls.length,
+    keywordIndex: kwIndex,
+    // 「全国」待定：数量 + 清单（标题 / 城市 / 链接），由用户逐个决定要不要投
+    pending: pending.length,
+    pendingList: pending.slice(0, 20),
   }
 }
 
 async function stopBatch() {
   const b = await getBatch()
   if (!b) return { ok: true, message: '没有进行中的批量任务' }
-  await setBatch({ ...b, running: false, stopReason: '已手动停止' })
+  await setBatch({
+    ...b,
+    running: false,
+    stopReason: '已手动停止',
+    // 必须清掉「待翻页」：否则下次打开这个页面，bootNextPage 会自己接着翻，
+    // 用户明明点了停止却在几小时后自己动起来
+    paging: b.paging ? { ...b.paging, pendingPage: false } : b.paging,
+  })
   return { ok: true, message: '已停止（当前这家投完就停）' }
+}
+
+/**
+ * 把「全国」待定岗位加进队列（用户点了才加）。
+ *
+ * 为什么要这一步：「全国」既不是本地也不是异地。自动投可能投到北京（2026-11-05 教训），
+ * 当异地丢掉又会漏掉真在深圳的。所以默认只列出来，由人看一眼岗位再决定。
+ *
+ * 不打断正在跑的批次：只有「已经停下来」时才跳转，否则只往后追加，等它自然接上。
+ */
+async function adoptPending(indexes) {
+  const b = await getBatch()
+  if (!b) return { ok: false, error: '没有批量任务记录' }
+  const list = Array.isArray(b.pending) ? b.pending : []
+  if (!list.length) return { ok: false, error: '没有待定岗位' }
+
+  const want = Array.isArray(indexes) && indexes.length ? indexes : list.map((_, i) => i)
+  const pick = want.map((i) => list[i]).filter(Boolean)
+  if (!pick.length) return { ok: false, error: '没选中任何待定岗位' }
+
+  const queue = [...(b.queue || [])]
+  const titles = [...(b.titles || [])]
+  const oldLen = queue.length
+  let added = 0
+  for (const p of pick) {
+    if (!p || !p.url || queue.includes(p.url)) continue
+    queue.push(p.url)
+    titles.push(p.title || p.url)
+    added++
+  }
+  if (!added) return { ok: false, error: '这些岗位已经在队列里了' }
+
+  const pickUrls = new Set(pick.map((p) => p && p.url))
+  const keep = list.filter((p) => !pickUrls.has(p && p.url))
+
+  // 从哪儿接着跑：
+  //   ① 旧队列还有没跑的（index < oldLen）→ 从 index 接着，不能跳过它们直接跳到新加的
+  //   ② 旧队列已经跑完 → 从新加的第一家开始
+  const index = Number(b.index) || 0
+  const hasUnfinished = index < oldLen
+  const startAt = hasUnfinished ? index : oldLen
+  // 正在跑就别打断，只往后追加，等它自然接上
+  const needJump = !b.running || !hasUnfinished
+
+  await setBatch({
+    ...b,
+    queue,
+    titles,
+    pending: keep,
+    // 认领权转给当前这个标签页：后续推进要由「正在跑的那个页面」做，
+    // 否则用户在另一个同平台标签页点「加入」，跳转发生在这里、而旧页以为自己还是主人
+    tabId: await myTabId(),
+    total: queue.length,
+    index: startAt,
+    running: true,
+    stopReason: '',
+    lastAt: new Date().toISOString(),
+    jumpedAt: new Date().toISOString(),
+    jumpAttempts: 0,
+    // 手动加进来的岗位不受「翻页」管：翻页状态保留但清掉待翻标记，避免刚加完又去翻页
+    paging: b.paging ? { ...b.paging, pendingPage: false } : b.paging,
+  })
+
+  if (needJump) {
+    const target = queue[startAt]
+    setTimeout(() => {
+      location.href = target
+    }, 450)
+    return { ok: true, added, index: startAt, total: queue.length, jumped: true }
+  }
+  return { ok: true, added, index: startAt, total: queue.length, jumped: false }
 }
 
 let batchBusy = false
@@ -1964,12 +2793,77 @@ async function applyBatchResult(target, res, b) {
   }
 
   const nextIndex = nb.index + 1
+  let pagingNext = nb.paging || null
+  let pageJump = ''
+  let kwNextIndex = Number(nb.kwIndex) || 0
+  // 这个词跨页累积的成功数（每页都会清零 results，只数 results 会把前面几页投的全忘掉）
+  let kwOkNext = (Number(nb.kwOk) || 0) + (res.ok ? 1 : 0)
+  let kwStatsNext = Array.isArray(nb.kwStats) ? nb.kwStats : []
+  // 这个词是不是到此为止了（不再翻页、也不再换词）→ 该把账落下来了
+  let kwFinishedNote = ''
   if (running && nextIndex >= nb.queue.length) {
     running = false
     const okN = results.filter((r) => r.ok).length
     const skipN = results.filter((r) => r.skipped).length
     const failN = results.length - okN - skipN
     stopReason = `本批 ${nb.queue.length} 家已全部执行完（成功 ${okN} / 跳过 ${skipN} / 失败 ${failN}）`
+
+    // 本批跑完 → 看还有没有下一页。这里只是**跳过去**，下一页行不行由 bootNextPage 自检，
+    // 因为「翻页到底成没成功」只有抓到新页的岗位集合才能判。
+    const p = nb.paging
+    // maxPages = **总共最多看几页（含当前这页）**，不是「翻几次」。
+    // 口径要和 startPageScan 一致，否则扫描和投完翻页能到的页数不一样。
+    if (p && p.enabled && (p.pagesDone || 0) + 1 < p.maxPages) {
+      const nextPage = p.page + 1
+      const jump = pageUrlOf(p.baseUrl, nextPage)
+      if (jump) {
+        pageJump = jump
+        pagingNext = {
+          ...p,
+          page: nextPage,
+          pagesDone: (p.pagesDone || 0) + 1,
+          done: (p.done || 0) + results.length,
+          pendingPage: true,
+          stopped: '',
+        }
+        stopReason = `第 ${p.page} 页投完（成功 ${okN}/跳过 ${skipN}/失败 ${failN}），正在翻到第 ${nextPage} 页`
+      } else {
+        pagingNext = { ...p, stopped: '翻页地址拼不出来（起始页地址缺失）' }
+        stopReason += '｜翻页已停：起始页地址缺失'
+      }
+    } else if (p && p.enabled) {
+      // 这个词的页数看完了 → 先看还有没有下一个词（多关键词轮换），没有才真的收工
+      const nk = nextKeywordOf(nb)
+      if (nk) {
+        pageJump = nk.url
+        pagingNext = resetPagingForKey(p, nk.url)
+        kwNextIndex = nk.index
+        // 说「翻满 N 页」而不是「翻到底了」：这个分支是**页数上限**触发的，
+        // 不是真的没有下一页了。两者混用会让用户以为「就该这么多岗位」（2026-11-05 真机）
+        stopReason = `「${kwNameOf(nb, nb.kwIndex)}」翻满设定的 ${p.maxPages} 页（本页成功 ${okN}/跳过 ${skipN}/失败 ${failN}），换下一个搜索「${kwNameOf(nb, nk.index)}」（第 ${nk.index + 1}/${nk.total} 个）`
+        kwFinishedNote = `翻满 ${p.maxPages} 页`
+      } else {
+        pagingNext = { ...p, stopped: `已翻满设定的 ${p.maxPages} 页` }
+        stopReason += `｜已翻满设定的 ${p.maxPages} 页上限`
+        const n = kwListOf(nb).length
+        // 「搜索」不是「关键词」：多城市时列表里是「城市 × 关键词」的组合，
+        // 说「3 个关键词都跑完了」会让人以为只跑了 3 个词，其实可能是 2 城 × 3 词 = 6 轮
+        if (n > 1) stopReason += `（${n} 个搜索都跑完了）`
+        kwFinishedNote = `翻满 ${p.maxPages} 页`
+      }
+    } else {
+      // 队列投完了但没开翻页 / 或本批因风控·结构失败提前停 → 这个词也到此为止
+      kwFinishedNote = '本批结束'
+    }
+  } else if (!running) {
+    // 风控 / 页面结构对不上 / 连续失败：整批提前收工，这个词的账也要留下
+    kwFinishedNote = truncate(stopReason, 36)
+  }
+
+  if (kwFinishedNote) {
+    kwStatsNext = withKwStat({ ...nb, results, kwOk: kwOkNext }, kwFinishedNote)
+    // 换了词 → 成功数归零，别把上一个词的 3 家算到新词头上
+    if (kwNextIndex !== (Number(nb.kwIndex) || 0)) kwOkNext = 0
   }
 
   await setBatch({
@@ -1979,8 +2873,19 @@ async function applyBatchResult(target, res, b) {
     running,
     index: nextIndex,
     stopReason,
+    paging: pagingNext,
+    kwIndex: kwNextIndex,
+    kwOk: kwOkNext,
+    kwStats: kwStatsNext,
     lastAt: new Date().toISOString(),
   })
+
+  // 翻页优先于一切：跳过去之后由新页面接管（bootNextPage）
+  if (pageJump) {
+    await sleep(1200)
+    location.href = pageJump
+    return { running: false, nextIndex, stopReason, paging: true }
+  }
 
   if (running) {
     // 家与家之间随机停顿，降风控。BOSS 比实习僧严得多（独立沟通额度 + 风控更敏感），
@@ -2213,13 +3118,309 @@ async function bootPendingBoss() {
   }
 }
 
-// 页面就绪后自动检查是否该续跑
+/**
+ * 翻页接力：上一页投完跳过来的这一页，在这里自检 + 开新一批。
+ *
+ * 自检三条，全部在**投任何一家之前**跑完：
+ *   ① 一页岗位都没抓到 → 到底了 / 被筛选全拦，停；
+ *   ② 抓到的 jobId 集合和上一页**完全一样** → 翻页没生效（站点忽略了 page 参数），停；
+ *   ③ 全是已经见过的 jobId → 后面的页都是重复岗位，停。
+ * 这三条 1 秒内就能判出来，不用等投了几家才发现整批在原地打转。
+ *
+ * 为什么能这么判：翻页是**改 URL 参数跳过去的**（不是点按钮），所以「预期应该看到哪一页」
+ * 是确定的；拿实际抓到的集合和上一页比，既不用猜分页组件的 class，也不受改版影响。
+ */
+async function bootNextPage() {
+  const b = await getBatch()
+  if (!b || !b.paging || !b.paging.pendingPage) return false
+  const p = b.paging
+  const pageNo = p.page
+
+  const stopPaging = async (why) => {
+    await setBatch({
+      ...b,
+      running: false,
+      paging: { ...p, pendingPage: false, stopped: why },
+      stopReason: why,
+      // 收工前把这个词的账也记下来：多关键词轮换时，用户最后看到的应该是一张
+      // 「4 个词各自投了几家」的总表，不是只剩最后一个词的糊涂账
+      kwStats: withKwStat(b, '到底了'),
+    })
+    // popup 可能已经关了，结果落盘，下次打开能看到为什么停
+    try {
+      await chrome.storage.local.set({
+        lastOneKeyResult: { ok: false, error: why, at: new Date().toISOString() },
+      })
+    } catch (_) {
+      /* 落盘失败不影响停 */
+    }
+    return true
+  }
+
+  let { links, blocked = [], appliedSkip = 0, pending = [], allIds = [] } = await collectJobLinks()
+
+  // 列表是前端渲染的：跳过来那一刻可能还没画出来。空页先等一拍再重抓一次，
+  // 否则「还没渲染」会被当成「这页没岗位」→ 非扫描分支里就会误判成「到底了」，
+  // 直接跳到下一页/下一个词 —— 轻则漏一页，重则每个词都只看一眼就走（2026-11-05 换词时新增）
+  if (!allIds.length) {
+    await sleep(2500)
+    ;({ links, blocked = [], appliedSkip = 0, pending = [], allIds = [] } = await collectJobLinks())
+  }
+
+  const ids = links.map((x) => x.id).filter(Boolean)
+
+  // ===== 扫描模式：前几页都没活可干，这一页是翻过来找的 =====
+  // 这时候可投的本来就是 0，「翻没翻动」只能看**认到的全部岗位**有没有变。
+  // 只看可投的会永远分不清「page 参数没生效」和「这页真的都是重复的」。
+  if (p.scanOnly) {
+    let cur = { links, blocked, appliedSkip, pending, allIds }
+
+    // 列表是前端渲染的：脚本注入那一刻可能还没画出来。空页先等一拍再判，
+    // 否则会把「还没渲染」当成「这页没岗位」，一路翻到上限 —— 那就是空转。
+    if (!cur.allIds.length) {
+      await sleep(2500)
+      cur = await collectJobLinks()
+    }
+    const curIds = cur.links.map((x) => x.id).filter(Boolean)
+
+    const C = window.__jhCollector
+    const sameAsPrev =
+      cur.allIds.length &&
+      (p.lastAllIds || []).length &&
+      C &&
+      typeof C.sameIdSet === 'function' &&
+      C.sameIdSet(cur.allIds, p.lastAllIds)
+    if (sameAsPrev) {
+      return stopPaging(
+        `翻页自检：第 ${pageNo} 页和第 ${pageNo - 1} 页的岗位完全一样 —— 翻页没生效（page 参数没起作用），已停止，避免原地空转`
+      )
+    }
+
+    if (cur.links.length) {
+      // 终于翻到有活可干的页 → 转成正常批次开投
+      const seen = new Set(p.seenIds || [])
+      const nextPaging = {
+        ...p,
+        scanOnly: false,
+        pendingPage: false,
+        lastPageIds: curIds,
+        lastAllIds: cur.allIds,
+        seenIds: [...seen, ...curIds],
+        stopped: '',
+      }
+      try {
+        const res = await startBatch(p.limit || 10, p.force, {
+          paging: nextPaging,
+          kwUrls: b.kwUrls,
+          kwIndex: b.kwIndex,
+          kwOk: Number(b.kwOk) || 0,
+          kwStats: b.kwStats,
+        })
+        if (!res.ok) {
+          await setBatch({
+            ...(await getBatch()),
+            running: false,
+            paging: { ...nextPaging, pendingPage: false, stopped: res.error || '启动失败' },
+            stopReason: `第 ${pageNo} 页没能开投：${res.error || '未知原因'}`,
+          })
+        }
+        try {
+          await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+        } catch (_) {
+          /* 落盘失败不影响投递 */
+        }
+      } catch (e) {
+        await setBatch({
+          ...b,
+          running: false,
+          paging: { ...p, pendingPage: false },
+          stopReason: `翻页启动异常：${e.message}`,
+        })
+      }
+      return true
+    }
+
+    // 这页也没活可干 → 接着往后翻；到上限 startPageScan 返回 null
+    const why = reasonOfPage(cur)
+    const scan = await startPageScan({
+      // 「本页 17 家：…」→「第 2 页 17 家：…」，否则和其它地方拼起来会出现「本页：本页…」
+      why: why.replace(/^本页 /, `第 ${pageNo} 页 `),
+      limit: p.limit,
+      force: p.force,
+      opts: { paging: p },
+      allIds: cur.allIds,
+      pending: cur.pending,
+      blocked: cur.blocked,
+    })
+    if (scan) return true
+    // 走到这儿有两种完全不同的收场，不能共用一句「已到上限」：
+    //   ① 这一页**一个岗位都没有** → 这个搜索条件就这么几页，是真到底了；
+    //      再说「最多看 N 页」会让用户以为「要不是我设了 2 页，还能再翻出岗位」。
+    //   ② 这一页有岗位但都被拦 → 确实是页数上限卡住的，该提示调大上限或换条件。
+    if (!cur.allIds.length) {
+      // why 本身已经说完（「第 N 页没有岗位了（只有 N-1 页）」），
+      // 再补一句「翻到这里就没岗位了」是同义反复 —— 弹窗里两句话占三行，还互相解释
+      return stopPaging(why)
+    }
+    return stopPaging(
+      `${why}｜已到设定的上限（最多看 ${p.maxPages} 页），没找到还有新岗位的页 —— 这个搜索条件基本投到底了，换个关键词或城市`
+    )
+  }
+
+  // 判定规则在 collector 的 checkPageFresh（纯函数、有单测），这里只负责把原因说成人话
+  const c = window.__jhCollector
+  if (!c || typeof c.checkPageFresh !== 'function') {
+    return stopPaging('翻页自检不可用（collector 没加载），为安全起见停止翻页')
+  }
+  const chk = c.checkPageFresh(ids, p.lastPageIds, p.seenIds)
+  if (!chk.ok) {
+    // 「这页 0 条」有两种完全不同的原因：真的到底了，还是全被筛选/账本滤掉了。
+    // 只说「到底了或全被拦」等于什么都没说 —— 得把量摆出来，才知道该换条件还是该收工。
+    // 举例用**标题**：用户看到「Quality Assurance Intern」才知道是自己想投的被误杀。
+    const detail =
+      appliedSkip && blocked.length
+        ? `（${appliedSkip} 家本地已投过、${blocked.length} 家被筛选拦掉${blocked[0] ? `，例如「${blocked[0].title || blocked[0].reason}」` : ''}）`
+        : appliedSkip
+          ? `（这页 ${appliedSkip} 家都是本地记录里已投过的）`
+          : blocked.length
+            ? `（这页 ${blocked.length} 家都被筛选拦掉${blocked[0] ? `，例如「${blocked[0].title || blocked[0].reason}」` : ''}）`
+            : ''
+    let why = ''
+    if (chk.reason === 'empty') {
+      // 这一页连岗位都没认到 → 是真到底，不是「都被拦了」（交给同一个函数说，措辞统一）
+      why = allIds.length ? `第 ${pageNo} 页没有可投岗位${detail}` : reasonOfPage({ allIds, blocked, appliedSkip, pending })
+    } else if (chk.reason === 'same-as-prev')
+      why = `第 ${pageNo} 页和第 ${pageNo - 1} 页抓到的是同一批岗位 —— 翻页没生效（page 参数没起作用）`
+    else why = `第 ${pageNo} 页全是投过的岗位，已经到底${detail}`
+
+    // 翻页没生效 = 机制坏了，立刻停，别往后空转
+    if (chk.reason === 'same-as-prev') return stopPaging(`翻页自检：${why}，已停止翻页`)
+
+    // 这页没活可干 ≠ 整轮结束：先往后翻，翻到底 startPageScan 会自动换下一个关键词。
+    // 「一键投递」的本意就是一站到底，不该每页都要人再点一次（2026-11-05 用户反复问「怎么又停了」）
+    const scan = await startPageScan({
+      why,
+      limit: p.limit,
+      force: p.force,
+      opts: { paging: p },
+      allIds,
+      pending,
+      blocked,
+      kw: { kwUrls: b.kwUrls, kwIndex: b.kwIndex },
+    })
+    if (scan) return true
+    return stopPaging(`翻页自检：${why}，已停止翻页`)
+  }
+
+  const seen = new Set(p.seenIds || [])
+
+  // 自检通过 → 开新一批（沿用同一份 paging，把 page / seenIds 往前推）
+  const nextPaging = {
+    ...p,
+    pendingPage: false,
+    lastPageIds: ids,
+    lastAllIds: allIds,
+    seenIds: [...seen, ...ids],
+    stopped: '',
+  }
+  try {
+    const res = await startBatch(p.limit || 10, p.force, {
+      paging: nextPaging,
+      kwUrls: b.kwUrls,
+      kwIndex: b.kwIndex,
+    })
+    if (!res.ok) {
+      // 启动失败（额度用完 / 抓不到链接）：必须清掉 pendingPage，否则这个页面会被反复重试
+      await setBatch({
+        ...b,
+        running: false,
+        paging: { ...p, pendingPage: false, stopped: res.error || '启动失败' },
+        stopReason: `第 ${pageNo} 页没能开投：${res.error || '未知原因'}`,
+      })
+    }
+    try {
+      await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+    } catch (_) {
+      /* 落盘失败不影响投递 */
+    }
+  } catch (e) {
+    await setBatch({
+      ...b,
+      running: false,
+      paging: { ...p, pendingPage: false },
+      stopReason: `翻页启动异常：${e.message}`,
+    })
+  }
+  return true
+}
+
+/**
+ * 一键投递的「接力段」。
+ *
+ * popup 点「一键投递」时只做两件事：把前置条件拼成一条搜索页 URL、落一个待启动标记，
+ * 然后跳过去。真正的启动在这里发生 —— 页面加载完、脚本注入了，自己读标记开投。
+ *
+ * 为什么不放在 popup 里轮询等页面就绪：popup 一失去焦点就被销毁，
+ * 用户顺手点一下页面等待就断了，表现是「跳过去了但没开始投」（静默失败）。
+ */
+async function bootOneKey() {
+  const { oneKeyPending } = await chrome.storage.local.get('oneKeyPending')
+  if (!oneKeyPending) return false
+
+  // 过期就丢掉：否则几天后在随便一个搜索页打开，会突然自己开投
+  const age = Date.now() - new Date(oneKeyPending.at || 0).getTime()
+  if (!(age >= 0 && age < 5 * 60 * 1000)) {
+    await chrome.storage.local.remove('oneKeyPending')
+    return false
+  }
+  if (oneKeyPending.line && oneKeyPending.line !== lineOfPlatform(platform())) return false
+
+  await chrome.storage.local.remove('oneKeyPending')
+
+  let res
+  try {
+    res = await startBatch(oneKeyPending.limit, oneKeyPending.force, {
+      pagingConfig: oneKeyPending.pagingConfig,
+      // 关键词队列：第 1 个词的页面就是当前这页，后面几个词投完自动接上
+      kwUrls: oneKeyPending.kwUrls,
+      kwIndex: 0,
+    })
+    // 列表是前端渲染的，脚本注入得早可能还没画出来 → 没抓到就等一拍再试一次
+    if (!res.ok && !res.resumed && /没抓到岗位链接/.test(String(res.error || ''))) {
+      await sleep(2500)
+      res = await startBatch(oneKeyPending.limit, oneKeyPending.force, {
+        pagingConfig: oneKeyPending.pagingConfig,
+        kwUrls: oneKeyPending.kwUrls,
+        kwIndex: 0,
+      })
+    }
+  } catch (e) {
+    res = { ok: false, error: e.message }
+  }
+  // popup 可能已经关了，结果落盘，下次打开能看到上次发生了什么
+  try {
+    await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+  } catch (_) {
+    /* 落盘失败不影响投递 */
+  }
+  return true
+}
+
+// 页面就绪后自动检查：一键投递 > 翻页接力 > 普通续跑（先到先得，只跑一个）
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
     setTimeout(bootPendingBoss, 500)
-    setTimeout(resumeBatch, 800)
+    setTimeout(async () => {
+      if (await bootOneKey()) return
+      if (await bootNextPage()) return
+      await resumeBatch()
+    }, 1200)
   })
 } else {
   setTimeout(bootPendingBoss, 500)
-  setTimeout(resumeBatch, 800)
+  setTimeout(async () => {
+    if (await bootOneKey()) return
+    if (await bootNextPage()) return
+    await resumeBatch()
+  }, 1200)
 }
