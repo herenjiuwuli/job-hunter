@@ -2489,6 +2489,17 @@ document.getElementById('collectUploadBtn').addEventListener('click', uploadProg
 document.getElementById('collectAdoptBtn').addEventListener('click', async () => {
   const btn = $('#collectAdoptBtn')
   if (!collectPreview || !collectPreview.length || btn.disabled) return
+  // 补录是**唯一会造新记录**的动作，点错一次就得手工清（2026-11-05 真踩过）。
+  // 那次的形态极具迷惑性：「确认上传」显示匹配 0 / 忽略全部，看着像「账本里真没有」，
+  // 其实后端跑的是没重启的旧代码（少了「按岗位名兜底认人」）。
+  // 所以这里必须说清「先判断一下」，而不是只问一句「确定吗」。
+  const ok = window.confirm(
+    `要把这 ${collectPreview.length} 条都补录成新记录吗？\n\n` +
+      `⚠️ 只在你确认「这些投递账本里真的没有」时才点。\n` +
+      `如果上一步「确认上传」显示「匹配 0」，但账本里明明有这些投递 ——\n` +
+      `多半是后端还在跑旧代码：重启后端（npm run dev）再试，不要补录。`
+  )
+  if (!ok) return
   btn.disabled = true
   try {
     await uploadProgress({ createMissing: true })

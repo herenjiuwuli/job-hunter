@@ -17,14 +17,26 @@
 //   cwd  : 相对项目根目录的工作目录，默认 '.'
 //   port : 该服务监听的端口（用于启动前清残留）；不监听填 null
 //   watch: true 表示异常退出自动重启（通常给后端）
+//   watchSources: 源码目录数组，**改了里面的 .js/.mjs 就主动重启该服务**（可选）
 //   env  : 额外环境变量（可选）
 
 const SERVICES = [
-  { name: 'be', cmd: 'node', args: ['server/dev.js'], port: 3100, watch: true },
+  {
+    name: 'be',
+    cmd: 'node',
+    args: ['server/dev.js'],
+    port: 3100,
+    watch: true,
+    // 没有这条就会踩「改了代码但后端还是旧的」：
+    // 进程活着就不会重启，旧代码继续答请求，**不报错、测试也全绿**，
+    // 只表现为「明明改了却没生效」。2026-11-05 因此把 10 条投递建成了重复记录。
+    watchSources: ['server'],
+  },
   { name: 'fe', cmd: 'npm',  args: ['run', 'dev:fe'], port: 5173, watch: false },
 ]
 
 import { spawn, execSync } from 'node:child_process'
+import { watch } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -107,6 +119,42 @@ function runService(s) {
   return child
 }
 
+/**
+ * 监听源码目录，改了就重启该服务。
+ *
+ * 为什么必须有（2026-11-05 事故）：`watch: true` 只表示「进程退出后拉起来」，
+ * **不监听文件**。于是改完 `server/routes/*.js` 不手动重启，旧代码会继续答请求 ——
+ * 不报错、日志正常、测试也全绿，只表现为「明明改了却没生效」。
+ * 那次「补录」把账本里已有的 10 条投递全建成了重复记录，才发现后端跑的是 13:04 的旧代码。
+ *
+ * ⚠️ 只认 .js/.mjs/.cjs，并且**跳过 data/**：后端每次请求都会写 applications.json，
+ * 不排除的话每次写盘都会触发重启，服务就再也起不来了。
+ */
+function watchSources(s) {
+  if (!Array.isArray(s.watchSources) || !s.watchSources.length) return
+  let timer = null
+  const trigger = (file) => {
+    const f = String(file || '')
+    if (f && !/\.(js|mjs|cjs)$/.test(f)) return
+    if (/(^|[\\/])data([\\/]|$)/.test(f)) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      const child = children.get(s.name)
+      if (!child) return
+      console.log(`[dev-clean] 源码变化（${f || '未知文件'}）→ 重启 ${s.name}`)
+      killPid(child.pid) // 杀掉后走 exit → watch 分支自动重启，复用同一条重启路径
+    }, 400)
+  }
+  for (const rel of s.watchSources) {
+    try {
+      watch(path.resolve(root, rel), { recursive: true }, (_e, f) => trigger(f))
+      console.log(`[dev-clean] 监听 ${rel}/ 源码变化（.js/.mjs，忽略 data/）`)
+    } catch (e) {
+      console.warn(`[dev-clean] 监听 ${rel} 失败：${e.message}`)
+    }
+  }
+}
+
 async function main() {
   if (!SERVICES.length) {
     console.error('[dev-clean] SERVICES 为空，请在 scripts/dev-clean.mjs 顶部配置服务。')
@@ -114,6 +162,7 @@ async function main() {
   }
   for (const s of SERVICES) await clearPort(s.port)
   for (const s of SERVICES) runService(s)
+  for (const s of SERVICES) watchSources(s)
 
   const stop = () => {
     if (shuttingDown.value) return
