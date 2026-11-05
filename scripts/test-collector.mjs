@@ -1157,14 +1157,16 @@ const mkPanel = (opts) => {
 }
 
 // ⑧ 点了但右栏没换内容 → 必须跳过，绝不能把上一条的岗位名错标给它
+// 面板里放的是**上一条会话**（公司/招聘者都对不上这一行），这才是真实风险场景：
+// 点不动时右栏停在上一条，把它的岗位名记给这一行 = 数据静默错位。
 {
   const fixed = mkPanel({
-    card: '不会变的岗位\n10-15K\n深圳\n查看职位',
-    baseText: '不动的公司 招聘者',
-    spans: [mkEl('SPAN', '', '招聘者'), mkEl('SPAN', '', '不动的公司')],
+    card: '上一条的岗位\n10-15K\n深圳\n查看职位',
+    baseText: '上一条公司 上一条招聘者',
+    spans: [mkEl('SPAN', '', '上一条招聘者'), mkEl('SPAN', '', '上一条公司')],
     msgRows: [mkMsg('message-item', '你好', false)],
   })
-  const content = mkEl('DIV', 'friend-content', '不动的公司\n招聘者')
+  const content = mkEl('DIV', 'friend-content', '不动的公司\n不动的招聘者')
   content.querySelector = () => null
   content.click = () => {} // 点了没反应
   ctx.document.querySelectorAll = (sel) => (sel === '.friend-content' ? [content] : [])
@@ -1173,6 +1175,7 @@ const mkPanel = (opts) => {
   const r = await C.collectChatDetails({ scope: 'all', waitMs: 200 })
   eq(r.items.length, 0, '点了没换内容 → 一条都不入（错标阶段比漏采严重）')
   eq(r.debug.failed.length, 1, '记进 failed，预览里会列出来')
+  eq(r.debug.reused || 0, 0, '右栏是上一条会话（人对不上），不许当成「本来就开着」')
 }
 
 // ⑨ 本来就开着的那条不能被当成「点了没反应」
@@ -1200,8 +1203,75 @@ const mkPanel = (opts) => {
   eq(r.items[0].jobTitle, '开着的岗位', '岗位名照样读得到')
 }
 
-// ⑩ 届别标签不能当岗位名（2026-11-03 华曦达 3 条：标题全是「27届」）
-// 真实形态：岗位名元素的 innerText 是「27届\n测试实习生」—— 届别在第一行。
+// ⑪ 左栏节点被重渲染换掉（游离节点）→ 按文本指纹重新找到再点
+// 真机 2026-11-05（扩展 0.8.1，赵怡和/智传信那条）：点开一条会话会清未读红点 →
+// BOSS 把整列重画，循环开头一次性抓下来的其它行 node 全变成游离节点。
+// 对游离节点 click() **不报错也不跳转** → 症状是「点了没反应」，只丢中间那一条。
+{
+  let activeRow = -1
+  const clickedOn = []
+  const stale = mkEl('DIV', 'friend-content', '智传信\n赵怡和招聘者')
+  stale.isConnected = false // 已经不在文档里
+  stale.querySelector = () => null
+  stale.click = () => clickedOn.push('stale') // 点了什么都不会发生
+  const live = mkEl('DIV', 'friend-content', '智传信\n赵怡和招聘者')
+  live.querySelector = () => null
+  live.click = () => {
+    clickedOn.push('live')
+    activeRow = 0
+  }
+  const prev = mkPanel({
+    card: '上一条的岗位\n10-15K\n深圳\n查看职位',
+    baseText: '上一条公司 上一条招聘者',
+    spans: [mkEl('SPAN', '', '上一条招聘者'), mkEl('SPAN', '', '上一条公司')],
+    msgRows: [mkMsg('message-item', '你好', false)],
+  })
+  const target = mkPanel({
+    card: '社媒运营实习生\n120-150元/天\n深圳\n查看职位',
+    baseText: '智传信 赵怡和招聘者',
+    spans: [mkEl('SPAN', '', '赵怡和'), mkEl('SPAN', '', '智传信')],
+    msgRows: [mkMsg('message-item', '你好', false)],
+  })
+  let listCalls = 0
+  ctx.document.querySelectorAll = (sel) => {
+    if (sel !== '.friend-content') return []
+    listCalls += 1
+    return listCalls === 1 ? [stale] : [live] // 首轮读列表 → 之后都是重画后的新节点
+  }
+  ctx.document.querySelector = (sel) =>
+    sel === '.chat-conversation' ? (activeRow < 0 ? prev : target) : null
+
+  const r = await C.collectChatDetails({ scope: 'interactive', waitMs: 200, stepMs: 300 })
+  eq(clickedOn, ['live'], '只能点重定位到的新节点，不能点游离节点')
+  eq(r.debug.relocated, 1, '记下重定位次数（预览里要能看见）')
+  eq(r.items.length, 1, '重定位后照常采到，不再当「点开没反应」丢掉')
+  eq(r.items[0].company, '智传信', '公司名来自点开后的面板')
+  eq(r.items[0].jobTitle, '社媒运营实习生', '岗位名正确')
+  eq(r.debug.failed.length, 0, '不能判失败')
+}
+
+// ⑫ 本来就开着、但 active 类名认不出来 → 用「招聘者+公司都对得上」兜底读，不跳过
+// 这是 ⑧ 的镜像：⑧ 防「把上一条记给它」，⑫ 防「明明就是它却丢掉」。差别只在右栏人对不对得上。
+{
+  const openPanel = mkPanel({
+    card: '社媒运营实习生\n120-150元/天\n深圳\n查看职位',
+    baseText: '智传信 赵怡和招聘者',
+    spans: [mkEl('SPAN', '', '赵怡和'), mkEl('SPAN', '', '智传信')],
+    msgRows: [mkMsg('message-item', '你好', false)],
+  })
+  const content = mkEl('DIV', 'friend-content', '智传信\n赵怡和招聘者') // 没有 active
+  content.querySelector = () => null
+  content.click = () => {} // 点了不换内容（本来就开着）
+  ctx.document.querySelectorAll = (sel) => (sel === '.friend-content' ? [content] : [])
+  ctx.document.querySelector = (sel) => (sel === '.chat-conversation' ? openPanel : null)
+
+  const r = await C.collectChatDetails({ scope: 'interactive', waitMs: 200 })
+  eq(r.items.length, 1, '右栏就是这个人的会话 → 直接读，不能丢')
+  eq(r.debug.reused, 1, 'reused 计数 = 1')
+  eq(r.debug.failed.length, 0, '有明确证据时不算「点开没反应」')
+}
+
+// ⑩ 届别标签不能当岗位名（2026-11-03 华曦达 3 条：标题全是「27届」）// 真实形态：岗位名元素的 innerText 是「27届\n测试实习生」—— 届别在第一行。
 // 这判定错了两层：方向判不出来（3 条留空）+ 界面上像三条重复记录。
 {
   eq(C.firstTitleLine('27届\n测试实习生'), '测试实习生', 'skip 第一行的届别标签，取真正的岗位名')

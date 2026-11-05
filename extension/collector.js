@@ -1902,6 +1902,35 @@ const activeOf = (el, li) =>
   /\bactive\b/.test(String((el && el.className) || '')) ||
   /\bactive\b/.test(String((li && li.className) || ''))
 
+/** 一行的文本指纹：只取前两行（招聘者 / 公司·岗位），去掉空白后比对 */
+const rowTextOf = (el, lines) =>
+  String((lines || linesOf(el) || []).slice(0, 2).join(' ')).replace(/\s+/g, '')
+
+/**
+ * 这一行的节点还挂在文档里吗？不在了就按**文本指纹**重新找一遍。
+ *
+ * 为什么必须做（真机 2026-11-05，扩展 0.8.1，赵怡和智传信那条）：
+ * 左栏是 React 渲染的，**点开一条会把未读红点清掉 → 触发整列重画**，
+ * 于是循环开头一次性抓下来的其它行 node 全部变成「游离节点」。
+ * 对游离节点 `el.click()` **不抛错、也不触发跳转** —— 症状就是「点了没反应」，
+ * 而且只丢中间那一条（前面几条点的时候节点还活着）。
+ * 用文本指纹重定位而不是重抓下标：重画后顺序可能变，下标会点错人。
+ */
+function relocateRow(r) {
+  const fp = rowTextOf(r.el, r.lines)
+  if (!fp) return null
+  let list = []
+  try {
+    list = [...document.querySelectorAll('.friend-content')]
+  } catch (_) {
+    list = []
+  }
+  for (const el of list) {
+    if (rowTextOf(el) === fp) return el
+  }
+  return null
+}
+
 const SALARY_RE =
   /(\d+(\.\d+)?\s*[-~～]\s*\d+(\.\d+)?\s*(?:[kK]|元\/天|元\/月|元\/时))|(\d+\s*元\/天)|(\d+(\.\d+)?\s*[kK]\s*[-~～]\s*\d+(\.\d+)?\s*[kK])|面议/
 const CARD_NOISE_RE = /查看职位|沟通职位|立即沟通|查看全部|感兴趣|继续沟通|举报/
@@ -2109,6 +2138,7 @@ async function collectChatDetails(opts = {}) {
     picked: 0,
     opened: 0,
     reused: 0, // 本来就开着、直接读的条数（不算进 opened 的「点开成功」）
+    relocated: 0, // 左栏节点被重渲染换掉、按文本指纹重新找到的条数
     failed: [],
     noCard: [],
     duplicate: 0,
@@ -2155,6 +2185,16 @@ async function collectChatDetails(opts = {}) {
 
   for (const r of picked) {
     let panel = null
+    // 节点可能已经被列表重渲染换掉了（见 relocateRow 的说明）。
+    // `r.el.isConnected === false` 才动手：stub 环境里这个属性是 undefined，不能当 false 处理。
+    if (r.el && r.el.isConnected === false) {
+      const fresh = relocateRow(r)
+      if (fresh) {
+        r.el = fresh
+        r.li = (fresh.closest && fresh.closest('li')) || fresh.parentElement
+        debug.relocated += 1
+      }
+    }
     // 已经开着的那条不用点（点了内容也不会变，会被误判成「点开没反应」）
     const already = activeOf(r.el, r.li) ? findChatPanel() : null
     if (already && readOpenChat(already).jobTitle) {
@@ -2171,6 +2211,21 @@ async function collectChatDetails(opts = {}) {
       }
     }
     const label = r.lines[1] || r.lines[0] || `第 ${r.i + 1} 行`
+    if (!panel) {
+      // 兜底：指纹没变 ≠ 点失败了 —— 也可能是「本来就开着，只是 active 类名认不出来」。
+      // 判定必须严：右栏读到的**招聘者名和公司名都要在这行的文本里出现**。
+      // 少一个条件都可能把上一条会话的岗位名记到这条头上（那比漏一条严重得多）。
+      const cur = findChatPanel()
+      const w = cur ? readRecruiter(cur) : { name: '', company: '' }
+      const rowTxt = rowTextOf(r.el, r.lines)
+      const sameWho =
+        !!w.name && !!w.company && rowTxt.includes(w.name.replace(/\s+/g, '')) && rowTxt.includes(w.company.replace(/\s+/g, ''))
+      if (cur && sameWho && readOpenChat(cur).jobTitle) {
+        panel = cur
+        debug.reused += 1
+        debug.notes.push(`${label}：点了没换内容，但右栏招聘者/公司都对得上 → 按「本来就开着」读`)
+      }
+    }
     if (!panel) {
       // ⚠️ 点开没换成新内容时**必须跳过**，否则会把上一条会话的岗位名记到这条头上
       debug.failed.push(`${label}（点了没换内容）`)
@@ -2225,6 +2280,7 @@ async function collectChatDetails(opts = {}) {
   }
 
   if (debug.failed.length) debug.notes.push(`${debug.failed.length} 条点开没反应，已跳过`)
+  if (debug.relocated) debug.notes.push(`${debug.relocated} 条左栏被重渲染，按文本重定位后点开的`)
   if (debug.reused) debug.notes.push(`${debug.reused} 条本来就开着，直接读了没再点`)
   if (debug.noCard.length) debug.notes.push(`${debug.noCard.length} 条会话里没有岗位卡`)
   if (debug.duplicate) debug.notes.push(`${debug.duplicate} 条公司+岗位重复，已去重`)
