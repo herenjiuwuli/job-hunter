@@ -108,6 +108,71 @@
     return hits
   }
 
+  /**
+   * 取**最先出现**的那个城市（按字符位置），而不是「文本里只要有就算命中」。
+   *
+   * 为什么必须换：岗位城市紧跟在标题/公司后面，而「你选的城市」会以别的方式出现在同一页 ——
+   * 站点城市切换器、面包屑、右侧「相似岗位」、页脚「热门城市」。
+   * 用「包含即命中」，只要页面上出现过一次「深圳」，西安的岗位也会被判为城市相符，
+   * 于是整条城市门槛形同虚设（2026-11-05 用户实测：实习僧上连西安的岗位都被投了）。
+   *
+   * 两层判定，顺序不能换：
+   *   ① **括号里的城市优先**：岗位名常自带标注「硬件测试工程师（西安）」——
+   *      这是平台明确告诉你岗位在哪，比任何位置推断都可靠。
+   *      真实反例：`深圳市正浩创新科技股份有限公司 / 硬件测试工程师（西安）`，
+   *      公司名里的「深圳」是注册地，把它当成岗位城市就投错城市了。
+   *   ② 否则取**位置最靠前**的城市（岗位城市总在标题/公司附近，推荐位在后）。
+   *
+   * @param {string} text 尽量是**岗位头部**那段文本（越窄越准）
+   * @returns {string} 城市名；一个都认不出返回空串
+   */
+  function firstCity(text) {
+    const t = String(text || '')
+    if (!t) return ''
+    // ① 括号里的城市（中英文括号都要）
+    for (const m of t.matchAll(/[（(]([^）)]{1,10})[）)]/g)) {
+      const c = earliestCity(m[1])
+      if (c) return c
+    }
+    // ② 位置最靠前的城市
+    return earliestCity(t)
+  }
+
+  /** 在这段文本里，找出**出现位置最靠前**的城市名 */
+  function earliestCity(text) {
+    const t = String(text || '')
+    if (!t) return ''
+    let best = null
+    for (const p of PROVINCES) {
+      for (const c of p.cities) {
+        const base = normalizeCity(c)
+        if (!base) continue
+        const at = t.indexOf(base)
+        if (at === -1) continue
+        if (!best || at < best.at) best = { city: c, at }
+      }
+    }
+    return best ? best.city : ''
+  }
+
+  /**
+   * 城市门槛判定（纯函数，可单测）。
+   *
+   * 语义：**先找出岗位城市，再比是不是你要的**。顺序反了就会退化成
+   * 「文本里出现过我选的城市就算过」—— 而页面上永远有你的城市（站点切换器/推荐/页脚）。
+   *
+   * @param {string} metaText 岗位头部那段文本（越窄越准，别喂整页）
+   * @param {string[]} cities 只投这些城市
+   * @returns {{blocked:boolean, city:string}} city 为空 = 认不出，交由 strictMeta 决定
+   */
+  function checkCity(metaText, cities) {
+    const mine = (cities || []).map(normalizeCity).filter(Boolean)
+    if (!mine.length) return { blocked: false, city: '' }
+    const city = firstCity(metaText)
+    if (!city) return { blocked: false, city: '' }
+    return { blocked: !mine.includes(normalizeCity(city)), city }
+  }
+
   // 从卡片/详情文本里提取「x天/周」与「x个月」
   function detectMeta(text) {
     const t = String(text || '')
@@ -206,6 +271,8 @@
     EDU_LABELS,
     normalizeCity,
     detectCity,
+    firstCity,
+    checkCity,
     detectMeta,
     detectBossMeta,
   }

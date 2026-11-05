@@ -347,6 +347,36 @@ function extractJobInfo() {
   }
 }
 
+/**
+ * 取「岗位自身的城市」所在的那段文本，越窄越准。
+ *
+ * 为什么不能用 document.body.innerText：实习僧详情页顶部有站点城市切换器、面包屑，
+ * 里面永远写着你当前选的城市（深圳）；右边还有「相似岗位」。整页文本里「深圳」必然出现，
+ * 于是西安的岗位在详情页复检时也会被判成「城市相符」—— 城市门槛等于没有。
+ *
+ * 做法：从岗位标题元素向上找，第一个「认得出城市」且文本不过长的容器就是岗位信息区。
+ * 不写死 class 名（平台改版就废），只依赖「城市写在标题附近」这个结构事实。
+ */
+function cityTextNearTitle() {
+  const F = window.JH_FILTERS
+  if (!F || typeof F.firstCity !== 'function') return ''
+  const el = document.querySelector(
+    '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
+  )
+  if (!el) return ''
+  let cur = el
+  for (let i = 0; i < 6; i++) {
+    const up = cur.parentElement
+    if (!up || up === document.body) break
+    const t = (up.innerText || '').trim()
+    // 超过 600 字 = 已经越过岗位信息区（整栏/整页），里面的城市不可信
+    if (t.length > 600) break
+    if (F.firstCity(t)) return t
+    cur = up
+  }
+  return ''
+}
+
 // BOSS 直聘活跃度检测：返回 'active' | 'inactive' | 'unknown'
 // BOSS 会在 HR 头像/卡片上标注活跃状态，投「活跃」的回复率与账号安全都更好。
 // ⚠️ 具体文字因版本而异，属启发式，真机校准后可按需增删关键词。
@@ -417,22 +447,22 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
   const title = String(jobTitle || '')
   const metaSrc = String(metaText || '')
 
-  // 1) 城市：在「已选城市」里找；找不到就看看是不是别的城市
+  // 1) 城市：先找「岗位城市」，再比是不是你要的
+  //    不能用「文本里包含深圳就算过」—— 站点城市切换器、面包屑、右侧相似岗位、页脚热门城市
+  //    都会出现「深圳」，那样任何外地岗位都能过（2026-11-05 实测投出了西安的岗位）。
   if (f.cities.length) {
-    const hits = F.detectCity(metaSrc, f.cities)
-    if (!hits.length) {
-      const allCities = F.PROVINCES.flatMap((p) => p.cities)
-      const other = F.detectCity(metaSrc, allCities)
-      if (other.length) {
-        return {
-          blocked: true,
-          reason: `城市不符（岗位在 ${[...new Set(other)].join('/')}，你只投 ${f.cities.join('/')}）`,
-          meta: {},
-        }
+    const cc = typeof F.checkCity === 'function'
+      ? F.checkCity(metaSrc, f.cities)
+      : { blocked: false, city: '' }
+    if (cc.blocked) {
+      return {
+        blocked: true,
+        reason: `城市不符（岗位在 ${cc.city}，你只投 ${f.cities.join('/')}）`,
+        meta: {},
       }
-      if (f.strictMeta && !allowUnknown) {
-        return { blocked: true, reason: '读不到岗位城市（已开严格模式）', meta: {} }
-      }
+    }
+    if (!cc.city && f.strictMeta && !allowUnknown) {
+      return { blocked: true, reason: '读不到岗位城市（已开严格模式）', meta: {} }
     }
   }
 
@@ -512,12 +542,15 @@ async function applyFilters() {
 
   // 3. A 方案：按个人情况（城市 / 出勤 / 时长 / 方向）做硬门槛筛选
   const f = await getJobFilters()
+  // 城市优先用「标题附近」那段窄文本；拿不到才退回整页（整页里城市不可信，见 cityTextNearTitle）
+  const cityText = cityTextNearTitle()
   const screen = screenJob(
     {
       jobTitle: info.jobTitle,
       company: info.company,
       jdText: jobBodyText(),
-      metaText: (document.body && document.body.innerText ? document.body.innerText : '').slice(0, 1500),
+      metaText:
+        cityText || (document.body && document.body.innerText ? document.body.innerText : '').slice(0, 1500),
     },
     f
   )

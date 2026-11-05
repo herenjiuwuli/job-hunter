@@ -375,11 +375,25 @@ function jobLinksIn(root) {
   return out
 }
 
+/** 容器里有多少个**不同**岗位（按 jobId 去重）。 */
+function uniqueJobIdsIn(root) {
+  const ids = new Set()
+  for (const a of jobLinksIn(root)) {
+    const id = jobIdOfHref(a.getAttribute('href'))
+    if (id) ids.add(id)
+  }
+  return ids.size
+}
+
 /**
- * 由岗位链接反推「这一行的容器」：一路向上，直到**装进第二个岗位链接**为止，
- * 取最后一个「只有自己一个岗位链接」的祖先。
+ * 由岗位链接反推「这一行的容器」：一路向上，直到**装进第二个岗位**为止，
+ * 取最后一个「只有自己这一个岗位」的祖先。
  *
- * 这样得到的必然是单条投递卡片，绝不会是整张列表或整个 tab 容器。
+ * ⚠️ 判据是**不同 jobId 的个数**，不是链接元素个数。
+ * 同一张卡里常有两个指向同一岗位的链接（标题 + 「投个简历」按钮），
+ * 按元素数算会在第一层就停住 —— 只拿到标题，城市、公司全丢。
+ * 后果不是「少采一条」，而是**城市筛选彻底失效**（读不到城市就放行）：
+ * 2026-11-05 用户实测，实习僧上连西安的岗位也被投了。
  */
 function rowOfLink(a) {
   let cur = a
@@ -387,7 +401,7 @@ function rowOfLink(a) {
   for (let i = 0; i < 12; i++) {
     const up = cur.parentElement
     if (!up || up === document.body || up === document.documentElement) break
-    if (jobLinksIn(up).length > 1) break // 越界了，上一轮的 best 才是行
+    if (uniqueJobIdsIn(up) > 1) break // 越界了（装进了别的岗位），上一轮的 best 才是行
     const lines = linesOf(up)
     if (lines.length > 12) break // 太大，不像一行
     best = up
@@ -844,6 +858,9 @@ function probeListing() {
       // 筛选就是吃这些：城市命中几个、天/周与月数能不能读出来。
       // 读不到 = 这两项门槛在列表页等于没生效（不会误杀，但也不会拦）。
       cities: F ? F.detectCity(text, allCities).slice(0, 3) : [],
+      // 真正决定城市门槛的那个值：位置最靠前的城市。
+      // city 为空 = 这张卡的文本里根本没有城市 → 城市筛选在这张卡上必然放行。
+      city: F && F.firstCity ? F.firstCity(text) : '',
       meta: F ? F.detectMeta(text) : null,
     })
   }
