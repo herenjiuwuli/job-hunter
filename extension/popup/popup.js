@@ -448,6 +448,9 @@ function startLogText(res, name) {
     }
     if (res.appliedSkip) parts.push(`本地记录里已投过 ${res.appliedSkip} 家，已排除`)
     if (res.blocked) parts.push(`不符合筛选 ${res.blocked} 家`)
+    // 把这次生效的筛选条件摆出来。筛选配错是**静默**的（只会放行不该投的岗位，
+    // 不会报错），只有写在启动日志里，才可能一眼看出「城市其实没生效」
+    if (res.filters) parts.push(`\n本次筛选：${res.filters}`)
     // 跑之前的额度基线：方便对账「这批投完应该到多少」
     if (res.quota) {
       parts.push(

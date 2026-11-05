@@ -399,6 +399,41 @@ async function getJobFilters() {
   return f
 }
 
+/**
+ * 把当前筛选条件压成一句话，放在「启动批量」的日志里。
+ *
+ * 为什么需要：2026-11-05 用户在实习僧投出了西安的岗位，界面上完全看不出
+ * 「城市门槛这次到底参没参与」。筛选是**静默生效**的 —— 配错了不会报错，
+ * 只会安静地放行不该投的岗位。把条件摆在启动日志里，才有可能一眼发现没生效。
+ */
+function describeFilters(f) {
+  const F = window.JH_FILTERS
+  if (!f || !f.enabled) return '⚠️ 筛选已关闭（全部放行）'
+  const parts = []
+  parts.push(f.cities && f.cities.length ? `城市 ${f.cities.join('/')}` : '⚠️ 城市不限')
+  if (f.directions && f.directions.length) {
+    const labels = f.directions.map(
+      (id) => ((F && F.DIRECTIONS.find((d) => d.id === id)) || {}).label || id
+    )
+    parts.push(`方向 ${labels.join('/')}`)
+  } else {
+    parts.push('⚠️ 方向不限')
+  }
+  if (f.maxExperience != null) {
+    parts.push(
+      f.maxExperience === 99
+        ? '经验不限'
+        : f.maxExperience === 0
+          ? '经验不限/在校'
+          : `经验≤${f.maxExperience}年`
+    )
+  }
+  if (f.maxEduRank != null && f.maxEduRank < 6) {
+    parts.push(`学历≤${(F && F.EDU_LABELS && F.EDU_LABELS[f.maxEduRank]) || f.maxEduRank}`)
+  }
+  return parts.join('｜')
+}
+
 // 命中哪些方向组
 function matchedDirections(text) {
   const t = String(text || '').toLowerCase()
@@ -1874,6 +1909,9 @@ async function startBatch(limit, force) {
     appliedSkip,
     shrunk,
     quota: { used: q.used, limit: q.limit, remaining: remain },
+    // 启动时把这次用的筛选条件说出来：筛选是静默生效的，配错了不会报错，
+    // 只会安静放行不该投的岗位（2026-11-05 投出西安岗位就是这么来的）
+    filters: describeFilters(await getJobFilters()),
   }
 }
 
