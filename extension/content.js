@@ -1032,6 +1032,49 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // 风控诊断：让你一眼看出是「真有验证码」还是「隐藏容器误判」
       risk: detectRisk(),
       boss: bossProbe,
+      // ⭐ 公司名自检（2026-11-06）：投递时上报的公司名突然全变「未知公司」，
+      // 而历史上同样的流程是全对的 —— 必须能一眼看出是「collector 没加载」「jobEl 没找到」
+      // 还是「页面上的公司名 class 变了」，而不是靠猜。
+      jobInfo: extractJobInfo(),
+      company: (() => {
+        const C = window.__jhCollector
+        const jobEl = (() => {
+          try {
+            return document.querySelector(
+              '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
+            )
+          } catch (_) {
+            return null
+          }
+        })()
+        // COMPANY_SEL 的候选全列出来：如果这里一个都没有，就是选择器对不上（平台改版）
+        const cands = []
+        try {
+          for (const el of document.querySelectorAll(
+            '[class*="company-name"], .company-name, .cname, .com-name'
+          )) {
+            const t = String(el.innerText || '').trim().replace(/\s+/g, ' ')
+            if (!t) continue
+            cands.push({
+              text: t.slice(0, 30),
+              cls: String(el.className || '').slice(0, 60),
+              shown: !!(el.offsetHeight || el.offsetWidth),
+            })
+            if (cands.length >= 12) break
+          }
+        } catch (_) {
+          /* 读不到就算了 */
+        }
+        return {
+          // false = collector.js 没注入（所有依赖它的能力都会静默降级）
+          collectorLoaded: !!C,
+          jobElFound: !!jobEl,
+          jobElText: jobEl ? truncate(String(jobEl.innerText || '').replace(/\s+/g, ' '), 40) : '',
+          candidates: cands,
+          // 最终判定结果：空 = 会记成「未知公司」
+          resolved: C && typeof C.findCompanyName === 'function' ? C.findCompanyName(jobEl) : '',
+        }
+      })(),
       // 列表页专用：这批链接能不能被抓到（BOSS 新版若改成 div 绑点击就抓不到，需要换策略）
       jobLinks: (() => {
         const all = [...document.querySelectorAll('a[href*="job_detail"], a[href*="inn_"]')]
