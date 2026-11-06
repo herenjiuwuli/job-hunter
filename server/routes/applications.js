@@ -346,9 +346,19 @@ router.post('/api/applications/collect', async (req, res) => {
 
         // 按标题兜底命中的，顺手把错的公司名订正过来。
         // companyGuess 的不订正 —— 那是拆「姓名+公司」猜出来的，拿来覆盖真实值不划算。
+        //
+        // ⭐ 2026-11-06 补：**精确命中（jobId）也要订正，但只在库里没有公司名时**。
+        // 之前这条只走 viaTitle，「未知公司」这种采集失败留下的空位就永远填不上：
+        // 中金财富那 2 条 jobId 一直在库里、采集每次都能拿到「中金财富（深圳）」，
+        // 却因为走的是精确匹配、viaTitle=false，公司名一直是「未知公司」。
+        // 反过来（库里是真实名、本次是猜的）不覆盖 —— 那种仍归 viaTitle 管。
         let companyFixed = null
         let titleFixed = null
-        if (viaTitle && company && !raw.companyGuess && !sameCompany(cur.company, company)) {
+        const curCompanyRaw = String(cur.company || '').trim()
+        const curCompanyMissing = !curCompanyRaw || /^未知/.test(curCompanyRaw)
+        const nameShouldFix =
+          !!company && !raw.companyGuess && !sameCompany(cur.company, company) && (viaTitle || curCompanyMissing)
+        if (nameShouldFix) {
           patch.company = company
           companyFixed = { from: cur.company, to: company }
           changed = true

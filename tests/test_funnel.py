@@ -662,3 +662,57 @@ def test_collect_advances_when_only_tab_gave_the_stage():
     assert r.status_code == 200, r.text
     got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
     assert got["stage"] == "screening", "只靠 tab 判出来的阶段被丢掉了（stageRaw 空串没兜底）"
+
+
+def test_collect_fills_missing_company_on_exact_jobid_hit():
+    """
+    库里是「未知公司」时，jobId 精确命中的采集也要把公司名填上。
+
+    真机（2026-11-06）：中金财富那 2 条记录的 jobId 一直在库里，采集每次都能拿到
+    「中金财富（深圳）」，但公司名一直是「未知公司」。
+    根因是订正只在「按标题兜底命中」（viaTitle）时生效 —— 精确命中走了另一条分支，
+    于是这个空位永远填不上。「未知公司」不是数据，是采集失败留下的坑。
+
+    ⚠️ 只订正**空 / 未知**：库里已有真实公司名时不许被采集覆盖（下一条用例守）。
+    """
+    a = _app(company="未知公司", jobTitle="产品测试助理实习生(J15383)", platform="实习僧", jobId="inn_unknown_co_1")
+    r = _collect(
+        [
+            {
+                "company": "中金财富",
+                "jobTitle": "产品测试助理实习生(J15383)",
+                "platform": "实习僧",
+                "jobId": "inn_unknown_co_1",
+                "stage": "viewed",
+            }
+        ]
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["matched"] == 1
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["company"] == "中金财富", "jobId 精确命中、库里只有「未知公司」，却没用采集到的公司名补上"
+    assert any(x.get("companyFixed") for x in body["results"]), "补了公司名但没在 results 里说明（界面就看不到）"
+
+
+def test_collect_does_not_overwrite_real_company():
+    """
+    反过来：库里已有真实公司名时，采集不许覆盖。
+
+    采集端的公司名可能是「法雷奥-全国」这种带城市后缀、或者干脆来自别的卡片；
+    真实名被覆盖 = 自己制造错配（公司名是 sameApply 认人的一半依据）。
+    """
+    a = _app(company="法雷奥", jobTitle="测试实习生", platform="实习僧", jobId="inn_real_co_1")
+    _collect(
+        [
+            {
+                "company": "别的公司",
+                "jobTitle": "测试实习生",
+                "platform": "实习僧",
+                "jobId": "inn_real_co_1",
+                "stage": "screening",
+            }
+        ]
+    )
+    got = [x for x in requests.get(f"{BASE}/api/applications", timeout=10).json() if x["id"] == a["id"]][0]
+    assert got["company"] == "法雷奥", "采集把已有真实公司名覆盖掉了"
