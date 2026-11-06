@@ -319,13 +319,13 @@ async function analyze() {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   outline: none;
   max-width: 320px;
 }
 .import-tip {
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .import-bar .muted {
   color: var(--text-secondary);
@@ -343,7 +343,7 @@ async function analyze() {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   outline: none;
 }
 .toolbar .btn {
@@ -398,7 +398,7 @@ async function analyze() {
 }
 .muted {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .predict-btn {
   float: right;
@@ -413,7 +413,7 @@ async function analyze() {
   padding-top: 6px;
 }
 .block-title {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--text-dim);
   letter-spacing: 0.04em;
@@ -423,7 +423,7 @@ async function analyze() {
 .ptbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
 }
 .ptbl th,
 .ptbl td {
@@ -453,11 +453,11 @@ async function analyze() {
 }
 .qcard .q {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   margin-bottom: 4px;
 }
 .qcard .meta {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
 }
 .plain-list {
@@ -519,7 +519,7 @@ async function analyze() {
   border-top: 1px dashed var(--border);
 }
 .custom-job-title {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
@@ -533,7 +533,7 @@ async function analyze() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 9px 12px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;

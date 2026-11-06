@@ -239,7 +239,7 @@ onMounted(load)
   text-align: left;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   vertical-align: middle;
 }
 .table th {
@@ -262,7 +262,7 @@ onMounted(load)
   transition: width 0.3s;
 }
 .score-text {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   margin-top: 3px;
 }
 
@@ -272,7 +272,7 @@ onMounted(load)
   gap: 4px;
 }
 .kw-tag {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   padding: 1px 8px;
   border-radius: 2px;
 }
@@ -297,10 +297,10 @@ onMounted(load)
 }
 .analysis-conclusion {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .block-title {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--text-dim);
   letter-spacing: 0.04em;
@@ -312,18 +312,18 @@ onMounted(load)
   align-items: center;
   gap: 8px;
   padding: 4px 0;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .gate-req {
   font-weight: 500;
 }
 .gate-note {
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .matrix {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
 }
 .matrix th,
 .matrix td {
@@ -345,7 +345,7 @@ onMounted(load)
   line-height: 1.5;
 }
 .imp {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   padding: 1px 7px;
   border-radius: 2px;
   font-weight: 600;
@@ -356,14 +356,14 @@ onMounted(load)
 .fix-list {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.8;
 }
 .fix-list li {
   margin-bottom: 2px;
 }
 .strategy {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 6px;
 }
 

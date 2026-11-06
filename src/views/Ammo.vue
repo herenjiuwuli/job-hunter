@@ -179,12 +179,12 @@ const STATUS_CLASS = { '✅': 'mk-ok', '❌': 'mk-bad', '⚠️': 'mk-warn' }
   color: #c2410c;
   border-radius: 3px;
   padding: 12px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   margin-bottom: 18px;
 }
 .sec-title {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 700;
   margin: 20px 0 10px;
   padding-left: 9px;
@@ -207,20 +207,20 @@ section:first-of-type .sec-title {
 }
 .item-name {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
 }
 .item-fact {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 .item-why {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   margin-top: 3px;
 }
 .tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
 }
 .tbl th,
 .tbl td {

@@ -134,7 +134,7 @@ async function copyExample() {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 14px;
 }
 .form-row {
@@ -146,7 +146,7 @@ async function copyExample() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .form-row select,
@@ -154,7 +154,7 @@ async function copyExample() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -163,12 +163,12 @@ async function copyExample() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
 .word-count {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
@@ -194,7 +194,7 @@ async function copyExample() {
   margin-bottom: 0;
 }
 .big-score {
-  font-size: 36px;
+  font-size: var(--fs-2xl);
   line-height: 1;
 }
 .big-score.high {
@@ -216,12 +216,12 @@ async function copyExample() {
 }
 .sentence {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 4px;
 }
 .comment {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .list {
   margin: 0;
@@ -239,7 +239,7 @@ async function copyExample() {
 }
 .btn-sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 @media (max-width: 640px) {
   .form-row {

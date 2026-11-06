@@ -134,8 +134,7 @@ const resumeLen = computed(() => prepCtx.resume.trim().length)
           </span>
           <textarea
             v-model="prepCtx.resume"
-            class="textarea"
-            style="min-height: 88px"
+            class="textarea ctx-resume"
             placeholder="粘贴简历正文。五个模块都读这一份，改一次全部生效。"
           ></textarea>
         </label>
@@ -169,12 +168,12 @@ const resumeLen = computed(() => prepCtx.resume.trim().length)
 <style scoped>
 .ctx {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-surface);
   background: #fafafa;
-  margin-bottom: 18px;
+  margin-bottom: var(--s-5);
 }
 
-/* 填全了改成白底 + 深色标题条，给一个"可以开干了"的视觉信号 */
+/* 填全了改成白底，给一个"可以开干了"的视觉信号 */
 .ctx-ok {
   background: #fff;
 }
@@ -182,26 +181,26 @@ const resumeLen = computed(() => prepCtx.resume.trim().length)
 .ctx-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
   border-bottom: 1px solid var(--border);
 }
 
 .ctx-title {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
 .ctx-state {
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   color: var(--text-faint);
   flex: 1;
 }
 
 /* 缺上下文的提示要显眼 —— 它是「现在点生成会失败」的唯一前置信号 */
 .ctx:not(.ctx-ok) .ctx-state {
-  color: #b45309;
+  color: var(--c-amber);
   font-weight: 550;
 }
 
@@ -209,10 +208,10 @@ const resumeLen = computed(() => prepCtx.resume.trim().length)
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   font-family: inherit;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: var(--s-1);
 }
 
 .ctx-toggle:hover {
@@ -220,48 +219,54 @@ const resumeLen = computed(() => prepCtx.resume.trim().length)
 }
 
 .ctx-body {
-  padding: 14px;
+  padding: var(--s-4);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--s-3);
 }
 
 .ctx-row {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
-  gap: 10px;
+  gap: var(--s-3);
 }
 
 .ctx-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-1);
   min-width: 0;
 }
 
 .ctx-label {
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   color: var(--text-secondary);
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--s-1);
 }
 
 .ctx-count {
   font-style: normal;
   font-weight: 500;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
 
+/* 模块说明：左侧一道灰线当「引文」，比灰底块轻，也不抢 tab 的注意力 */
 .tab-hint {
-  margin: -8px 0 16px;
-  padding-left: 9px;
+  margin: calc(var(--s-2) * -1) 0 var(--s-4);
+  padding-left: var(--s-2);
   border-left: 2px solid var(--border);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-faint);
   line-height: 1.6;
+}
+
+/* 简历框比默认高一点：它要贴整份简历，太矮会让人以为只能写两行 */
+.ctx-resume {
+  min-height: 88px;
 }
 
 /* 模块原本是独立页，头部各带一个 h1。嵌进来以后会和 tab 名重复一遍，

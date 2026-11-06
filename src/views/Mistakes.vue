@@ -185,7 +185,7 @@ onMounted(async () => {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .empty {
   text-align: center;
@@ -205,7 +205,7 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .time {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .m-score.low {
@@ -215,7 +215,7 @@ onMounted(async () => {
   color: var(--success);
 }
 .mastered-tag {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   background: #e8f7ee;
   color: var(--success);
   border-radius: 4px;
@@ -226,7 +226,7 @@ onMounted(async () => {
   margin-bottom: 6px;
 }
 .m-answer {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   background: #fafbfc;
   border-radius: 3px;
@@ -234,7 +234,7 @@ onMounted(async () => {
   margin-bottom: 6px;
 }
 .m-comment {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-bottom: 10px;
 }
@@ -260,7 +260,7 @@ onMounted(async () => {
   color: var(--danger);
 }
 .m-result p {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-top: 4px;
 }
@@ -268,14 +268,14 @@ onMounted(async () => {
   background: none;
   border: none;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   padding: 0;
 }
 .ref-list {
   margin: 8px 0 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   display: grid;
   gap: 4px;
 }
@@ -285,6 +285,6 @@ onMounted(async () => {
 }
 .btn-sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 </style>

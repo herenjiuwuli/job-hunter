@@ -136,7 +136,7 @@ async function copy(text, key) {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 14px;
 }
 .form-row {
@@ -148,7 +148,7 @@ async function copy(text, key) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .form-row .grow {
@@ -160,7 +160,7 @@ async function copy(text, key) {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -174,7 +174,7 @@ async function copy(text, key) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .toolbar {
@@ -196,7 +196,7 @@ async function copy(text, key) {
 }
 .muted {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .title-row {
   display: flex;
@@ -217,7 +217,7 @@ async function copy(text, key) {
 }
 .btn-sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 @media (max-width: 640px) {
   .form-row {

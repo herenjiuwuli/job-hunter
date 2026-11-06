@@ -171,11 +171,11 @@ onMounted(load)
   gap: 4px;
 }
 .stat-label {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .stat-value {
-  font-size: 24px;
+  font-size: var(--fs-xl);
   line-height: 1.2;
 }
 .stat-value.high {
@@ -198,7 +198,7 @@ onMounted(load)
 }
 .dim-name {
   width: 84px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   flex-shrink: 0;
 }
 .dim-bar {
@@ -250,7 +250,7 @@ onMounted(load)
   gap: 6px;
 }
 .trend-score {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 .trend-score.high {
@@ -279,7 +279,7 @@ onMounted(load)
   transition: height 0.3s;
 }
 .trend-idx {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 .empty {
@@ -310,7 +310,7 @@ onMounted(load)
 }
 .record-time {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .record-actions {
   display: flex;
@@ -328,7 +328,7 @@ onMounted(load)
 }
 .btn-sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .danger {
   background: #fdebec;

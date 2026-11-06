@@ -195,12 +195,12 @@ onMounted(load)
   background: var(--bg);
 }
 .stat-num {
-  font-size: 24px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--primary);
 }
 .stat-label {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
   margin-top: 4px;
 }

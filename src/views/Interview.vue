@@ -465,7 +465,7 @@ onUnmounted(() => {
 }
 .progress-text {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .bar {
   height: 8px;
@@ -503,7 +503,7 @@ onUnmounted(() => {
   max-width: 78%;
   padding: 10px 14px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -531,11 +531,11 @@ onUnmounted(() => {
 }
 .bubble-tag {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: #c47d10;
 }
 .score-badge {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 2px;
@@ -555,7 +555,7 @@ onUnmounted(() => {
 }
 .followup-tag {
   display: inline-block;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: #7c3aed;
   background: #f1e9fe;
@@ -573,25 +573,25 @@ onUnmounted(() => {
   background: none;
   border: none;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   padding: 0;
 }
 .ref-hint {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   margin-left: 8px;
 }
 .ref-list {
   margin: 8px 0 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   display: grid;
   gap: 4px;
 }
 .polish-text {
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   background: #f6f2ff;
   border-radius: 3px;
@@ -620,12 +620,12 @@ onUnmounted(() => {
   align-items: center;
 }
 .time-tag {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   opacity: 0.9;
 }
 .time-tip {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: #d97706;
 }
 /* 用户气泡（紫底）内，用时/提示改用浅色，否则看不清 */
@@ -637,7 +637,7 @@ onUnmounted(() => {
   color: #ffd9a0;
 }
 .timer-hint {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 </style>

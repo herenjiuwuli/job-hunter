@@ -285,7 +285,7 @@ onMounted(() => {
   gap: 20px;
 }
 .score-num {
-  font-size: 56px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   line-height: 1;
 }
@@ -304,7 +304,7 @@ onMounted(() => {
   gap: 6px;
 }
 .score-title {
-  font-size: 16px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 .dim-list {
@@ -377,7 +377,7 @@ onMounted(() => {
 }
 .muted {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .q-meta {
   display: flex;
@@ -388,10 +388,10 @@ onMounted(() => {
   background: #f1f3f5;
   border-radius: 2px;
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .time-tip {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: #d97706;
   margin-bottom: 4px;
 }

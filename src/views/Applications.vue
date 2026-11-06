@@ -268,7 +268,7 @@ onMounted(load)
             <th>平台</th>
             <th>投递日期</th>
             <th>简历</th>
-            <th style="text-align: right;">操作</th>
+            <th class="col-right">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -292,9 +292,9 @@ onMounted(load)
             <td><span class="badge badge-pending">{{ a.platform }}</span></td>
             <td>{{ fmtDate(a.appliedAt) }}</td>
             <td class="muted">{{ resumeTitle(a.resumeId) }}</td>
-            <td style="text-align: right; white-space: nowrap;">
+            <td class="col-right row-actions">
               <button class="btn btn-outline btn-sm" @click="openEdit(a)">编辑</button>
-              <button class="btn btn-danger btn-sm" style="margin-left: 6px;" @click="remove(a)">删除</button>
+              <button class="btn btn-danger btn-sm" @click="remove(a)">删除</button>
             </td>
           </tr>
         </tbody>
@@ -305,7 +305,7 @@ onMounted(load)
     <div v-if="showForm" class="modal-mask" @click.self="showForm = false">
       <div class="modal">
         <div class="modal-head">
-          <h2 style="margin: 0;">{{ isNew ? '新建投递' : '编辑投递' }}</h2>
+          <h2 class="modal-title">{{ isNew ? '新建投递' : '编辑投递' }}</h2>
           <button class="btn btn-outline" @click="showForm = false">关闭</button>
         </div>
         <div class="modal-body">
@@ -395,85 +395,96 @@ onMounted(load)
 </template>
 
 <style scoped>
+/* ===== 筛选条 =====
+ * 9 个各自带边框的小 chip = 一排小盒子，噪音很大。
+ * 改成「一个容器 + 内部分段」：只有选中项有底色，其余靠文字本身分档。
+ * 圆角嵌套：容器 8 → 每段 6。 */
 .filterbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-3);
   flex-wrap: wrap;
 }
 .stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--s-1);
   flex: 1;
   min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-surface);
+  padding: var(--s-1);
 }
 .stat-card {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 5px 12px;
+  gap: var(--s-1);
+  border: 1px solid transparent;
+  border-radius: var(--r-nested);
+  padding: var(--s-1) var(--s-3);
+  background: transparent;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
-  line-height: 1.5;
-  transition: border-color 0.14s var(--ease), background 0.14s var(--ease), color 0.14s var(--ease);
+  line-height: 1.6;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
 }
 .stat-card b {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .stat-card:hover {
-  border-color: #c7d2fe;
-  background: #fbfcff;
+  background: var(--primary-weak);
+  color: var(--text);
 }
 .stat-card.active {
-  border-color: var(--primary);
   background: var(--primary-weak);
-  color: var(--primary-hover);
+  border-color: var(--border);
+  color: var(--text);
   font-weight: 600;
 }
 .stat-card.active b {
-  color: var(--primary-hover);
+  color: var(--text);
 }
-/* 阶段色点：文字改成 chip 后徽章的底色没了，用一个小圆点把语义留在原地 */
+
+/* 阶段色点：文字改成 chip 后徽章底色没了，用一个小点把语义留在原地。
+   用前景色（40% 亮度）而不是浅色底 —— 6px 的点用浅色等于看不见。 */
 .dot {
   width: 6px;
   height: 6px;
   border-radius: 3px;
   flex-shrink: 0;
-  background: #cbd5e1;
+  background: var(--border-strong);
 }
-.d-submitted { background: #60a5fa; }
-.d-viewed { background: #14b8a6; }
-.d-screening { background: #f59e0b; }
-.d-written { background: #8b5cf6; }
-.d-interview { background: #6366f1; }
-.d-rejected { background: #ef4444; }
-.d-offer { background: #22c55e; }
+.d-submitted { background: var(--c-blue); }
+.d-viewed { background: var(--c-teal); }
+.d-screening { background: var(--c-amber); }
+.d-written { background: var(--c-violet); }
+.d-interview { background: var(--c-indigo); }
+.d-rejected { background: var(--c-red); }
+.d-offer { background: var(--c-green); }
 
-/* 「待我回复」是动作项不是状态项，用暖色区分，避免和 7 个阶段混在一起 */
+/* 「有来信待回」是动作项不是状态项：推到最右、用暖色文字，不跟 7 个阶段挤在一起 */
 .stat-card.action {
-  border-style: dashed;
-  border-color: #f0c48a;
+  margin-left: auto;
+}
+.stat-card.action b {
+  color: var(--c-amber);
 }
 .stat-card.action.active {
-  background: #fff7ed;
-  border-style: solid;
-  border-color: #f59e0b;
+  background: var(--c-amber-bg);
+  border-color: hsl(32 50% 88%);
 }
 .stat-card.action.active b {
-  color: #b45309;
+  color: var(--c-amber);
 }
 
 .searchbox {
-  flex: 0 1 260px;
+  flex: 0 1 240px;
   min-width: 160px;
 }
 
@@ -484,47 +495,58 @@ onMounted(load)
 }
 .status-select {
   width: auto;
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: var(--s-1) var(--s-2);
+  font-size: var(--fs-xs);
 }
 
 /* 到达轨迹：小一号、灰一档，不抢主徽章的注意力 */
 .stage-path {
-  margin-top: 3px;
-  font-size: 11px;
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
   color: var(--text-faint);
-  line-height: 1.3;
+  line-height: 1.4;
 }
 .my-mark {
-  margin-top: 3px;
-  font-size: 11px;
-  color: #b45309;
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
+  color: var(--c-amber);
 }
 
-/* 投递结果徽章（applypilot 五态） */
-.res-pending { background: #f3f4f6; color: #6b7280; }
-.res-submitted { background: #f0fdf4; color: #16a34a; }
-.res-skipped { background: #eff6ff; color: #2563eb; }
-.res-blocked { background: #fef2f2; color: #dc2626; }
-.res-needs-user { background: #fef4e6; color: #c47d10; }
+/* 投递结果徽章（applypilot 五态）—— 与全局状态色同一套 */
+.res-pending { background: var(--c-gray-bg); color: var(--c-gray); }
+.res-submitted { background: var(--c-green-bg); color: var(--c-green); }
+.res-skipped { background: var(--c-blue-bg); color: var(--c-blue); }
+.res-blocked { background: var(--c-red-bg); color: var(--c-red); }
+.res-needs-user { background: var(--c-amber-bg); color: var(--c-amber); }
 
 .match-points {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 3px;
-  padding: 8px 12px;
-  margin-top: 6px;
+  background: var(--c-green-bg);
+  border: 1px solid hsl(150 30% 88%);
+  border-radius: var(--r-control);
+  padding: var(--s-2) var(--s-3);
+  margin-top: var(--s-1);
 }
 .match-point {
-  font-size: 13px;
-  color: #15803d;
-  line-height: 1.7;
+  font-size: var(--fs-sm);
+  color: var(--c-green);
+  line-height: 1.6;
+}
+
+/* 表格里的对齐/间距一律走类，不在模板里写 inline style */
+.col-right {
+  text-align: right;
+}
+.row-actions {
+  white-space: nowrap;
+}
+.row-actions .btn + .btn {
+  margin-left: var(--s-1);
 }
 
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: rgba(17, 24, 39, 0.4);
+  background: rgba(24, 24, 27, 0.36);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -532,7 +554,8 @@ onMounted(load)
 }
 .modal {
   background: var(--panel);
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-surface);
   width: 720px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 40px);
@@ -540,19 +563,25 @@ onMounted(load)
   flex-direction: column;
   overflow: hidden;
 }
+.modal-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 650;
+}
 .modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
   border-bottom: 1px solid var(--border);
 }
 .modal-body {
-  padding: 20px;
+  padding: var(--s-4);
   overflow: auto;
 }
 .modal-foot {
-  padding: 14px 20px;
+  padding: var(--s-3) var(--s-4);
   border-top: 1px solid var(--border);
   text-align: right;
 }

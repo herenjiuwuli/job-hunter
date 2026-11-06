@@ -147,7 +147,7 @@ onMounted(async () => {
   text-align: right;
 }
 .head-score b {
-  font-size: 28px;
+  font-size: var(--fs-xl);
   margin-right: 6px;
 }
 .head-score b.high {
@@ -160,7 +160,7 @@ onMounted(async () => {
   color: var(--danger);
 }
 .head-score span {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 .chat-list {
@@ -181,7 +181,7 @@ onMounted(async () => {
   max-width: 78%;
   padding: 10px 14px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -258,7 +258,7 @@ onMounted(async () => {
   background: #f1f3f5;
   border-radius: 2px;
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .q-index {
   font-weight: 600;
@@ -269,7 +269,7 @@ onMounted(async () => {
 }
 .muted {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .cols {
   display: grid;

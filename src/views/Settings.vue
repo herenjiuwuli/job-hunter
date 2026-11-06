@@ -250,7 +250,7 @@ onMounted(() => {
         rows="6"
         placeholder="您好，我是计算机应用工程专业大四在读，看到贵司的{{岗位}}……"
       ></textarea>
-      <p class="muted" style="margin: 8px 0 0; font-size: 13px">
+      <p class="muted" style="margin: 8px 0 0; font-size: var(--fs-sm)">
         可用占位符：<code>&#123;&#123;公司&#125;&#125;</code> <code>&#123;&#123;岗位&#125;&#125;</code>，扩展执行时会替换成当前岗位的真实名字。
         <br />
         优先级：<b>单条投递生成过的话术</b>（如「AI 定制」产出的）＞ 这里的默认话术。
@@ -270,7 +270,7 @@ onMounted(() => {
     <div v-if="isOwner" class="card">
       <div class="card-title">
         邀请码
-        <span class="muted" style="font-weight: 400; font-size: 13px; margin-left: 8px">
+        <span class="muted" style="font-weight: 400; font-size: var(--fs-sm); margin-left: 8px">
           当前还有 {{ usableCount }} 个可用
         </span>
       </div>
@@ -369,20 +369,20 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 18px;
+  font-size: var(--fs-md);
 }
 .who-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 .who-role {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-top: 2px;
 }
 .who-id {
   margin-left: 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   opacity: 0.6;
 }
 
@@ -430,12 +430,12 @@ onMounted(() => {
 }
 .fresh-label {
   width: 100%;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-faint);
 }
 .fresh-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 20px;
+  font-size: var(--fs-lg);
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--primary);
@@ -445,7 +445,7 @@ onMounted(() => {
   width: 100%;
   border-collapse: collapse;
   margin-top: 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .inv-table th {
   text-align: left;
@@ -470,7 +470,7 @@ onMounted(() => {
   border: none;
   color: var(--primary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   padding: 2px 6px;
 }
 .link-btn.danger {
@@ -482,7 +482,7 @@ onMounted(() => {
 
 .msg-inline {
   margin-top: 12px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: #15803d;
 }
 .msg-inline.bad {

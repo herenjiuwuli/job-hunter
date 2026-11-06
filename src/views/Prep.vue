@@ -7,7 +7,7 @@
         <button class="btn" :disabled="loading || !resume.trim() || !job" @click="generate">
           {{ loading ? '生成中…' : '生成准备清单' }}
         </button>
-        <span v-if="!job.trim() || !resume.trim()" class="muted" style="margin-left: 10px; font-size: 12px">先在上面填好岗位和简历</span>
+        <span v-if="!job.trim() || !resume.trim()" class="muted" style="margin-left: 10px; font-size: var(--fs-xs)">先在上面填好岗位和简历</span>
       </div>
       <div v-if="error" class="error-tip">{{ error }}</div>
     </div>
@@ -146,7 +146,7 @@ async function generate() {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 14px;
 }
 .form-row {
@@ -158,14 +158,14 @@ async function generate() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .resume-label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
@@ -174,7 +174,7 @@ async function generate() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -189,7 +189,7 @@ async function generate() {
   margin-bottom: 0;
 }
 .muted-tag {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-left: 10px;
   font-weight: 400;
@@ -273,7 +273,7 @@ async function generate() {
   flex: 1;
 }
 .prep-title {
-  font-size: 14px;
+  font-size: var(--fs-md);
   margin-bottom: 6px;
 }
 .prep-meta {
@@ -281,7 +281,7 @@ async function generate() {
   gap: 8px;
 }
 .chip {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   padding: 2px 8px;
   border-radius: 4px;
 }

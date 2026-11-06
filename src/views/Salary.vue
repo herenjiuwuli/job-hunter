@@ -247,7 +247,7 @@ function backHome() {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 14px;
 }
 .form-row {
@@ -259,7 +259,7 @@ function backHome() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .form-row .grow {
@@ -271,7 +271,7 @@ function backHome() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -280,7 +280,7 @@ function backHome() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .toolbar {
@@ -296,7 +296,7 @@ function backHome() {
   margin-bottom: 0;
 }
 .muted-tag {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin-left: 10px;
   font-weight: 400;
@@ -320,7 +320,7 @@ function backHome() {
   max-width: 78%;
   padding: 10px 14px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -341,7 +341,7 @@ function backHome() {
 }
 .bubble-tag {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: #c47d10;
   margin-bottom: 2px;
 }
@@ -354,7 +354,7 @@ function backHome() {
   align-items: center;
 }
 .hint {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 .finish-area {
@@ -371,7 +371,7 @@ function backHome() {
   gap: 16px;
 }
 .big-score {
-  font-size: 40px;
+  font-size: var(--fs-2xl);
   line-height: 1;
 }
 .big-score.high {
@@ -394,7 +394,7 @@ function backHome() {
 }
 .btn-sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 @media (max-width: 640px) {
   .form-row {

@@ -200,7 +200,7 @@ const groups = computed(() => data.value?.groups || [])
   border: 1px solid var(--border);
   background: var(--card);
   border-radius: 3px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-dim);
   cursor: pointer;
 }
@@ -216,17 +216,17 @@ const groups = computed(() => data.value?.groups || [])
   margin-bottom: 10px;
 }
 .stat-num {
-  font-size: 22px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--text);
 }
 .stat-label {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
   margin-top: 2px;
 }
 .stat-hint {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   color: var(--text-faint);
   margin-top: 4px;
 }
@@ -243,7 +243,7 @@ const groups = computed(() => data.value?.groups || [])
   gap: 10px;
 }
 .funnel-label {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-dim);
   text-align: right;
 }
@@ -265,12 +265,12 @@ const groups = computed(() => data.value?.groups || [])
 .f-interview { background: #2f5b85; }
 .f-offer { background: #1f7a4d; }
 .funnel-num {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 .funnel-step {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -280,13 +280,13 @@ const groups = computed(() => data.value?.groups || [])
 .tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .tbl th {
   text-align: left;
   font-weight: 500;
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
@@ -300,7 +300,7 @@ const groups = computed(() => data.value?.groups || [])
 }
 .note {
   margin: 10px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-faint);
   line-height: 1.6;
 }

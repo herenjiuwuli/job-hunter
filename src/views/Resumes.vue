@@ -404,16 +404,16 @@ onMounted(load)
 }
 .resume-card-title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-md);
   margin-bottom: 4px;
 }
 .resume-card-target {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--primary);
   margin-bottom: 8px;
 }
 .resume-card-meta {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary, #666);
   margin-bottom: 2px;
 }
@@ -434,18 +434,18 @@ onMounted(load)
   padding: 48px 20px;
 }
 .empty-title {
-  font-size: 16px;
+  font-size: var(--fs-md);
   font-weight: 600;
   margin-bottom: 6px;
 }
 .empty-desc {
   color: var(--text-faint, #999);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 16px;
 }
 .back-btn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .block-head {
   display: flex;
@@ -484,18 +484,18 @@ onMounted(load)
   box-shadow: none;
 }
 .modal-title {
-  font-size: 16px;
+  font-size: var(--fs-md);
   font-weight: 600;
   margin-bottom: 8px;
 }
 .modal-desc {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary, #666);
   line-height: 1.6;
   margin-bottom: 14px;
 }
 .modal input[type='file'] {
   width: 100%;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 </style>

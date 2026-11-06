@@ -820,7 +820,7 @@ async function copyCurrent() {
 <style scoped>
 .tip {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 14px;
 }
 .tip b {
@@ -835,7 +835,7 @@ async function copyCurrent() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .form-grid .span2 {
@@ -846,7 +846,7 @@ async function copyCurrent() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -860,7 +860,7 @@ async function copyCurrent() {
   margin-top: 14px;
 }
 .qlabel {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .job-checks {
@@ -879,7 +879,7 @@ async function copyCurrent() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-family: inherit;
   color: var(--text);
   outline: none;
@@ -892,7 +892,7 @@ async function copyCurrent() {
   border: 1px solid var(--border);
   border-radius: 2px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .check-item input {
@@ -917,7 +917,7 @@ async function copyCurrent() {
   background: var(--bg);
   padding: 1px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-family: ui-monospace, monospace;
 }
 .meta-grid {
@@ -929,7 +929,7 @@ async function copyCurrent() {
 .meta-row {
   display: flex;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text);
 }
 .meta-row-wide {
@@ -962,7 +962,7 @@ async function copyCurrent() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 .size-control input {
@@ -970,7 +970,7 @@ async function copyCurrent() {
   padding: 5px 6px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   text-align: center;
   font-family: inherit;
   color: var(--text);
@@ -981,7 +981,7 @@ async function copyCurrent() {
 }
 .btn-sm {
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 .tabs {
   display: flex;
@@ -993,7 +993,7 @@ async function copyCurrent() {
   background: #fff;
   border-radius: 3px;
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   color: var(--text-secondary);
 }
@@ -1029,7 +1029,7 @@ async function copyCurrent() {
   background: #fff;
   border-radius: 3px;
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   color: var(--text);
 }
@@ -1121,7 +1121,7 @@ async function copyCurrent() {
   background: #fff;
   border-radius: 3px;
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   color: var(--text-secondary);
 }
@@ -1133,7 +1133,7 @@ async function copyCurrent() {
   border: 1px dashed var(--border);
   border-radius: 3px;
   padding: 10px 18px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   color: var(--text-secondary);
 }
@@ -1333,7 +1333,7 @@ async function copyCurrent() {
   margin-bottom: 14px;
 }
 .big-score {
-  font-size: 38px;
+  font-size: var(--fs-2xl);
   line-height: 1;
 }
 .big-score.high {
@@ -1346,7 +1346,7 @@ async function copyCurrent() {
   color: var(--danger);
 }
 .score-hint {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 .dim-bars {
@@ -1357,7 +1357,7 @@ async function copyCurrent() {
 .dim-item .dim-top {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   margin-bottom: 4px;
 }
 .dim-track {
@@ -1376,7 +1376,7 @@ async function copyCurrent() {
   padding-left: 20px;
   display: grid;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 
 /* ---------- 字号自选 + 板块顺序调整 ---------- */
@@ -1384,7 +1384,7 @@ async function copyCurrent() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 .resume-tools .size-control select {
@@ -1392,7 +1392,7 @@ async function copyCurrent() {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   background: #fff;
   color: var(--text);
 }
@@ -1403,7 +1403,7 @@ async function copyCurrent() {
 }
 .btn-xs {
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
 }
 .order-panel {
@@ -1439,11 +1439,11 @@ async function copyCurrent() {
   background: var(--primary);
   color: #fff;
   border-radius: 3px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 .order-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 500;
 }
 .order-btns {

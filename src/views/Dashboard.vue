@@ -212,11 +212,11 @@ onMounted(load)
           <div class="kpi-sub">进行中 {{ summary.applications.activeCount }} 个</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">待我回复</div>
+          <div class="kpi-label">有来信待回</div>
           <div class="kpi-num" :class="{ hot: summary.applications.needActionCount > 0 }">
             {{ summary.applications.needActionCount }}
           </div>
-          <div class="kpi-sub">平台已推进、我没回话</div>
+          <div class="kpi-sub">聊天框里对方发了消息</div>
         </div>
         <div class="kpi">
           <div class="kpi-label">面试均分</div>
@@ -254,7 +254,7 @@ onMounted(load)
             </p>
           </template>
 
-          <div class="card-title" style="margin-top: 22px">当前分布</div>
+          <div class="card-title sub-title">当前分布</div>
           <div v-if="!summary.counts.applications" class="empty">暂无记录</div>
           <div v-else class="dist">
             <div v-for="(v, k) in summary.applications.byStage" :key="k" v-show="v" class="dist-item">
@@ -264,7 +264,7 @@ onMounted(load)
             </div>
           </div>
 
-          <div class="card-title" style="margin-top: 22px">投递结果</div>
+          <div class="card-title sub-title">投递结果</div>
           <div class="result-row">
             <span v-for="r in RESULTS" :key="r" class="badge" :class="RESULT_CLASS[r]">
               {{ r }} {{ summary.applications.byResult[r] }}
@@ -346,119 +346,124 @@ onMounted(load)
 </template>
 
 <style scoped>
-/* ===== 下一步 ===== */
+/* ===== 下一步：整页唯一「需要你动手」的区域 =====
+ * 主导区：位置最上、内容是动词短语。其余卡都退成信息块，不与它争重量。 */
 .next {
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: none;
-  padding: 16px 18px 8px;
-  margin-bottom: 16px;
+  border-radius: var(--r-surface);
+  padding: var(--s-4);
+  margin-bottom: var(--s-4);
 }
 .next-head {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
 }
 .next-kicker {
-  font-size: 11px;
+  font-size: var(--fs-2xs);
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--primary);
-  text-transform: uppercase;
 }
 .next-hint {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--text-faint);
 }
 .next-list {
   display: grid;
-  gap: 6px;
+  gap: var(--s-1);
 }
 .next-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 4px;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-nested);
   text-decoration: none;
   color: inherit;
   background: #fafafa;
   border: 1px solid transparent;
-  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
-  margin-bottom: 6px;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
 }
 .next-item:hover {
-  background: #f4f4f5;
-  border-color: #d4d4d8;
+  background: var(--primary-weak);
+  border-color: var(--border);
 }
 .next-mark {
-  width: 4px;
+  width: 3px;
   align-self: stretch;
-  min-height: 30px;
-  border-radius: 3px;
+  min-height: 28px;
+  border-radius: var(--r-tiny);
   flex-shrink: 0;
-  background: #cbd5e1;
+  background: var(--border-strong);
 }
-.tone-warn .next-mark { background: #d97706; }
-.tone-danger .next-mark { background: #ef4444; }
-.tone-info .next-mark { background: #52525b; }
-.tone-ok .next-mark { background: #22c55e; }
+.tone-warn .next-mark { background: var(--c-amber); }
+.tone-danger .next-mark { background: var(--c-red); }
+.tone-info .next-mark { background: var(--text-faint); }
+.tone-ok .next-mark { background: var(--c-green); }
 
 .next-body {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 .next-body b {
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .next-body small {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .next-cta {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--primary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-/* ===== KPI ===== */
+/* ===== KPI：一条四段，不是四个盒子 =====
+ * 四个独立边框会跟下面的卡片抢「块」的感觉；合成一条后这一行读起来是「一串数字」，
+ * 视觉重量明显低于主导区。这也是「删掉不必要的容器」最有效的一处。 */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.kpi {
+  gap: 0;
+  margin-bottom: var(--s-4);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 15px 16px;
-  box-shadow: none;
+  border-radius: var(--r-surface);
+  overflow: hidden;
+}
+.kpi {
+  padding: var(--s-4);
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+.kpi:first-child {
+  border-left: none;
 }
 .kpi-label {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
   font-weight: 500;
 }
 .kpi-num {
-  font-size: 27px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   color: var(--text);
-  line-height: 1.25;
+  line-height: 1.2;
   letter-spacing: -0.02em;
   margin-top: 2px;
 }
 .kpi-num.hot {
-  color: #b45309;
+  color: var(--c-amber);
 }
 .kpi-sep {
   color: var(--text-faint);
@@ -466,7 +471,7 @@ onMounted(load)
   margin: 0 2px;
 }
 .kpi-sub {
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   color: var(--text-faint);
   margin-top: 2px;
 }
@@ -475,7 +480,7 @@ onMounted(load)
 .two-col {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
-  gap: 16px;
+  gap: var(--s-4);
 }
 .two-col > .card {
   margin-top: 0;
@@ -484,137 +489,116 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
 }
 .card-head .card-title {
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 .card-more {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--primary);
   text-decoration: none;
   white-space: nowrap;
-  margin-bottom: 14px;
 }
 .card-more:hover {
   text-decoration: underline;
 }
 
+/* 卡片内的第二个小节标题（原先是 inline style="margin-top: 22px"） */
+.card-title.sub-title {
+  margin-top: var(--s-5);
+}
+
 /* ===== 漏斗缩略（刻意比漏斗页轻：只画条的相对长度，不算转化率） ===== */
 .mini {
   display: grid;
-  gap: 7px;
+  gap: var(--s-2);
 }
 .mini-row {
   display: grid;
-  grid-template-columns: 48px 1fr 30px;
+  grid-template-columns: 44px 1fr 28px;
   align-items: center;
-  gap: 9px;
+  gap: var(--s-2);
 }
 .mini-label {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
   text-align: right;
 }
 .mini-track {
-  height: 9px;
+  height: 8px;
   background: #f1f1f3;
-  border-radius: 99px;
+  border-radius: var(--r-tiny);
   overflow: hidden;
 }
 .mini-track i {
   display: block;
   height: 100%;
-  border-radius: 99px;
   background: var(--primary);
   transition: width 0.35s var(--ease);
 }
 .mini-num {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   text-align: right;
 }
 
-/* ===== 当前分布 ===== */
+/* ===== 当前分布 / 投递结果 ===== */
 .dist {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* 空态：光一行小字加上被 grid 拉高的卡片，会留出半屏空白。
-   给出「这里本该有什么」+ 一个直接入口，卡片才有存在感。 */
-/* 空状态：不用虚线框。虚线在直角风格里读起来像「这里还没做好」，
-   而它其实是个正常的空状态 —— 换成浅灰底，安静一点 */
-.blank {
-  border: none;
-  border-radius: 3px;
-  padding: 30px 20px;
-  text-align: center;
-  background: #fafafa;
-}
-.blank b {
-  font-size: 13.5px;
-  color: var(--text);
-  display: block;
-  margin-bottom: 6px;
-}
-.blank p {
-  font-size: 12px;
-  color: var(--text-dim);
-  line-height: 1.65;
-  max-width: 40ch;
-  margin: 0 auto 12px;
+  gap: var(--s-2);
 }
 .dist-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s-1);
   background: #fafafa;
   border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 4px 9px 4px 4px;
-  font-size: 12px;
+  border-radius: var(--r-control);
+  padding: 2px var(--s-2) 2px 2px;
+  font-size: var(--fs-xs);
 }
 .dist-item b {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
 }
 .dist-pct {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--fs-2xs);
 }
-
 .result-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--s-2);
 }
-.res-pending { background: #f3f4f6; color: #6b7280; }
-.res-submitted { background: #f0fdf4; color: #15803d; }
-.res-skipped { background: #eff6ff; color: #1d4ed8; }
-.res-blocked { background: #fef2f2; color: #b91c1c; }
-.res-needs-user { background: #fef4e6; color: #b45309; }
+.res-pending { background: var(--c-gray-bg); color: var(--c-gray); }
+.res-submitted { background: var(--c-green-bg); color: var(--c-green); }
+.res-skipped { background: var(--c-blue-bg); color: var(--c-blue); }
+.res-blocked { background: var(--c-red-bg); color: var(--c-red); }
+.res-needs-user { background: var(--c-amber-bg); color: var(--c-amber); }
 
 /* ===== 面试 ===== */
 .score-row {
   display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
 }
 .score-box {
   flex: 1;
   text-align: center;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 12px 8px;
+  border-radius: var(--r-nested);
+  padding: var(--s-3) var(--s-2);
   background: #fafafa;
 }
 .score-num {
-  font-size: 24px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 .score-label {
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   color: var(--text-dim);
   margin-top: 2px;
 }
@@ -629,9 +613,9 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid #f1f2f6;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid #f1f1f3;
   text-decoration: none;
   color: inherit;
 }
@@ -643,28 +627,49 @@ onMounted(load)
 }
 .rec-job {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .targets {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
   border-top: 1px solid var(--border);
 }
 .targets-label {
-  font-size: 11.5px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   color: var(--text-faint);
-  margin-bottom: 7px;
+  margin-bottom: var(--s-2);
   letter-spacing: 0.04em;
 }
 .tag-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--s-2);
+}
+
+/* 空状态：浅灰底，不用虚线框（虚线在直角风格里读起来像「这里没做好」） */
+.blank {
+  border-radius: var(--r-nested);
+  padding: var(--s-5) var(--s-4);
+  text-align: center;
+  background: #fafafa;
+}
+.blank b {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  display: block;
+  margin-bottom: var(--s-1);
+}
+.blank p {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-width: 40ch;
+  margin: 0 auto var(--s-3);
 }
 
 @media (max-width: 1080px) {
@@ -676,13 +681,19 @@ onMounted(load)
   .kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .kpi:nth-child(odd) {
+    border-left: none;
+  }
+  .kpi:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
 }
 @media (max-width: 600px) {
   .next-item {
     flex-wrap: wrap;
   }
   .next-cta {
-    margin-left: 16px;
+    margin-left: var(--s-4);
   }
 }
 </style>
