@@ -537,7 +537,6 @@ async function refreshBatch() {
  */
 async function updateOneKeyLabel() {
   const el = document.getElementById('oneKeyBtn')
-  if (!el) return
   const plat = await activeLine()
   const text =
     plat.key === 'boss'
@@ -545,10 +544,28 @@ async function updateOneKeyLabel() {
       : plat.key === 'sx'
         ? '一键投递（实习僧）'
         : '一键投递（先切到平台页）'
-  if (el.textContent !== text) el.textContent = text
-  el.title = plat.key
-    ? `在眼前这个${plat.name}页面按表单条件开投；城市 / 类型等筛选以该页 URL 为准`
-    : '当前标签页不是实习僧 / BOSS，先切过去再点'
+  if (el && el.textContent !== text) el.textContent = text
+  if (el) {
+    el.title = plat.key
+      ? `在眼前这个${plat.name}页面按表单条件开投；城市 / 类型等筛选以该页 URL 为准`
+      : '当前标签页不是实习僧 / BOSS，先切过去再点'
+  }
+
+  /**
+   * 平台名必须一直看得见。
+   *
+   * v0.9.0 把「一键投递」那个按钮收进了 hidden（它和「投递范围」单选是同一件事），
+   * 而平台名原来只写在那颗按钮上 —— 收起来就等于把「这一下会投哪个平台」也一起藏了，
+   * 那正是 2026-11-06「在 BOSS 页点一键却被拽去实习僧」的同一个信息缺口。
+   * 现在钉在操作卡标题旁：判不出平台时显示警告色，用户点之前就能看见。
+   */
+  const hint = document.getElementById('pagePlat')
+  if (hint) {
+    hint.textContent = plat.key ? `当前页 · ${plat.name}` : '当前页不是招聘平台页'
+    hint.className = 'ophead-note' + (plat.key ? '' : ' bad')
+  }
+  const go = document.getElementById('goBtn')
+  if (go) go.title = plat.key ? `将在当前这个${plat.name}页面开投` : '先切到实习僧 / BOSS 的页面再点开始'
 }
 
 const isDetailUrl = (u) => /job_detail\/|shixiseng\.com\/intern\/inn_/i.test(String(u || ''))

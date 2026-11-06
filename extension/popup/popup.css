@@ -1,32 +1,88 @@
-* { box-sizing: border-box; }
+/* ============ 求职助手 弹窗样式 ============
+ *
+ * 2026-11-06 视觉重做。三条原则：
+ * 1. 一块区域一张卡 —— 没有卡片边界时，十几个 label 连成一片，看不出"这是几件事"。
+ * 2. 主操作（要投哪些 / 开始）必须在首屏，且视觉权重最高。
+ * 3. 灰色只用来承载次要信息，所有可点元素都要有边框或底色，避免"这行能不能点"要靠猜。
+ */
 
-body {
-  width: 360px;
-  margin: 0;
-  padding: 14px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 13px;
-  color: #1f2937;
-  background: #fff;
+:root {
+  --pri: #4f46e5;
+  --pri-hover: #4338ca;
+  --pri-weak: #eef2ff;
+  --pri-line: #c7d2fe;
+  --txt: #111827;
+  --txt-2: #4b5563;
+  --txt-3: #6b7280;
+  --txt-4: #9ca3af;
+  --line: #e6e8ef;
+  --bg: #f7f8fc;
+  --ok: #16a34a;
+  --warn: #b45309;
+  --bad: #dc2626;
+  --radius: 10px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 372px;
+  margin: 0;
+  padding: 12px 12px 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  color: var(--txt);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== 头部 ===== */
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.brandbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 品牌块：一个字母 + 渐变。纯文字标题在浏览器工具栏里很难被一眼认出来 */
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #4338ca);
+  box-shadow: 0 1px 4px rgba(79, 70, 229, 0.35);
 }
 
 h1 {
-  font-size: 15px;
+  font-size: 14px;
   margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 /* 版本号：排查「改了代码却没生效」全靠它 —— 页面里跑的可能是重载前的旧脚本 */
 h1 .ver {
   font-size: 10px;
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--txt-4);
   vertical-align: middle;
 }
 
@@ -34,29 +90,235 @@ h1 .ver {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  font-size: 11px;
-  line-height: 1.35;
-  color: #6b7280;
-  background: #f3f4f6;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--txt-3);
+  background: #fff;
+  border: 1px solid var(--line);
   padding: 4px 9px;
-  border-radius: 9px;
+  border-radius: 8px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .limtag {
   flex: none;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--txt-3);
   white-space: nowrap;
+}
+
+/* ===== 标签页 ===== */
+.tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 3px;
+  background: #eceef5;
+  border-radius: 10px;
+}
+
+.tab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--txt-3);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tab:hover {
+  color: var(--txt);
+}
+
+.tab.active {
+  background: #fff;
+  color: var(--pri);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1);
+}
+
+.pane {
+  display: none;
+}
+
+.pane.active {
+  display: block;
+}
+
+/* ===== 主操作卡（投递范围 + 开始） ===== */
+.opcard {
+  background: linear-gradient(180deg, #f7f8ff 0%, #fff 60%);
+  border: 1px solid var(--pri-line);
+  border-radius: 12px;
+  padding: 10px 11px 11px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.08);
+}
+
+.ophead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ophead-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #3730a3;
+}
+
+.ophead-note {
+  font-size: 10.5px;
+  color: #7c83a8;
+  white-space: nowrap;
+}
+
+/* 判不出当前页是哪个平台：这是「点下去会投错站」的前置信号，必须显眼 */
+.ophead-note.bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* 范围单选：三列卡片，各自带一行说明。
+   「一键（翻页/换词）」这种括号说明塞在标签里读起来很挤，拆成第二行才看得懂。 */
+.scopes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-bottom: 9px;
+}
+
+.scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 11.5px;
+  color: var(--txt-2);
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+  min-width: 0;
+}
+
+.scope:hover {
+  border-color: var(--pri-line);
+}
+
+.scope:has(input:checked) {
+  border-color: var(--pri);
+  background: var(--pri-weak);
+  color: #3730a3;
+  box-shadow: inset 0 0 0 1px var(--pri);
+}
+
+.scope input {
+  margin: 2px 0 0;
+  accent-color: var(--pri);
+  flex-shrink: 0;
+}
+
+.scope-txt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.scope-txt b {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scope-txt small {
+  font-size: 10px;
+  color: var(--txt-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope:has(input:checked) .scope-txt small {
+  color: #6366f1;
+}
+
+.oprow {
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+/* 数量框和按钮之间留一段空白，让「输入」和「执行」在视觉上分开 */
+.oprow .gobtn {
+  margin-left: auto;
+}
+
+/* 主按钮：占 2 份宽，带渐变和阴影，视觉上明确"这是这一屏的主操作" */
+button.gobtn {
+  flex: 2;
+  background: linear-gradient(180deg, #5b52ea, #4f46e5);
+  border-color: var(--pri);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 12px;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.32);
+}
+
+button.gobtn:hover {
+  background: linear-gradient(180deg, #4f46e5, #4338ca);
+}
+
+button.stopbtn {
+  flex: 1;
+}
+
+/* ===== 区块（每块一张卡） ===== */
+.sec {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 11px;
+  margin-bottom: 10px;
+}
+
+.sechead {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--txt-3);
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sechead::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--pri);
+  flex-shrink: 0;
 }
 
 /* ===== 额度面板（分平台） ===== */
 .qrow {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 7px 9px;
   margin-bottom: 6px;
-  background: #fff;
+  background: #fcfcfe;
 }
 
 .qtop {
@@ -64,19 +326,19 @@ h1 .ver {
   align-items: baseline;
   justify-content: space-between;
   font-size: 12px;
-  color: #111827;
+  color: var(--txt);
   margin-bottom: 4px;
 }
 
 .qtop span {
   font-size: 11px;
-  color: #4b5563;
+  color: var(--txt-2);
   font-variant-numeric: tabular-nums;
 }
 
 .qbar {
   height: 5px;
-  background: #eef2ff;
+  background: #eceefb;
   border-radius: 999px;
   overflow: hidden;
   margin-bottom: 4px;
@@ -85,7 +347,7 @@ h1 .ver {
 .qbar i {
   display: block;
   height: 100%;
-  background: #4f46e5;
+  background: var(--pri);
   border-radius: 999px;
   transition: width 0.3s;
 }
@@ -100,7 +362,7 @@ h1 .ver {
 }
 
 .qrow.full .qbar i {
-  background: #dc2626;
+  background: var(--bad);
 }
 
 .qrow.unlimited .qbar i {
@@ -110,34 +372,48 @@ h1 .ver {
 .qnote {
   font-size: 10.5px;
   line-height: 1.4;
-  color: #6b7280;
+  color: var(--txt-3);
 }
 
+/* ===== 表单 ===== */
 .lbl {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--txt-2);
   margin-bottom: 5px;
 }
 
 textarea {
   width: 100%;
-  min-height: 84px;
+  min-height: 64px;
   padding: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-family: inherit;
+  color: var(--txt);
   resize: vertical;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+textarea::placeholder {
+  color: #b6bac5;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--pri);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 /* 后端地址：单行输入，样式与 textarea 对齐 */
 input#backendUrl {
   width: 100%;
   padding: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 13px;
   font-family: inherit;
@@ -156,10 +432,21 @@ textarea#authToken {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--txt-3);
+  margin-bottom: 8px;
   cursor: pointer;
+}
+
+.check:last-child {
+  margin-bottom: 0;
+}
+
+.check input {
+  margin: 2px 0 0;
+  accent-color: var(--pri);
+  flex-shrink: 0;
 }
 
 .row {
@@ -168,54 +455,260 @@ textarea#authToken {
   margin-bottom: 8px;
 }
 
+.row:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== 按钮 ===== */
 button {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  font-size: 13px;
+  color: var(--txt-2);
+  font-size: 12.5px;
+  font-family: inherit;
   cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+button:hover {
+  border-color: #cfd4e2;
+  color: var(--txt);
 }
 
 button.primary {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: var(--pri);
+  border-color: var(--pri);
   color: #fff;
   font-weight: 600;
 }
 
+button.primary:hover {
+  background: var(--pri-hover);
+  border-color: var(--pri-hover);
+}
+
+button.ghost {
+  background: #fff;
+  color: var(--txt-2);
+}
+
+button.ghost:hover {
+  background: #f7f8fc;
+}
+
+button.danger {
+  background: #fff;
+  color: var(--bad);
+  border-color: #fecaca;
+}
+
+button.danger:hover {
+  background: #fef2f2;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 「重新取话术」这类附属于上文的动作：小、轻、不抢主按钮 */
+.mini {
+  flex: none;
+  width: auto;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: var(--txt-3);
+}
+
+button.big {
+  width: 100%;
+  flex: none;
+  padding: 11px 12px;
+  font-size: 13.5px;
+  margin-bottom: 8px;
+}
+
+/* ===== 日志 ===== */
 .log {
   white-space: pre-wrap;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f9fafb;
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid var(--line);
   margin-top: 4px;
   min-height: 20px;
+  color: var(--txt-2);
 }
 
+/* ===== 折叠区 ===== */
 details {
-  margin-top: 10px;
-  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: #fff;
 }
 
-summary {
+details > summary {
   cursor: pointer;
-  color: #6b7280;
+  font-size: 11.5px;
+  color: var(--txt-3);
+  outline: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
+/* 自绘三角：原生 marker 在各浏览器里大小和位置都不一样 */
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--txt-4);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+details[open] > summary {
+  margin-bottom: 8px;
+  color: var(--txt);
+  font-weight: 600;
+}
+
+details details {
+  border: none;
+  padding: 0;
+  margin: 6px 0;
+  background: transparent;
+}
+
+/* ===== 实时状态卡 ===== */
+.linebox {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  margin-bottom: 10px;
+  background: #fff;
+}
+
+.linebox.running {
+  border-color: var(--pri-line);
+  background: #f7f8ff;
+}
+
+.linehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--txt);
+  margin-bottom: 6px;
+}
+
+.linestate {
+  font-size: 10.5px;
+  color: var(--txt-3);
+  background: #f3f4f8;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 500;
+}
+
+.linebox.running .linestate {
+  color: #3730a3;
+  background: var(--pri-weak);
+  border-color: var(--pri-line);
+  font-weight: 600;
+}
+
+.linebox.stuck {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.linebox.stuck .linestate {
+  color: #b91c1c;
+  background: #fff;
+  border-color: #fecaca;
+  font-weight: 600;
+}
+
+.lineinfo {
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--txt-2);
+  background: #f8f9fc;
+  border-radius: 7px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.linebox details {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
+/* ===== 状态框 / 提示 ===== */
+.statusbox {
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8f9fc;
+  border: 1px solid #eef0f5;
+  color: var(--txt-2);
+  margin-bottom: 9px;
+  word-break: break-all;
+}
+
+/* 提示条：淡黄底表示"这是说明，不是错误"，红色留给真正的错误 */
+.tip {
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: #78530a;
+  background: #fffbeb;
+  border: 1px solid #fde9b0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+
+/* ===== 输出 / 探测 ===== */
 .inspect {
   max-height: 160px;
   overflow: auto;
-  background: #f3f4f6;
+  background: #f8f9fc;
+  border: 1px solid #eef0f5;
   border-radius: 8px;
   padding: 8px;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10.5px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-all;
+  color: var(--txt-2);
+  margin: 0;
 }
 
 /* 全阶段预览按「阶段分组 + tab 命中概况」输出，比普通检查框长，给更高一档 */
@@ -223,9 +716,6 @@ summary {
   max-height: 340px;
 }
 
-/* ===== 输出区一键复制 =====
-   探测 JSON 动辄几百行，让人用鼠标拖选几十次是不现实的。
-   按钮挂在 pre 上方一条，不用绝对定位盖住正文（第一行往往就是关键数据）。 */
 .outbar {
   display: flex;
   justify-content: flex-end;
@@ -233,19 +723,21 @@ summary {
 }
 
 .copybtn {
+  flex: none;
+  width: auto;
   font-size: 10px;
   line-height: 1.2;
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--line);
   background: #fff;
-  color: #6b7280;
+  color: var(--txt-3);
   cursor: pointer;
 }
 
 .copybtn:hover {
-  border-color: #9ca3af;
-  color: #374151;
+  border-color: #cfd4e2;
+  color: var(--txt);
 }
 
 .copybtn.done {
@@ -260,19 +752,21 @@ summary {
   color: #991b1b;
 }
 
-/* 「全国」待定岗位：一行一个，标题可点开看，右边「加入」才进队列 */
+/* ===== 「全国」待定岗位清单 ===== */
 .pend {
   margin-top: 6px;
 }
+
 .pendhead {
-  font-size: 11px;
+  font-size: 10.5px;
   color: #92400e;
   background: #fffbeb;
   border: 1px solid #fde68a;
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 5px 8px;
   margin-bottom: 4px;
 }
+
 .pendrow {
   display: flex;
   align-items: center;
@@ -280,6 +774,7 @@ summary {
   padding: 3px 0;
   font-size: 11px;
 }
+
 .pendrow a {
   flex: 1;
   min-width: 0;
@@ -289,13 +784,14 @@ summary {
   color: #2563eb;
   text-decoration: none;
 }
+
 .pendrow a:hover {
   text-decoration: underline;
 }
 
 /* 被筛选拦掉的岗位：只读，不给「加入」按钮 —— 拦掉是有理由的，想投得改筛选 */
 .pendrow.blocked {
-  color: #6b7280;
+  color: var(--txt-3);
   align-items: baseline;
   /* 原标题和原因挤一行：内容宽只有 332px，原因那栏 max-width 45%≈149px，
      10px 字号只放得下 14 个字 —— 「标题里没有你要的方向词」这 11 字套话一占，
@@ -304,6 +800,7 @@ summary {
   flex-wrap: wrap;
   row-gap: 1px;
 }
+
 .pendrow.blocked .bktitle {
   flex: 1 1 auto;
   min-width: 0;
@@ -312,145 +809,77 @@ summary {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .pendrow.blocked .bkwhy {
   flex: 1 0 100%;
   max-width: 100%;
-  color: #9ca3af;
+  color: var(--txt-4);
   font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* ===== 输入控件 ===== */
 .num {
-  width: 56px;
+  width: 54px;
   flex: none;
-  padding: 8px;
-  border: 1px solid #e5e7eb;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-family: inherit;
   text-align: center;
+  background: #fff;
+  color: var(--txt);
+}
+
+.num:focus,
+.sel:focus,
+.urlinput:focus {
+  outline: none;
+  border-color: var(--pri);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 /* 起始搜索页那种长地址：撑满剩余宽度，不然按钮被挤出去 */
 .urlinput {
   flex: 1;
   min-width: 0;
-  padding: 8px;
-  border: 1px solid #e5e7eb;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--txt);
 }
 
 .urlinput::placeholder {
-  color: #9ca3af;
-}
-
-.batchinfo {
-  white-space: pre-wrap;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #eef2ff;
-  color: #3730a3;
-  margin-bottom: 8px;
-}
-
-/* ===== 并行线路卡片（批量标签页） ===== */
-.linebox {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  background: #fafafa;
-}
-
-.linebox.running {
-  border-color: #c7d2fe;
-  background: #f5f7ff;
-}
-
-.linehead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #111827;
-  margin-bottom: 5px;
-}
-
-.linestate {
-  font-size: 11px;
-  color: #6b7280;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.linebox.running .linestate {
-  color: #3730a3;
-  background: #eef2ff;
-  border-color: #c7d2fe;
-}
-
-.linebox.stuck {
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.linebox.stuck .linestate {
-  color: #b91c1c;
-  background: #fff;
-  border-color: #fecaca;
-}
-
-.lineinfo {
-  white-space: pre-wrap;
-  font-size: 11px;
-  line-height: 1.45;
-  color: #4b5563;
-  background: #fff;
-  border-radius: 7px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  word-break: break-all;
-}
-
-/* ===== 投递筛选面板 ===== */
-.filterbox {
-  margin-bottom: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 8px 10px 4px;
-  background: #fafafa;
-}
-
-.filterbox > summary {
-  font-size: 12px;
-  font-weight: 600;
-  color: #374151;
-  cursor: pointer;
-  margin-bottom: 6px;
+  color: var(--txt-4);
 }
 
 .sel {
   flex: 1;
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   font-size: 12px;
+  font-family: inherit;
   background: #fff;
-  color: #1f2937;
+  color: var(--txt);
 }
 
-.mini {
-  flex: none;
-  width: auto;
-  padding: 6px 10px;
-  font-size: 12px;
+.batchinfo {
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--pri-weak);
+  color: #3730a3;
+  margin-bottom: 8px;
 }
 
 .grid2 {
@@ -460,10 +889,11 @@ summary {
   margin-bottom: 10px;
 }
 
+/* ===== 多选 chip ===== */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   margin-bottom: 8px;
 }
 
@@ -471,213 +901,97 @@ summary {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  color: #4b5563;
+  font-size: 11.5px;
+  color: var(--txt-2);
   background: #fff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 3px 9px;
   cursor: pointer;
   user-select: none;
+  transition: background 0.13s, border-color 0.13s;
+}
+
+.chip:hover {
+  border-color: var(--pri-line);
 }
 
 .chip input {
   margin: 0;
-  accent-color: #4f46e5;
+  accent-color: var(--pri);
 }
 
 .chip.on {
-  background: #eef2ff;
-  border-color: #c7d2fe;
+  background: var(--pri-weak);
+  border-color: var(--pri-line);
   color: #3730a3;
   font-weight: 600;
 }
 
 .picked {
-  font-size: 11px;
-  color: #6b7280;
+  font-size: 10.5px;
+  color: var(--txt-3);
   background: #fff;
-  border: 1px dashed #e5e7eb;
+  border: 1px dashed #d8dce8;
   border-radius: 7px;
   padding: 5px 8px;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
   word-break: break-all;
 }
 
-/* ===== 标签页 ===== */
-.tabs {
-  display: flex;
-  gap: 4px;
+/* ===== 筛选面板分组 ===== */
+.filterbox {
   margin-bottom: 10px;
-  padding: 3px;
-  background: #f3f4f6;
-  border-radius: 9px;
-}
-
-.tab {
-  flex: 1;
-  padding: 6px 0;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  font-size: 12px;
-  color: #6b7280;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.tab:hover {
-  color: #374151;
-}
-
-.tab.active {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px 4px;
   background: #fff;
-  color: #4f46e5;
+}
+
+.filterbox > summary {
+  font-size: 11.5px;
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.pane {
-  display: none;
-}
-
-.pane.active {
-  display: block;
-}
-
-/* ===== 状态框 / 提示 / 按钮变体 ===== */
-.statusbox {
-  white-space: pre-wrap;
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  color: #374151;
-  margin-bottom: 10px;
-  word-break: break-all;
-}
-
-.tip {
-  font-size: 11px;
-  line-height: 1.6;
-  color: #6b7280;
-  background: #fffbeb;
-  border-radius: 8px;
-  padding: 7px 9px;
-  margin-bottom: 10px;
-}
-
-button.ghost {
-  background: #fff;
-  color: #4b5563;
-}
-
-button.danger {
-  background: #fff;
-  color: #dc2626;
-  border-color: #fecaca;
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  color: var(--txt-2);
+  cursor: pointer;
+  margin-bottom: 6px;
 }
 
 /* ===== 投递进度同步（独立区块） ===== */
 .syncbox {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 12px;
+  padding: 11px;
   margin-bottom: 10px;
-  background: #fafafa;
+  background: #fff;
 }
 
 .synchead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 
 .synchead b {
-  font-size: 13px;
-  color: #111827;
+  font-size: 12.5px;
+  color: var(--txt);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.synchead b::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--pri);
+  flex-shrink: 0;
 }
 
 .syncnote {
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-button.big {
-  width: 100%;
-  flex: none;
-  padding: 11px 12px;
-  font-size: 14px;
-  margin-bottom: 10px;
-}
-
-/* ===== 投递范围（单选，替代原来 4 个平铺按钮） ===== */
-.scopes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.scope {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 9px;
-  font-size: 12px;
-  color: #374151;
-  cursor: pointer;
-  background: #fff;
-}
-
-.scope:has(input:checked) {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 600;
-}
-
-.scope input {
-  margin: 0;
-}
-
-/* details 折叠区：高级功能收在这里，默认收起 */
-details {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin-bottom: 10px;
-  background: #fff;
-}
-
-details > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: #4b5563;
-  outline: none;
-}
-
-details[open] > summary {
-  margin-bottom: 8px;
-  color: #111827;
-  font-weight: 600;
-}
-
-details details {
-  border: none;
-  padding: 0;
-  margin: 6px 0;
-  background: transparent;
+  font-size: 10.5px;
+  color: var(--txt-4);
 }
 
 /* 隐藏态必须真的不占位：以后若给 button 加了 display:flex/grid，hidden 会被覆盖 */

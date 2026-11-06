@@ -6,7 +6,10 @@
 </head>
 <body>
   <header>
-    <h1>求职自动化助手 <span id="extVer" class="ver"></span></h1>
+    <div class="brandbar">
+      <span class="brand-mark">J</span>
+      <h1>求职助手 <span id="extVer" class="ver"></span></h1>
+    </div>
     <div class="quota">
       <span id="quota-sx">实习僧 -/-</span>
       <span id="quota-boss">BOSS -/-</span>
@@ -21,28 +24,33 @@
 
   <!-- ===== 投递 ===== -->
   <section class="pane active" id="pane-apply">
-    <label class="lbl">当前岗位（本地账本为准）</label>
-    <div id="appliedInfo" class="statusbox">—</div>
-
-    <label class="lbl">打招呼语（BOSS 必填：BOSS 的投递＝发出这条消息）</label>
-    <textarea id="greeting" placeholder="会自动从后端带出（网页端「AI 定制」生成过的用那条，否则用设置页的默认话术）。也可以在这里改。"></textarea>
-    <div class="row">
-      <button id="fetchGreetingBtn" class="mini">重新取话术</button>
-      <span id="greetStatus" class="limtag"></span>
-    </div>
-
-    <label class="lbl">投递范围（选一个，然后点「开始」）</label>
-    <div class="scopes">
-      <label class="scope"><input type="radio" name="scope" value="single" checked /><span>当前岗位</span></label>
-      <label class="scope"><input type="radio" name="scope" value="page" /><span>当前列表页</span></label>
-      <label class="scope"><input type="radio" name="scope" value="onekey" /><span>一键（翻页/换词）</span></label>
-    </div>
-
-    <div class="row">
-      <span class="limtag">本轮每家</span>
-      <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
-      <button id="goBtn" class="primary">开始</button>
-      <button id="stopBtn" class="ghost">停止</button>
+    <!-- 主操作区放最上面：「我要开投」是打开弹窗最常见的意图。
+         以前这块埋在话术 + 额度下面，得滚一屏才看得到「开始」。 -->
+    <div class="opcard">
+      <div class="ophead">
+        <span class="ophead-title">要投哪些</span>
+        <span class="ophead-note" id="pagePlat">识别当前页…</span>
+      </div>
+      <div class="scopes">
+        <label class="scope">
+          <input type="radio" name="scope" value="single" checked />
+          <span class="scope-txt"><b>当前岗位</b><small>只投这一家</small></span>
+        </label>
+        <label class="scope">
+          <input type="radio" name="scope" value="page" />
+          <span class="scope-txt"><b>当前列表页</b><small>整页都投</small></span>
+        </label>
+        <label class="scope">
+          <input type="radio" name="scope" value="onekey" />
+          <span class="scope-txt"><b>一键</b><small>翻页 / 换词</small></span>
+        </label>
+      </div>
+      <div class="row oprow">
+        <span class="limtag">本轮每家</span>
+        <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
+        <button id="goBtn" class="primary gobtn">开始</button>
+        <button id="stopBtn" class="ghost stopbtn">停止</button>
+      </div>
     </div>
 
     <!-- 当前页投递实时状态：进度 / 成功失败 / 卡住检测 / 待定清单。
@@ -60,36 +68,52 @@
       </details>
     </div>
 
-    <label class="check">
-      <input type="checkbox" id="autoClick" />
-      <span>自动提交（勾选 = 全自动；不勾 = 半自动，只填好并高亮，你手动点确认/发送）</span>
-    </label>
-    <label class="check">
-      <input type="checkbox" id="batchForce" />
-      <span>跳过风控文本检测（确认页面上没有真验证码再勾）</span>
-    </label>
+    <!-- 当前岗位 + 话术 -->
+    <div class="sec">
+      <div class="sechead">当前岗位（以本地账本为准）</div>
+      <div id="appliedInfo" class="statusbox">—</div>
 
-    <label class="lbl">今日额度（分平台记账，到线自动停）</label>
-    <div id="quotaPanel"></div>
-    <div class="row" style="align-items: center; gap: 6px">
-      <span class="limtag">每日上限</span>
-      <span class="limtag">实习僧</span>
-      <input type="number" id="lim-sx" class="num" min="0" max="300" value="100" />
-      <span class="limtag">BOSS</span>
-      <input type="number" id="lim-boss" class="num" min="0" max="150" value="120" />
+      <label class="lbl">打招呼语（BOSS 的投递＝发出这条消息）</label>
+      <textarea id="greeting" placeholder="会自动从后端带出（网页端「AI 定制」生成过的用那条，否则用设置页的默认话术）。也可以在这里改。"></textarea>
+      <div class="row">
+        <button id="fetchGreetingBtn" class="mini">重新取话术</button>
+        <span id="greetStatus" class="limtag"></span>
+      </div>
+    </div>
+
+    <!-- 投递方式 -->
+    <div class="sec">
+      <div class="sechead">投递方式</div>
+      <label class="check">
+        <input type="checkbox" id="autoClick" />
+        <span>自动提交（勾选 = 全自动；不勾 = 半自动，只填好并高亮，你手动点确认/发送）</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="batchForce" />
+        <span>跳过风控文本检测（确认页面上没有真验证码再勾）</span>
+      </label>
+    </div>
+
+    <!-- 额度 -->
+    <div class="sec">
+      <div class="sechead">今日额度（分平台记账，到线自动停）</div>
+      <div id="quotaPanel"></div>
+      <div class="row" style="align-items: center; gap: 6px">
+        <span class="limtag">每日上限</span>
+        <span class="limtag">实习僧</span>
+        <input type="number" id="lim-sx" class="num" min="0" max="300" value="100" />
+        <span class="limtag">BOSS</span>
+        <input type="number" id="lim-boss" class="num" min="0" max="150" value="120" />
+      </div>
     </div>
 
     <details>
       <summary>高级 · 当前页操作</summary>
       <div class="row">
-        <button id="batchBtn" class="ghost">只投当前列表页</button>
         <button id="batchStopBtn" class="ghost">停当前页</button>
-      </div>
-      <div class="row">
         <button id="resumeBtn" class="ghost">继续下一家</button>
       </div>
       <div class="row">
-        <button id="applyBtn" class="primary">执行当前岗位</button>
         <button id="forceBtn" class="ghost">强制继续</button>
       </div>
       <div class="tip">「强制继续」= 跳过风控文本检测，只在确认页面上没有真验证码时用。</div>
@@ -97,7 +121,7 @@
 
     <details>
       <summary>高级 · 一键投递的前置条件（关键词 / 城市 / 类型）</summary>
-      <div class="tip">在哪个平台点，就投哪个平台（按钮上会写明）。<b>BOSS：</b>城市 / 经验 / 学历以当前页筛选为准，插件只换关键词。</div>
+      <div class="tip">选了「一键」再点上面的<b>开始</b>就按这里配置跑。在哪个平台点就投哪个平台。<b>BOSS：</b>城市 / 经验 / 学历以当前页筛选为准，插件只换关键词。</div>
       <div class="row" style="align-items: center; gap: 6px">
         <span class="limtag">关键词</span>
         <input
@@ -144,15 +168,23 @@
         <span class="limtag">页</span>
       </div>
       <div class="row">
-        <button id="oneKeyBtn" class="primary">一键投递（按当前页平台）</button>
         <button class="mini" id="pickUrlBtn">取当前页当模板</button>
       </div>
     </details>
 
     <div class="tip">
-      数字 = <b>本轮投几家</b>；额度<b>分平台各自记账</b>。上限填 <b>0 = 不限</b>。<br />
+      数字 = <b>本轮投几家</b>；额度<b>分平台各自记账</b>，上限填 <b>0 = 不限</b>。<br />
       「当前列表页」需要在当前平台开着<b>搜索结果列表页</b>；「一键」会自己翻页、投完自动换关键词。<br />
       间隔：实习僧 15~30 秒，BOSS 30~60 秒。本地账本里投过的自动排除。
+    </div>
+
+    <!-- 内部执行入口：由上面「开始」按当前选中的范围转发点击（逻辑一行没动）。
+         这三个按钮过去各摆一处，和「投递范围」单选说的是同一件事 ——
+         用户在两个地方看到同一个动作，就会以为要按两次。保留 DOM 供 popup.js 取，但不再露出。 -->
+    <div hidden>
+      <button id="applyBtn"></button>
+      <button id="batchBtn"></button>
+      <button id="oneKeyBtn"></button>
     </div>
   </section>
 

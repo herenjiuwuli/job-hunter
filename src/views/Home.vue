@@ -1,8 +1,16 @@
 <template>
   <div>
+    <!-- 这一页原来没有页面标题，打开就是一张卡片顶着 —— 侧边栏点进来会短暂怀疑是不是没跳转 -->
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">简历分析</h1>
+        <div class="page-sub">粘贴或从简历库导入，让 AI 指出弱点、预测可能被问到的问题</div>
+      </div>
+    </div>
+
     <!-- 输入区 -->
     <div class="card">
-      <div class="card-title">简历分析</div>
+      <div class="card-title">简历内容</div>
       <div class="import-bar">
         <label class="qlabel">从简历库导入</label>
         <select v-model="selectedResumeId">

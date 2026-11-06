@@ -4,6 +4,14 @@
     <div class="card">
       <div class="card-title">投递助手</div>
       <p class="tip">根据简历与岗位生成投递清单、打招呼语和求职信，复制后自行投递（不做任何自动投递操作）。</p>
+      <!-- 这一页和「投递追踪」的编辑弹窗调的是同一个 AI 定制能力，区别只在「有没有先建投递记录」。
+           不写清楚，用户会在两处各粘贴一遍简历，然后怀疑哪一份才是最新的。 -->
+      <p class="hint-line">
+        <b>和「投递追踪」的区别：</b>这里适合临时生成一段话术，不用先建记录。
+        如果这条投递已经记在账本里，去
+        <router-link to="/applications">投递追踪</router-link>
+        点<b>编辑 → AI 定制</b>更省事 —— 会自动关联简历库里选中的那份，不用再粘贴一遍。
+      </p>
       <div class="form-row">
         <label>目标岗位（任意岗位，可直接输入）
           <input v-model="job" list="apply-jobs" placeholder="输入岗位名，如：前端开发 / UI 设计师" />

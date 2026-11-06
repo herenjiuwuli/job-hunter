@@ -73,6 +73,25 @@ const filtered = computed(() => {
   })
 })
 
+/**
+ * 到达轨迹只在「真的走过不止一步」时才显示。
+ *
+ * stagePath 在只有一层时返回的就是「已投递」——和左边那颗徽章一字不差，
+ * 于是每条记录都多出一行灰字。62 条记录 = 62 行纯噪音，而它本该只用来
+ * 表达「这条已经走过了几层」（比如「已投递 → 被查看 → 不合格」）。
+ */
+function hasReachedPath(a) {
+  const h = Array.isArray(a.stageHistory) ? a.stageHistory : []
+  const seq = []
+  for (const it of h) {
+    const k = it?.stage
+    if (!k) continue
+    if (seq[seq.length - 1] === k) continue
+    seq.push(k)
+  }
+  return seq.length > 1
+}
+
 /** 人工标记只在「不是默认值」时显示，否则满屏「已投递」等于没有信息 */
 function customStatus(a) {
   const s = a.status || ''
@@ -199,44 +218,42 @@ onMounted(load)
       <button class="btn btn-primary" @click="openNew">+ 新建投递</button>
     </div>
 
-    <!-- 按平台阶段分档：这是采集器真正写进去的进度 -->
-    <div class="stats">
-      <div class="stat-card" :class="{ active: !filterStage }" @click="filterStage = ''">
-        <div class="stat-num">{{ apps.length }}</div>
-        <div class="stat-label">全部</div>
+    <!-- 按平台阶段分档：这是采集器真正写进去的进度。
+         做成一行 chip 而不是 9 张卡片 —— 它本质是「筛选器」，不是「仪表盘」：
+         9 个 90px 高的卡片占掉半屏首屏空间，只为了显示 9 个数字和一个点击区域。 -->
+    <div class="filterbar">
+      <div class="stats">
+        <button type="button" class="stat-card" :class="{ active: !filterStage }" @click="filterStage = ''">
+          <b>{{ apps.length }}</b><span>全部</span>
+        </button>
+        <button
+          v-for="s in STAGES"
+          :key="s.key"
+          type="button"
+          class="stat-card"
+          :class="{ active: filterStage === s.key }"
+          @click="filterStage = s.key"
+        >
+          <i class="dot" :class="`d-${s.key}`"></i>
+          <b>{{ stageCounts[s.key] }}</b><span>{{ s.label }}</span>
+        </button>
+        <button
+          v-if="actionCount"
+          type="button"
+          class="stat-card action"
+          :class="{ active: filterStage === '__action' }"
+          @click="filterStage = '__action'"
+        >
+          <b>{{ actionCount }}</b><span>待我回复</span>
+        </button>
       </div>
-      <div
-        v-for="s in STAGES"
-        :key="s.key"
-        class="stat-card"
-        :class="{ active: filterStage === s.key }"
-        @click="filterStage = s.key"
-      >
-        <div class="stat-num">{{ stageCounts[s.key] }}</div>
-        <div class="stat-label">
-          <span class="badge" :class="`stage-${s.key}`">{{ s.label }}</span>
-        </div>
-      </div>
-      <div
-        v-if="actionCount"
-        class="stat-card action"
-        :class="{ active: filterStage === '__action' }"
-        @click="filterStage = '__action'"
-      >
-        <div class="stat-num">{{ actionCount }}</div>
-        <div class="stat-label">待我回复</div>
-      </div>
+      <input v-model="keyword" class="input searchbox" placeholder="搜索公司 / 岗位…" />
     </div>
 
     <p class="hint-line">
-      进度来自平台（实习僧七档 / BOSS 已读），只由扩展采集写入，网页上改不了。
-      右侧「新建 / 编辑」里的「状态」是<b>你自己的标记</b>，和上面的平台进度是两回事。
+      进度来自平台（实习僧七档 / BOSS 已读），只由扩展采集写入，网页上改不了；
+      「新建 / 编辑」里的「状态」是<b>你自己的标记</b>，和平台进度是两回事。
     </p>
-
-    <!-- 搜索 -->
-    <div style="margin: 16px 0;">
-      <input v-model="keyword" class="input" style="max-width: 320px;" placeholder="搜索公司 / 岗位…" />
-    </div>
 
     <!-- 列表 -->
     <div class="card">
@@ -261,8 +278,9 @@ onMounted(load)
               <!-- 我主动放弃 ≠ 被拒：HR 没拒我，是我不去了。单开一个标记，
                    不塞进 stage（塞进去「不合格」那层会凭空多一批，被拒率算高）。 -->
               <span v-if="a.withdrawnAt" class="badge badge-withdrawn" title="我在聊天里主动说不合适">我放弃</span>
-              <!-- 到达轨迹：判了不合格的记录也曾经到过面试，只看当前态会把这段抹掉 -->
-              <div v-if="a.stage" class="stage-path">{{ stagePath(a) }}</div>
+              <!-- 到达轨迹：判了不合格的记录也曾经到过面试，只看当前态会把这段抹掉。
+                   但只有一步时它就是上面徽章的重影，不必显示。 -->
+              <div v-if="hasReachedPath(a)" class="stage-path">{{ stagePath(a) }}</div>
               <div v-if="customStatus(a)" class="my-mark">我的标记：{{ customStatus(a) }}</div>
               <div v-if="a.result && a.result !== '待处理'" class="my-mark">
                 投递结果：{{ a.result }}
@@ -274,8 +292,8 @@ onMounted(load)
             <td>{{ fmtDate(a.appliedAt) }}</td>
             <td class="muted">{{ resumeTitle(a.resumeId) }}</td>
             <td style="text-align: right; white-space: nowrap;">
-              <button class="btn" @click="openEdit(a)">编辑</button>
-              <button class="btn btn-danger" style="margin-left: 6px;" @click="remove(a)">删除</button>
+              <button class="btn btn-outline btn-sm" @click="openEdit(a)">编辑</button>
+              <button class="btn btn-danger btn-sm" style="margin-left: 6px;" @click="remove(a)">删除</button>
             </td>
           </tr>
         </tbody>
@@ -376,26 +394,69 @@ onMounted(load)
 </template>
 
 <style scoped>
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
 }
 .stat-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  text-align: center;
+  border-radius: 999px;
+  padding: 5px 12px;
   cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  transition: border-color 0.14s var(--ease), background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.stat-card b {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 .stat-card:hover {
-  border-color: var(--primary);
+  border-color: #c7d2fe;
+  background: #fbfcff;
 }
 .stat-card.active {
   border-color: var(--primary);
-  background: #eef2ff;
+  background: var(--primary-weak);
+  color: var(--primary-hover);
+  font-weight: 600;
 }
+.stat-card.active b {
+  color: var(--primary-hover);
+}
+/* 阶段色点：文字改成 chip 后徽章的底色没了，用一个小圆点把语义留在原地 */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #cbd5e1;
+}
+.d-submitted { background: #60a5fa; }
+.d-viewed { background: #14b8a6; }
+.d-screening { background: #f59e0b; }
+.d-written { background: #8b5cf6; }
+.d-interview { background: #6366f1; }
+.d-rejected { background: #ef4444; }
+.d-offer { background: #22c55e; }
+
 /* 「待我回复」是动作项不是状态项，用暖色区分，避免和 7 个阶段混在一起 */
 .stat-card.action {
   border-style: dashed;
@@ -404,35 +465,19 @@ onMounted(load)
 .stat-card.action.active {
   background: #fff7ed;
   border-style: solid;
+  border-color: #f59e0b;
 }
-.stat-num {
-  font-size: 22px;
-  font-weight: 700;
-}
-.stat-label {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 2px;
+.stat-card.action.active b {
+  color: #b45309;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
+.searchbox {
+  flex: 0 1 260px;
+  min-width: 160px;
 }
-.table th,
-.table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.table th {
-  color: var(--text-dim);
-  font-weight: 600;
-}
-.table tr:last-child td {
-  border-bottom: none;
-}
+
+/* 表格视觉统一走 src/style.css 的全局 .table（表头底色 / 行悬停 / 单元格留白），
+   这里不再覆盖 —— 之前每个页面各写一套 padding，同一张表在不同页高度都不一样。 */
 .strong {
   font-weight: 600;
 }
