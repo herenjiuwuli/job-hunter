@@ -245,39 +245,50 @@ eq(
   const u = (p) =>
     `https://www.shixiseng.com/interns?keyword=${encodeURIComponent(p.keyword)}&city=${encodeURIComponent(
       p.city
-    )}&type=school`
+    )}&type=${encodeURIComponent(p.type || 'intern')}`
 
   eq(
     F.taskNameOf('https://www.shixiseng.com/interns?keyword=%E8%BD%AF%E4%BB%B6%E6%B5%8B%E8%AF%95&city=%E6%B7%B1%E5%9C%B3&type=school'),
-    '深圳·软件测试',
-    '任务名 = 城市·关键词'
+    '深圳·校招·软件测试',
+    '任务名 = 城市·类型·关键词'
   )
   eq(
     F.taskNameOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B%E8%AF%95&type=school'),
-    '测试',
-    '没有 city 时任务名只是关键词（老的单城市地址）'
+    '校招·测试',
+    '没有 city 时任务名是「类型·关键词」'
   )
   eq(
     F.taskNameOf('https://www.shixiseng.com/interns?city=%E6%B7%B1%E5%9C%B3&type=school'),
-    '深圳',
-    '没有 keyword 时任务名是城市（关键词不限）'
+    '深圳·校招',
+    '没有 keyword 时任务名是「城市·类型」（关键词不限）'
   )
   eq(F.taskNameOf('not a url'), '', '地址不合法时返回空串，不抛错')
 
-  const t1 = F.expandSearchTasks(['软件测试', 'SDET'], ['深圳', '广州'], u)
-  eq(t1.length, 4, '2 城 × 2 词 = 4 个搜索任务')
+  const t1 = F.expandSearchTasks(['软件测试', 'SDET'], ['深圳', '广州'], ['intern', 'school'], u)
+  eq(t1.length, 8, '2 城 × 2 类型 × 2 词 = 8 个搜索任务')
   eq(
-    t1.map((x) => `${x.city}/${x.keyword}`),
-    ['深圳/软件测试', '深圳/SDET', '广州/软件测试', '广州/SDET'],
-    '城市在外层：先把深圳的词跑完，再跑广州'
+    t1.map((x) => `${x.city}/${x.type}/${x.keyword}`),
+    [
+      '深圳/intern/软件测试',
+      '深圳/intern/SDET',
+      '深圳/school/软件测试',
+      '深圳/school/SDET',
+      '广州/intern/软件测试',
+      '广州/intern/SDET',
+      '广州/school/软件测试',
+      '广州/school/SDET',
+    ],
+    '城市在外层、类型在次外层、关键词在内层：先把深圳·实习跑完，再深圳·校招，最后广州'
   )
   eq(t1[0].url.includes(encodeURIComponent('深圳')), true, '每条任务的地址带自己的城市')
 
-  eq(F.expandSearchTasks(['测试'], [], u).length, 1, '不选城市 = 只跑 1 轮（不限城市）')
-  eq(F.expandSearchTasks(['测试'], [], u)[0].city, '', '不选城市时 city 为空（地址里不带 city）')
-  eq(F.expandSearchTasks([], ['深圳', '广州'], u).length, 2, '关键词不限时按城市各跑一轮')
-  eq(F.expandSearchTasks([], ['深圳'], u)[0].keyword, '', '关键词不限时 keyword 为空')
-  eq(F.expandSearchTasks(['测试'], ['深圳'], null), [], '没给拼接函数时返回空数组，不抛错')
+  eq(F.expandSearchTasks(['测试'], [], ['intern'], u).length, 1, '不选城市、单类型 = 只跑 1 轮（不限城市）')
+  eq(F.expandSearchTasks(['测试'], [], ['intern'], u)[0].city, '', '不选城市时 city 为空（地址里不带 city）')
+  eq(F.expandSearchTasks([], ['深圳', '广州'], ['intern'], u).length, 2, '关键词不限时按城市各跑一轮')
+  eq(F.expandSearchTasks([], ['深圳'], ['intern'], u)[0].keyword, '', '关键词不限时 keyword 为空')
+  eq(F.expandSearchTasks(['测试'], ['深圳'], [], u).length, 1, '类型为空 = 类型维度退化为 1（不筛选类型）')
+  eq(F.expandSearchTasks(['测试'], ['深圳'], ['intern', 'school'], u).length, 2, '单城单词双类型 = 2 轮')
+  eq(F.expandSearchTasks(['测试'], ['深圳'], ['intern'], null), [], '没给拼接函数时返回空数组，不抛错')
 }
 
 // ——————————————————————————————————————————————

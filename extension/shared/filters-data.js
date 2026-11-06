@@ -346,35 +346,43 @@
       const u = new URL(String(url || ''))
       const k = u.searchParams.get('keyword') || ''
       const c = u.searchParams.get('city') || ''
-      if (k && c) return `${c}·${k}`
-      return k || c || ''
+      const t = u.searchParams.get('type') || ''
+      const typeShort = { intern: '实习', school: '校招', company: '企业' }[t] || ''
+      const parts = [c, typeShort, k].filter(Boolean)
+      return parts.join('·') || k || c || ''
     } catch (_) {
       return ''
     }
   }
 
   /**
-   * 把「城市 × 关键词」展开成一串搜索任务。
+   * 把「城市 × 类型 × 关键词」展开成一串搜索任务。
    *
-   * 为什么必须展开：实习僧的 `city` 是**单值** query 参数，一个地址只能搜一个城市。
-   * 界面上勾了 2 个城市，不是「一次搜两个城市」，而是「跑两轮」。
+   * 为什么必须展开：实习僧的 `city` 和 `type` 都是**单值** query 参数，一个地址只能搜一个城市、一种类型。
+   * 界面上勾了 2 个城市、2 种类型，不是「一次全搜到」，而是「跑 2×2 轮」。
    * 展开后交给现有的关键词轮换机制（batch.kwUrls / kwIndex）串行跑完，
-   * 不需要另写一套城市轮换 —— 城市在外层、关键词在内层：先把深圳的 4 个词跑完，再跑广州。
+   * 不需要另写一套城市/类型轮换 —— 城市在外层、类型在次外层、关键词在内层：
+   * 先把「深圳·实习」的几个词跑完，再跑「深圳·校招」，最后才轮到「广州·实习」。
    *
    * @param {string[]} kws 关键词列表（空 = 不带 keyword，即该城市全部岗位）
    * @param {string[]} cities 城市列表（空 = 不限城市）
-   * @param {(p:{city:string,keyword:string})=>string} urlOf 拼地址的回调（模板逻辑在 popup 里）
-   * @returns {{city:string,keyword:string,url:string}[]}
+   * @param {string[]} types 类型列表（空 = 不限类型；元素如 intern/school/company）
+   * @param {(p:{city:string,type:string,keyword:string})=>string} urlOf 拼地址的回调（模板逻辑在 popup 里）
+   * @returns {{city:string,type:string,keyword:string,url:string}[]}
    */
-  function expandSearchTasks(kws, cities, urlOf) {
+  function expandSearchTasks(kws, cities, types, urlOf) {
     if (typeof urlOf !== 'function') return []
     const K = (Array.isArray(kws) ? kws : []).filter(Boolean)
     const C = (Array.isArray(cities) ? cities : []).filter(Boolean)
+    const T = (Array.isArray(types) ? types : []).filter(Boolean)
     const ks = K.length ? K : ['']
     const cs = C.length ? C : ['']
+    const ts = T.length ? T : ['']
     const out = []
     for (const c of cs) {
-      for (const k of ks) out.push({ city: c, keyword: k, url: urlOf({ city: c, keyword: k }) })
+      for (const t of ts) {
+        for (const k of ks) out.push({ city: c, type: t, keyword: k, url: urlOf({ city: c, type: t, keyword: k }) })
+      }
     }
     return out
   }

@@ -115,13 +115,18 @@
       <div class="row" style="align-items: center; gap: 6px">
         <span class="limtag">城市</span>
         <select id="okProvSel" class="sel" style="flex: 1; min-width: 0"></select>
-        <select
-          id="typeSelect"
-          style="flex: none; padding: 7px 6px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12px; background: #fff"
-        >
-          <option value="intern">实习</option>
-          <option value="school">校招</option>
-        </select>
+      </div>
+      <div class="row" style="align-items: center; gap: 10px; margin-top: 2px">
+        <span class="limtag">类型</span>
+        <label class="check" style="margin: 0">
+          <input type="checkbox" id="typeIntern" />
+          <span>实习</span>
+        </label>
+        <label class="check" style="margin: 0">
+          <input type="checkbox" id="typeSchool" />
+          <span>校招</span>
+        </label>
+        <span id="typePicked" class="picked" style="flex: 1; margin: 0">已选：—</span>
       </div>
       <div id="okCityList" class="chips"></div>
       <div class="row" style="align-items: center; gap: 6px; margin-top: 2px">

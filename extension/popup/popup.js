@@ -843,7 +843,8 @@ const LEGACY_START_URL_KEY = 'startUrl:sx' // 老版本只存整条 URL，读的
 
 // cities 是数组：实习僧的 city 参数只能是一个城市，勾多个 = 跑多轮（见 expandSearchTasks）。
 // 老版本存的是字符串 `city`，读的时候迁移过来，不然用户升级后配置会凭空消失。
-const ONEKEY_DEFAULT = { keyword: '', cities: [], type: 'intern', templateUrl: '' }
+// type 同理：老版本是单值字符串（intern/school），新版本是数组（勾「实习 + 校招」= 跑两轮）。
+const ONEKEY_DEFAULT = { keyword: '', cities: [], types: ['intern', 'school'], templateUrl: '' }
 
 async function readOneKey() {
   const r = await chrome.storage.local.get([ONEKEY_KEY, LEGACY_START_URL_KEY])
@@ -854,6 +855,11 @@ async function readOneKey() {
     saved.cities = [saved.city.trim()]
   }
   delete saved.city
+  // 迁移：老版本存的是 `type`（单值字符串），新版本是 `types`（数组）
+  if (!Array.isArray(saved.types) || !saved.types.length) {
+    saved.types = typeof saved.type === 'string' && saved.type ? [saved.type] : ['intern', 'school']
+  }
+  delete saved.type
   return saved
 }
 
@@ -969,16 +975,42 @@ function renderOkPicked() {
 }
 
 // 表单 ↔ 存储：改一项存一项，重开 popup 还在（不用每次重填城市）
+// 「类型」是两个 checkbox（实习 / 校招），勾多个 = 跑多轮（和城市多选同构）
 function bindOneKeyForm() {
   const kw = document.getElementById('kwInput')
   const prov = document.getElementById('okProvSel')
-  const type = document.getElementById('typeSelect')
-  if (!kw || !prov || !type) return
+  const typeIntern = document.getElementById('typeIntern')
+  const typeSchool = document.getElementById('typeSchool')
+  if (!kw || !prov || !typeIntern || !typeSchool) return
 
   const F = window.JH_FILTERS || {}
   prov.innerHTML = (F.PROVINCES || []).map((p) => `<option value="${p.name}">${p.name}</option>`).join('')
   prov.value = F.PROVINCES && F.PROVINCES[0] ? F.PROVINCES[0].name : ''
   prov.addEventListener('change', renderOkCities)
+
+  // 当前勾选的类型（存数组，持久化到 types）
+  let okTypes = []
+
+  const typeNames = { intern: '实习', school: '校招' }
+  const renderOkTypes = () => {
+    typeIntern.checked = okTypes.includes('intern')
+    typeSchool.checked = okTypes.includes('school')
+    const el = document.getElementById('typePicked')
+    if (el) {
+      el.textContent = okTypes.length
+        ? `已选：${okTypes.map((t) => typeNames[t] || t).join('、')}`
+        : '已选：—（类型为空会拦下）'
+    }
+  }
+  const persistTypes = () => {
+    okTypes = []
+    if (typeIntern.checked) okTypes.push('intern')
+    if (typeSchool.checked) okTypes.push('school')
+    renderOkTypes()
+    saveOneKey({ types: okTypes })
+  }
+  typeIntern.addEventListener('change', persistTypes)
+  typeSchool.addEventListener('change', persistTypes)
 
   ;(async () => {
     const saved = await readOneKey()
@@ -996,7 +1028,8 @@ function bindOneKeyForm() {
       if (!okCities.length) okCities = OK_CITY_FALLBACK.slice()
     }
     kw.value = saved.keyword || ''
-    type.value = saved.type || 'intern'
+    okTypes = saved.types.slice()
+    renderOkTypes()
     // 已选的城市可能在别的省：切到第一个选中城市所在的省，否则 chips 里一个勾都看不到
     const home = (F.PROVINCES || []).find((p) => p.cities.includes(okCities[0]))
     if (home) prov.value = home.name
@@ -1004,9 +1037,8 @@ function bindOneKeyForm() {
     renderOkPicked()
   })()
 
-  const persist = () => saveOneKey({ keyword: kw.value.trim(), type: type.value })
+  const persist = () => saveOneKey({ keyword: kw.value.trim() })
   kw.addEventListener('change', persist)
-  type.addEventListener('change', persist)
 
   const clear = document.getElementById('okCityClear')
   if (clear) {
@@ -1080,7 +1112,6 @@ document.getElementById('pickUrlBtn').addEventListener('click', async () => {
     const city = x.searchParams.get('city') || ''
     const type = x.searchParams.get('type') || ''
     const kwEl = document.getElementById('kwInput')
-    const typeEl = document.getElementById('typeSelect')
     if (kwEl && kw && !kwEl.value) kwEl.value = kw
     // 城市是多选：模板里只有一个城市，只在「一个都没选」时补进去，别覆盖用户已经勾的多个
     if (city && !okCities.length) {
@@ -1092,11 +1123,24 @@ document.getElementById('pickUrlBtn').addEventListener('click', async () => {
       renderOkCities()
       renderOkPicked()
     }
-    if (typeEl && ['intern', 'school', 'company'].includes(type)) typeEl.value = type
+    // 类型：模板里的 type 只在「当前一个都没勾」时补进去，别覆盖用户已经勾的实习+校招
+    if (type && ['intern', 'school', 'company'].includes(type)) {
+      const cur = await readOneKey()
+      if (!cur.types || !cur.types.length) {
+        await saveOneKey({ types: [type === 'company' ? 'intern' : type] })
+        // 同步界面 checkbox
+        const internEl = document.getElementById('typeIntern')
+        const schoolEl = document.getElementById('typeSchool')
+        if (internEl && schoolEl) {
+          internEl.checked = type === 'intern'
+          schoolEl.checked = type === 'school'
+          internEl.dispatchEvent(new Event('change'))
+        }
+      }
+    }
     await saveOneKey({
       keyword: (kwEl && kwEl.value.trim()) || '',
       cities: okCities.slice(),
-      type: (typeEl && typeEl.value) || 'intern',
     })
   } catch {
     /* 解析失败不影响「模板已存下」这件事 */
@@ -1111,11 +1155,16 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     // 以表单当前值为准（用户可能填完立刻点，change 事件还没触发）
     const cfg = await readOneKey()
     const kwEl = document.getElementById('kwInput')
-    const typeEl = document.getElementById('typeSelect')
+    // 类型：读两个 checkbox 的实时勾选，落到数组（实习 / 校招）
+    const typeInternEl = document.getElementById('typeIntern')
+    const typeSchoolEl = document.getElementById('typeSchool')
+    const types = []
+    if (typeInternEl && typeInternEl.checked) types.push('intern')
+    if (typeSchoolEl && typeSchoolEl.checked) types.push('school')
     const final = {
       keyword: ((kwEl && kwEl.value) || cfg.keyword || '').trim(),
       cities: okCities.slice(),
-      type: (typeEl && typeEl.value) || cfg.type || 'intern',
+      types: types.length ? types : cfg.types || ['intern', 'school'],
       templateUrl: cfg.templateUrl || '',
     }
     const kwAnyEl = document.getElementById('kwAny')
@@ -1146,13 +1195,16 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
         : final.keyword
           ? [final.keyword]
           : []
-    // 城市 × 关键词展开成任务列表。实习僧的 city 是单值参数，勾了两个城市 = 跑两轮，
-    // 顺序是「先把深圳的几个词跑完，再跑广州」—— 复用现成的关键词轮换机制，不另写一套。
+    // 城市 × 类型 × 关键词 展开成任务列表。实习僧的 city / type 都是单值参数，
+    // 勾多个 = 跑多轮，顺序是「先把深圳·实习的几个词跑完，再跑深圳·校招，最后才轮到广州」。
+    // type 放城市内层（换 type 和换词一样只改 query 不换入口），复用现成轮换机制。
     const tasks =
       window.JH_FILTERS && typeof window.JH_FILTERS.expandSearchTasks === 'function'
-        ? window.JH_FILTERS.expandSearchTasks(kws, final.cities, (p) => buildSearchUrl({ ...final, ...p }))
+        ? window.JH_FILTERS.expandSearchTasks(kws, final.cities, final.types, (p) =>
+            buildSearchUrl({ ...final, ...p, type: p.type })
+          )
         : (kws.length ? kws : ['']).map((k) => ({
-            url: buildSearchUrl({ ...final, keyword: k, city: final.cities[0] || '' }),
+            url: buildSearchUrl({ ...final, keyword: k, city: final.cities[0] || '', type: final.types[0] || 'intern' }),
           }))
     const urls = tasks.map((t) => t.url)
     const startUrl = urls[0]
@@ -1160,7 +1212,12 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     // 开投前把「这次到底投什么范围」明文写出来：配错了不报错，只能靠显示出来发现。
     // ⚠️ 这段必须拼进**最后那条**日志里 —— log() 是覆盖写，中途 log 一次会被后面的
     //    「正在跳到起点…」盖掉，用户就永远看不到范围（2026-11-05 就是这么漏掉的）
-    const typeName = { intern: '实习', school: '校招', company: '企业' }[final.type] || final.type
+    const typeName = { intern: '实习', school: '校招', company: '企业' }
+    const typeText = final.types.length
+      ? final.types.length > 1
+        ? `${final.types.map((t) => typeName[t] || t).join(' / ')}（共 ${final.types.length} 类，一类投完自动换下一类）`
+        : typeName[final.types[0]] || final.types[0]
+      : '⚠️ 未选'
     const scopeText = [
       '本次范围：',
       `  关键词：${
@@ -1175,7 +1232,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
             : final.cities[0]
           : '⚠️ 不限（全国）'
       }`,
-      `  类型：${typeName}`,
+      `  类型：${typeText}`,
     ].join('\n')
     const noTplTip = final.templateUrl
       ? ''
