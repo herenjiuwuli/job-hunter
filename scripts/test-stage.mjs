@@ -100,18 +100,27 @@ for (const [key, s] of Object.entries(STAGES)) {
 ok(STAGES.offer.weight > STAGES.rejected.weight, 'offer 优先级高于 rejected（否则录用会被不合格盖掉）')
 ok(STAGES.rejected.weight > STAGES.interview.weight, 'rejected 优先级高于 interview（面试后不合格要能写进去）')
 
-console.log('— 我放弃（withdrawnAt）不进待办 —')
+console.log('— 待回复判据（只看来信，不看阶段推进） —')
 // 真机样本（2026-10-30 惊叹科技）：我在聊天里说「不太适合我，祝您早日找到」——
-// 这条不是被拒。如果只按 stage 判，它会永远挂在「待我回复」里，每条都要人工看一眼才删得掉。
+// 这条不是被拒。如果只按 stage 判，它会永远挂在「待回复」里，每条都要人工看一眼才删得掉。
 {
-  const givenUp = { stage: 'viewed', repliedAt: '', withdrawnAt: '2026-10-30T19:59:00.000Z' }
-  eq(needsMyAction(givenUp), false, '我放弃的不算「待我回复」')
+  // ⭐ 2026-11-06 主人纠正：「被查看 / 进初筛」不是待办。
+  //    简历被点开、状态推进都不产生聊天消息，没有任何东西等我回。
+  //    BOSS 上尤其明显：状态写着「初筛」，聊天框里一条消息都没有。
+  eq(needsMyAction({ stage: 'viewed', awaitingReply: false }), false, '被查看 ≠ 要回复')
+  eq(needsMyAction({ stage: 'screening', awaitingReply: false }), false, '进初筛 ≠ 要回复')
+  eq(needsMyAction({ stage: 'viewed' }), false, '老数据没有来信字段 → 不提示（宁可漏报不虚报）')
+
+  // 真正的判据：聊天框里对方是最后说话的一方
+  eq(needsMyAction({ stage: 'viewed', awaitingReply: true }), true, '对方发了消息且我没回 → 提示')
+  eq(needsMyAction({ stage: 'interview', awaitingReply: true }), true, '面试阶段来信一样提示')
+  eq(needsMyAction({ stage: 'viewed', awaitingReply: false }), false, '我回完了就消（允许回落）')
+
+  const givenUp = { stage: 'viewed', awaitingReply: true, withdrawnAt: '2026-10-30T19:59:00.000Z' }
+  eq(needsMyAction(givenUp), false, '我放弃的不算「待回复」')
   eq(isActive(givenUp), false, '我放弃的不算「进行中」')
-  const asked = { stage: 'viewed', repliedAt: '', withdrawnAt: '' }
-  eq(needsMyAction(asked), true, '被查看了还没回 → 仍要提醒（别把规则改宽了）')
-  eq(isActive(asked), true, '被查看仍是进行中')
-  const rejected = { stage: 'rejected', withdrawnAt: '' }
-  eq(needsMyAction(rejected), false, '不合格不用回')
+  eq(needsMyAction({ stage: 'rejected', awaitingReply: true, withdrawnAt: '' }), false, '不合格不用回')
+  eq(isActive({ stage: 'viewed' }), true, '被查看仍是进行中')
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

@@ -2532,6 +2532,10 @@ async function uploadProgress(opts = {}) {
         items: collectPreview.map((it) => ({
           ...it,
           direction: it.direction || directionOfTitle(it.jobTitle),
+          // 「待我回复」只认聊天框事实：对方是最后发言的一方。列表页采集没有聊天框
+          // （没有 lastFrom），这时不传这个字段 —— 后端会当成「不知道」，
+          // 不会拿一次列表页同步把已有的待回复状态冲掉。
+          ...(it.lastFrom ? { awaitingReply: it.lastFrom === 'other' } : {}),
         })),
         // 只有用户点了「补录」才建：默认不建是刻意的（账本里没有的不随便入库），
         // 但页面上明明有这条投递却永远进不来，投递量就永远对不上平台。

@@ -53,7 +53,8 @@ const stageCounts = computed(() => {
   return map
 })
 
-// 平台已经看过/推进，但我还没回话 —— 这类最容易被漏掉，单独给一个筛选入口
+// 有来信 = 聊天框里对方最后发言、我还没回。
+// 注意：**不是**「被查看 / 进初筛」—— 那些只是平台状态，没有消息等我回（2026-11-06 纠正）
 const actionCount = computed(() => apps.value.filter((a) => needsMyAction(a)).length)
 
 const filtered = computed(() => {
@@ -244,7 +245,7 @@ onMounted(load)
           :class="{ active: filterStage === '__action' }"
           @click="filterStage = '__action'"
         >
-          <b>{{ actionCount }}</b><span>待我回复</span>
+          <b>{{ actionCount }}</b><span>有来信待回</span>
         </button>
       </div>
       <input v-model="keyword" class="input searchbox" placeholder="搜索公司 / 岗位…" />

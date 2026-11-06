@@ -47,6 +47,12 @@ function sanitize(input = {}, prev = {}) {
     stageUpdatedAt: input.stageUpdatedAt || prev.stageUpdatedAt || '',
     readAt: input.readAt || prev.readAt || '',
     repliedAt: input.repliedAt || prev.repliedAt || '',
+    // ⭐ 待我回复 = 聊天框里**对方最后一条发言**（采集端 lastFrom==='other'）。
+    // 与 stage 无关：简历被查看 / 进初筛都不产生消息，不该提示我回复（2026-11-06 纠正）。
+    // 它是**即时状态**，允许 true→false（我回完就消）；这是全库唯一允许回落的布尔状态位。
+    awaitingReply: typeof input.awaitingReply === 'boolean' ? input.awaitingReply : prev.awaitingReply === true,
+    // 最近一次「对方发言且我没回」的时刻。回落时保留不动，用来算「这条压了多久」。
+    awaitingReplyAt: input.awaitingReplyAt || prev.awaitingReplyAt || '',
     // ⭐ 我主动放弃 ≠ 被拒。塞进 stage=rejected 会把「被拒率」算高：
     //   HR 没拒我，是我不去了。所以单开一个字段，且**永不参与 stage 权重**。
     withdrawnAt: input.withdrawnAt || prev.withdrawnAt || '',
@@ -284,6 +290,23 @@ router.post('/api/applications/collect', async (req, res) => {
         // （行内没有阶段词），而 stage 是有效的 key。?? 只挡 null/undefined，
         // 空串会原样传下去 → parseStage('') → null → 这一档永远推不上去。
         const stage = parseStage(raw.stageRaw || raw.stage)
+
+        /**
+         * 「待我回复」信号：三态。
+         *   true  = 聊天框里对方是最后说话的一方（球在我这边）
+         *   false = 我最后说话 / 对方没开口
+         *   null  = **不知道** —— 列表页采集根本没有聊天框，不能拿它去冲掉已有的 true。
+         *
+         * 优先用扩展显式报的 `awaitingReply`；老版本扩展没有这个字段时从 `lastFrom` 推，
+         * 再退一步用 `replied`（它与 lastFrom==='other' 等价，见 collector 的聊天解析）。
+         * ⚠️ 只有 `source==='chat'` 的行才有聊天上下文，其余一律 null。
+         */
+        const awaiting =
+          typeof raw.awaitingReply === 'boolean'
+            ? raw.awaitingReply
+            : raw.source === 'chat'
+              ? raw.lastFrom === 'other' || raw.replied === true
+              : null
         let idx = next.findIndex((a) => isMine(a, req.userId) && sameApply(a, remote))
         // 公司名对不上时再按标题试一次。**只对聊天页来的条目**：只有它有「公司名是现场读的、
         // 而账本里那条公司名错」这个已知事故，别的来源公司名对不上就是真的另一家。
@@ -328,6 +351,11 @@ router.post('/api/applications/collect', async (req, res) => {
           if (raw.read) item.readAt = raw.readAt || now
           if (raw.replied) item.repliedAt = raw.repliedAt || now
           if (raw.withdrawn) item.withdrawnAt = raw.withdrawnAt || now
+          // 新建时就把「对方在等我回」记下来，否则这条要等下一次采集才会出现在待办里
+          if (awaiting === true && boot !== 'rejected') {
+            item.awaitingReply = true
+            item.awaitingReplyAt = now
+          }
           item.direction = item.direction || lookupDirection(company, jobTitle)
           next.push(item)
           stats.created++
@@ -402,6 +430,20 @@ router.post('/api/applications/collect', async (req, res) => {
         // 把它算进 rejected 会把被拒率算高，漏斗上「不合格」那层凭空多一批。
         if (raw.withdrawn && !cur.withdrawnAt) {
           patch.withdrawnAt = raw.withdrawnAt || now
+          changed = true
+        }
+        /**
+         * 待我回复：全库**唯一允许回落**的状态位。
+         *   我在聊天框回了他 → 下次采集对方就不是最后发言了 → 必须能从 true 变回 false，
+         *   否则这条会永远挂在「待回复」里（旧版判 !repliedAt 时就有类似毛病）。
+         * 只有聊天页来源（awaiting !== null）才有资格改写它；列表页采集不去动它。
+         * 已判「不合格」的一律不提示：拒信不是问话。
+         */
+        const stageNow = patch.stage || cur.stage
+        const awaitingFinal = awaiting === null ? null : stageNow === 'rejected' ? false : awaiting
+        if (awaitingFinal !== null && awaitingFinal !== Boolean(cur.awaitingReply)) {
+          patch.awaitingReply = awaitingFinal
+          if (awaitingFinal && !cur.awaitingReplyAt) patch.awaitingReplyAt = now
           changed = true
         }
         if (!cur.direction) {

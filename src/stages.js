@@ -70,15 +70,24 @@ export function isActive(app) {
 }
 
 /**
- * 「该我动了」：平台看了我 / 进了初筛，但我还没回话。
+ * 「该我动了」：**对方在聊天框发了消息，而我还留着没回**。
  *
- * 这是求职里最容易漏的一类 —— 对方已经抛球过来，我这边界面还停在「已投递」，
- * 于是错过了最佳回复窗口。判定只看平台事实，不看 status。
+ * ⭐ 2026-11-06 主人纠正（上一版判错）：
+ *   旧实现是 `stage ∈ {viewed, screening, written, interview} && !repliedAt`，
+ *   等于把「简历被查看 / 通过初筛」当成了「需要我回复」。实际上这是两件事：
+ *     被查看 = 平台点开了我的简历，**不产生任何消息**，没有任何东西等我回；
+ *     通过初筛 = 状态推进，对方没开口也不用我开口（BOSS 上尤其如此，很多岗位
+ *     只在状态上写「初筛」，聊天框里一条消息都没有）。
+ *   只有**聊天框里确实来了消息**（采集端 `lastFrom === 'other'`，后端落成 awaitingReply）
+ *   才是真的要回。把状态推进当成待办，等于每天给我一堆不存在的活。
+ *
+ * 所以判据只有一个：`awaitingReply === true`（对方最后发言）。不看 stage、不看 status。
  */
 export function needsMyAction(app) {
-  if (!app?.stage) return false
-  // 我主动放弃的不用再回 —— 否则它会永远挂在「待我回复」里，每条都要人工看一眼才删得掉
+  if (!app?.awaitingReply) return false
+  // 我主动放弃的不用再回 —— 否则它会永远挂在「待回复」里，每条都要人工看一眼才删得掉
   if (app?.withdrawnAt) return false
-  if (!['viewed', 'screening', 'written', 'interview'].includes(app.stage)) return false
-  return !app.repliedAt
+  // 已经判不合格的也不提示：那是拒信，不是问话
+  if (app?.stage === 'rejected') return false
+  return true
 }

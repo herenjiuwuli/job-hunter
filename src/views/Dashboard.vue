@@ -68,10 +68,10 @@ const actions = computed(() => {
   if (s.applications.needActionCount > 0) {
     list.push({
       tone: 'warn',
-      title: `${s.applications.needActionCount} 家已推进，等你回话`,
-      desc: '对方已经看过或把你推进到初筛/笔试/面试，但账本里还没有你的回复记录。',
+      title: `${s.applications.needActionCount} 家 HR 发消息了，等你回`,
+      desc: '聊天框里有对方发来的消息，你还没回。简历被查看、状态进初筛都不算 —— 那些没有消息等着你。',
       to: '/applications',
-      cta: '去处理',
+      cta: '去回',
     })
   }
 

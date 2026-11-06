@@ -88,13 +88,12 @@ router.get('/api/dashboard', async (req, res) => {
       byStage,
       byResult,
       activeCount,
-      // 「该我动了」：平台已经看/推进，但我还没回话。判定只看平台事实，不看人工 status
+      // 「待我回复」：只有**对方在聊天框里发了消息**才算。
+      // 曾经按 stage ∈ {viewed,screening,...} && !repliedAt 算，把「简历被查看 / 进初筛」
+      // 当成了待办 —— 那只是平台状态，压根没有消息等我回（2026-11-06 主人纠正）。
+      // 判据与前端 needsMyAction 保持一致：awaitingReply + 非放弃 + 非不合格。
       needActionCount: apps.filter(
-        (a) =>
-          !a.withdrawnAt &&
-          a.stage &&
-          ['viewed', 'screening', 'written', 'interview'].includes(a.stage) &&
-          !a.repliedAt
+        (a) => a.awaitingReply === true && !a.withdrawnAt && a.stage !== 'rejected'
       ).length,
       recent: byDateDesc(apps, 'appliedAt')
         .slice(0, 5)
