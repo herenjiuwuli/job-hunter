@@ -2367,7 +2367,8 @@ async function runCollectAndUpload() {
 
   // 过滤掉「上次已同步、阶段也没变」的，只报有变化的部分
   const before = collectPreview.length
-  collectPreview = await filterAlreadySynced(collectPreview)
+  const filtered = await filterAlreadySynced(collectPreview)
+  collectPreview = filtered.items
   const skipped = before - collectPreview.length
   if (!collectPreview.length) {
     st.textContent = `✅ 无新变化（${before} 条均已同步且阶段未变）`
@@ -2384,9 +2385,15 @@ async function runCollectAndUpload() {
     setUploadReady(0)
     return
   }
-  if (skipped > 0) {
-    out.textContent = `已跳过 ${skipped} 条未变化的，剩余 ${collectPreview.length} 条待上报：\n\n` + out.textContent
+  const tips = []
+  if (filtered.migrated) {
+    // 缓存升级后的一次性全量核对 —— 必须说明，否则用户会以为「怎么突然全都要重报」
+    tips.push(
+      `同步缓存刚升级（开始记录公司名），本次做一轮全量核对：${before} 条都会报一次，没变化的后端回「未变化」——这是把历史「未知公司」补上必须走的一趟。`
+    )
   }
+  if (skipped > 0) tips.push(`已跳过 ${skipped} 条未变化的，剩余 ${collectPreview.length} 条待上报。`)
+  if (tips.length) out.textContent = tips.join('\n') + '\n\n' + out.textContent
   const up = await uploadProgress()
   // ⚠️ 上传没成功就**绝不能记账**：记了就是假同步 —— 这条以后永远被当成「已同步」跳过，
   // 数据静默丢失，而且页面上看起来一切正常。2026-11-03 就是这样丢掉了一条「初筛」。
@@ -2420,21 +2427,46 @@ async function runCollectAndUpload() {
 // 「已同步」缓存：记下上次上传时「jobId + 阶段」的组合。
 // 下次采集时，jobId 相同且阶段没变的直接跳过（省重复请求），阶段变了的照报（不漏推进）。
 // 存 chrome.storage.local，键 jhSyncedJobs = { [jobId]: stageKey }。
+/** 缓存里的公司名算不算「没有」：空 / 「未知公司」这类占位都算 */
+function isMissingCompany(s) {
+  const t = String(s || '').trim()
+  // 只认「未知 / 不详」开头，不能写成 /无/ —— 「无锡××科技」是真公司名
+  return !t || /^(未知|不详)/.test(t)
+}
+
+/**
+ * 这条要不要重新上报？
+ * - 阶段变了 → 要（原逻辑）
+ * - 阶段没变，但上次记的公司名是「未知/空」而这次采到了 → 也要。
+ *   ⚠️ 不加这条，后端那条「未知公司」永远修不好：中金财富 2 条 jobId 一直匹配得上、
+ *   阶段一直是 viewed，缓存判「未变化」直接跳过 → 后端一次都收不到订正数据。
+ *   （2026-11-06 真机：库里 2 条「未知公司」，采集次次拿到真名，却永远补不上）
+ *
+ * @returns {{items:Array, migrated:boolean}} migrated=旧缓存需要升级（本次会全量核对一轮）
+ */
 async function filterAlreadySynced(items) {
   const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
-  return items.filter((it) => {
+  // 旧缓存形状是「jobId → 阶段字符串」，新形状是 {stage, company}。
+  // 遇到旧值时**一次全量重报**：旧缓存里没有公司名，无从判断哪条缺，
+  // 与其永远修不掉，不如让它核一轮（后端对没变化的会回 unchanged，代价只是慢几秒）。
+  const migrated = Object.values(jhSyncedJobs).some((v) => typeof v === 'string')
+  const out = items.filter((it) => {
     const id = it.jobId
     if (!id) return true // 没有 jobId 的没法判断，照报
-    const prevStage = jhSyncedJobs[id]
-    return prevStage !== it.stage // 阶段变了要报；没变过或没记过的也报（prevStage undefined 时 !== 成立）
+    const prev = jhSyncedJobs[id]
+    const prevStage = typeof prev === 'string' ? prev : prev && prev.stage
+    if (prevStage !== it.stage) return true
+    const prevCompany = typeof prev === 'string' ? '' : (prev && prev.company) || ''
+    return isMissingCompany(prevCompany) && !isMissingCompany(it.company)
   })
+  return { items: out, migrated }
 }
 
 async function rememberSynced(items) {
   const { jhSyncedJobs = {} } = await chrome.storage.local.get('jhSyncedJobs')
   const next = { ...jhSyncedJobs }
   for (const it of items) {
-    if (it.jobId && it.stage) next[it.jobId] = it.stage
+    if (it.jobId && it.stage) next[it.jobId] = { stage: it.stage, company: it.company || '' }
   }
   await chrome.storage.local.set({ jhSyncedJobs: next })
 }
