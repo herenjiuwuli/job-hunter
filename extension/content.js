@@ -622,7 +622,13 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
       window.JH_FILTERS && typeof window.JH_FILTERS.otherDirectionOf === 'function'
         ? window.JH_FILTERS.otherDirectionOf(title)
         : []
-    if (otherTitle.length && !inTitle.length) {
+    // 标题命中「其他方向词」就直接拦，不再退回 JD。
+    // 为什么**不**要求「标题同时无目标方向词」：像「电商运营」这种标题，
+    // 同时含「运营」（目标方向词 ops）和「电商」（排除词），若沿用旧条件
+    // `otherTitle.length && !inTitle.length` 就会放行 —— 因为 inTitle 里有 ops。
+    // 用户标准是「电商/销售/客服都不要」，所以只要排除词命中标题就拦，宁严勿松
+    // （2026-11-06：确认岗位标准 = 运营只投内容/达人/新媒体，电商/销售/客服不要）。
+    if (otherTitle.length) {
       return {
         blocked: true,
         reason: `是「${otherTitle[0]}」等其他方向`,

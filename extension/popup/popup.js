@@ -1569,17 +1569,17 @@ async function initJobFilters() {
   renderPicked()
   renderDirList()
 
-  // 方向快捷预设。为什么需要：勾着 7 个方向时，「前端开发 / 产品 / 新媒体运营 / 数据分析」
-  // 也会被放行 —— 搜索结果里混进来的运营岗、数据岗就会被投出去，跟「只投测试」不符。
-  // 一个个取消勾选容易漏，所以给两个一键入口（2026-11-05 真机发现 7 个方向全在）。
-  const TEST_DIRECTIONS = ['qa', 'auto', 'api', 'game']
+  // 方向快捷预设。为什么需要：勾着全部方向时，「前端开发 / 数据分析」等也会被放行，
+  // 搜索结果里混进来的非目标岗就会被投出去。一个个取消勾选容易漏，所以给一键入口。
+  // 2026-11-06：用户主战场转 BOSS，同时投「运营 + 测试」两类，默认预设也带上 ops。
+  const TEST_DIRECTIONS = ['qa', 'auto', 'api', 'game', 'ops']
   const onlyBtn = document.getElementById('dirTestOnly')
   if (onlyBtn) {
     onlyBtn.addEventListener('click', async () => {
       jobFilters.directions = [...TEST_DIRECTIONS]
       renderDirList()
       await saveJobFilters()
-      log('✅ 方向已收紧到测试类：测试开发/软件测试、自动化测试/SDET、接口测试/性能测试、游戏测试')
+      log('✅ 方向已设为「测试 + 运营」：测试开发/软件测试、自动化/SDET、接口/性能、游戏测试、内容/达人/新媒体运营')
     })
   }
   const clearBtn = document.getElementById('dirClearAll')

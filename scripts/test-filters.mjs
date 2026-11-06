@@ -217,12 +217,18 @@ eq(dirHit('SDET Intern'), ['auto'], 'SDET → 自动化方向')
 eq(dirHit('Test Automation Intern'), ['qa', 'auto'], 'Test Automation 同时命中测试 / 自动化两组（都该放行）')
 eq(dirHit('Latest Technologies Intern'), [], '标题里有 latest 不等于测试岗（不能误放行）')
 eq(dirHit('前端开发实习生'), ['fe'], '中文方向分组不受影响')
+eq(dirHit('内容运营实习生'), ['ops'], '内容运营 → 运营方向（ops）')
+eq(dirHit('达人运营执行'), ['ops'], '达人运营 → 运营方向（贴合简历的新词）')
+eq(dirHit('新媒体运营'), ['ops'], '新媒体运营 → 运营方向')
 
 // 其他方向词：标题明确是「别的方向」时，即使 JD 提到「测试」也不该放行
 // （2026-11-06 真机：量化交易分析师被自动投了话术，因为 JD 里提了「测试/回测」）
 eq(F.otherDirectionOf('量化交易分析师').length > 0, true, '「量化交易分析师」命中其他方向词（量化/交易）')
 eq(F.otherDirectionOf('算法工程师').length > 0, true, '「算法工程师」命中其他方向词（算法）')
 eq(F.otherDirectionOf('销售顾问').length > 0, true, '「销售顾问」命中其他方向词（销售）')
+eq(F.otherDirectionOf('内容运营实习生').length, 0, '「运营」不再是其他方向排除词（用户要投运营岗，不能先拦）')
+eq(F.otherDirectionOf('电商运营').length > 0, true, '「电商运营」是其他方向排除词（偏电商/店铺，非内容/达人运营）')
+eq(F.otherDirectionOf('跨境电商运营').length > 0, true, '「跨境电商运营」也是排除词')
 eq(F.otherDirectionOf('测试工程师').length, 0, '「测试工程师」不命中其他方向词（是目标方向）')
 eq(F.otherDirectionOf('自动化测试实习生').length, 0, '「自动化测试实习生」不命中其他方向词')
 eq(F.otherDirectionOf('技术质量工程师').length, 0, '「技术质量工程师」不命中其他方向词（中性标题，交给 JD 兜底）')
@@ -240,8 +246,8 @@ eq(F.parseKeywords(''), [], '空串 → 空数组（调用方据此走「关键�
 eq(F.parseKeywords('a,b,c,d,e,f,g,h,i,j,k,l'), ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'], '最多 10 个（防止一次排太多跑一整天）')
 eq(
   F.DEFAULT_FILTERS.directions,
-  ['qa', 'auto', 'api', 'game'],
-  '默认方向只留测试类（前端/产品/运营/数据分析不该自动放行）'
+  ['qa', 'auto', 'api', 'game', 'ops'],
+  '默认方向 = 测试类 + 运营（前端/产品/数据分析不自动放行）'
 )
 
 // ——————————————————————————————————————————————
