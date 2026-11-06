@@ -844,7 +844,7 @@ async function copyCurrent() {
 .form-grid input,
 .form-grid textarea {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
@@ -877,7 +877,7 @@ async function copyCurrent() {
 .job-add input {
   flex: 1;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 8px 12px;
   font-size: 13px;
   font-family: inherit;
@@ -890,7 +890,7 @@ async function copyCurrent() {
 .check-item {
   padding: 6px 14px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 2px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-secondary);
@@ -969,7 +969,7 @@ async function copyCurrent() {
   width: 56px;
   padding: 5px 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   font-size: 13px;
   text-align: center;
   font-family: inherit;
@@ -991,7 +991,7 @@ async function copyCurrent() {
 .tab {
   border: 1px solid var(--border);
   background: #fff;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 8px 16px;
   font-size: 13px;
   cursor: pointer;
@@ -1012,7 +1012,7 @@ async function copyCurrent() {
   padding: 8px 10px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .fmt-toolbar {
   display: flex;
@@ -1022,12 +1022,12 @@ async function copyCurrent() {
   padding: 8px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .fmt-toolbar button {
   border: 1px solid var(--border);
   background: #fff;
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 6px 12px;
   font-size: 13px;
   cursor: pointer;
@@ -1054,7 +1054,7 @@ async function copyCurrent() {
   border-radius: 0;
   padding: 18px 24px;      /* 紧凑边距：省出更多可写面积 */
   background: #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
   width: 794px;            /* 固定 A4 纸宽度（210mm@96dpi），不随屏幕收缩 */
   max-width: none;
   min-height: 1123px;      /* 至少一页 A4 高（297mm），内容少也像一张纸；内容多自适应撑高 */
@@ -1119,7 +1119,7 @@ async function copyCurrent() {
 .avatar-remove {
   border: 1px solid var(--border);
   background: #fff;
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 5px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -1131,7 +1131,7 @@ async function copyCurrent() {
 .avatar-add {
   display: inline-block;
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 18px;
   font-size: 13px;
   cursor: pointer;
@@ -1245,7 +1245,7 @@ async function copyCurrent() {
 .resume-view.tpl-twocol :deep(.r-side) {
   background: var(--bg);
   padding: 14px;
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .resume-view.tpl-twocol :deep(.r-side .r-h) {
   color: var(--primary);
@@ -1266,7 +1266,7 @@ async function copyCurrent() {
   background: var(--primary);
   color: #fff;
   padding: 20px 16px;
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .resume-view.tpl-sidebar :deep(.r-side-bar .r-h) {
   color: #fff;
@@ -1390,7 +1390,7 @@ async function copyCurrent() {
 .resume-tools .size-control select {
   height: 28px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 0 4px;
   font-size: 12px;
   background: #fff;
@@ -1411,7 +1411,7 @@ async function copyCurrent() {
   padding: 10px 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .order-list {
   list-style: none;
@@ -1427,7 +1427,7 @@ async function copyCurrent() {
   padding: 6px 10px;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
 }
 .order-idx {
   width: 20px;
@@ -1438,7 +1438,7 @@ async function copyCurrent() {
   justify-content: center;
   background: var(--primary);
   color: #fff;
-  border-radius: 50%;
+  border-radius: 3px;
   font-size: 12px;
 }
 .order-title {

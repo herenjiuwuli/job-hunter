@@ -413,7 +413,7 @@ onMounted(load)
   gap: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 2px;
   padding: 5px 12px;
   cursor: pointer;
   font-family: inherit;
@@ -445,7 +445,7 @@ onMounted(load)
 .dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 3px;
   flex-shrink: 0;
   background: #cbd5e1;
 }
@@ -510,7 +510,7 @@ onMounted(load)
 .match-points {
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 8px 12px;
   margin-top: 6px;
 }
@@ -531,7 +531,7 @@ onMounted(load)
 }
 .modal {
   background: var(--panel);
-  border-radius: 12px;
+  border-radius: 4px;
   width: 720px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 40px);

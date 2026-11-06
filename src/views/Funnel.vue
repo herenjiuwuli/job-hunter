@@ -199,7 +199,7 @@ const groups = computed(() => data.value?.groups || [])
   padding: 5px 12px;
   border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 7px;
+  border-radius: 3px;
   font-size: 13px;
   color: var(--text-dim);
   cursor: pointer;
@@ -250,12 +250,12 @@ const groups = computed(() => data.value?.groups || [])
 .funnel-track {
   height: 22px;
   background: var(--bg);
-  border-radius: 6px;
+  border-radius: 3px;
   overflow: hidden;
 }
 .funnel-fill {
   height: 100%;
-  border-radius: 6px;
+  border-radius: 3px;
   transition: width 0.25s ease;
 }
 .f-submitted { background: #93b4d8; }

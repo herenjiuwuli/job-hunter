@@ -12,11 +12,9 @@ import Report from './views/Report.vue'
 import Records from './views/Records.vue'
 import RecordDetail from './views/RecordDetail.vue'
 import Apply from './views/Apply.vue'
-import Salary from './views/Salary.vue'
-import Intro from './views/Intro.vue'
-import Mistakes from './views/Mistakes.vue'
-import Prep from './views/Prep.vue'
-import Ammo from './views/Ammo.vue'
+// Salary / Intro / Mistakes / Prep / Ammo 不再单独挂路由，
+// 它们作为模块被 InterviewPrep 直接 import（动态路由跳转也就没有了首屏成本）
+import InterviewPrep from './views/InterviewPrep.vue'
 import Backup from './views/Backup.vue'
 import Dashboard from './views/Dashboard.vue'
 import Funnel from './views/Funnel.vue'
@@ -43,12 +41,16 @@ const router = createRouter({
     { path: '/report', component: Report },
     { path: '/records', component: Records },
     { path: '/records/:id', component: RecordDetail },
+    // 面试工作台：弹药 / 自我介绍 / 准备清单 / 错题本 / 薪资谈判 五个模块共用一份上下文
+    // （2026-11-06 合并：这五件事的输入是同一份「岗位+简历」，散成五页就是五次重复粘贴）
+    { path: '/interview-prep', component: InterviewPrep },
+    // 旧地址保留为跳转：书签、浏览器历史、之前发给自己的链接都不会断
+    { path: '/ammo', redirect: { path: '/interview-prep', query: { tab: 'ammo' } } },
+    { path: '/intro', redirect: { path: '/interview-prep', query: { tab: 'intro' } } },
+    { path: '/prep', redirect: { path: '/interview-prep', query: { tab: 'prep' } } },
+    { path: '/mistakes', redirect: { path: '/interview-prep', query: { tab: 'mistakes' } } },
+    { path: '/salary', redirect: { path: '/interview-prep', query: { tab: 'salary' } } },
     { path: '/apply', component: Apply },
-    { path: '/salary', component: Salary },
-    { path: '/intro', component: Intro },
-    { path: '/mistakes', component: Mistakes },
-    { path: '/prep', component: Prep },
-    { path: '/ammo', component: Ammo },
     // 数据管理
     { path: '/backup', component: Backup },
     { path: '/settings', component: Settings },

@@ -362,7 +362,7 @@ onMounted(() => {
 .who-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--primary);
   color: #fff;
   display: flex;

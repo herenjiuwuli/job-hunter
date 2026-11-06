@@ -253,12 +253,12 @@ onMounted(load)
 .score-bar {
   height: 8px;
   background: #f3f4f6;
-  border-radius: 999px;
+  border-radius: 2px;
   overflow: hidden;
 }
 .score-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: 2px;
   transition: width 0.3s;
 }
 .score-text {
@@ -274,7 +274,7 @@ onMounted(load)
 .kw-tag {
   font-size: 12px;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 .kw-hit {
   background: #eef2ff;
@@ -347,7 +347,7 @@ onMounted(load)
 .imp {
   font-size: 11px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: 2px;
   font-weight: 600;
 }
 .imp-硬性 { background: #fde8e8; color: #dc2626; }

@@ -1,8 +1,15 @@
 <template>
   <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">投递助手</h1>
+        <div class="page-sub">生成投递清单、打招呼语和求职信，复制后自己投（不做任何自动投递）。</div>
+      </div>
+    </div>
+
     <!-- 上下文输入 -->
     <div class="card">
-      <div class="card-title">投递助手</div>
+      <div class="card-title">简历与岗位</div>
       <p class="tip">根据简历与岗位生成投递清单、打招呼语和求职信，复制后自行投递（不做任何自动投递操作）。</p>
       <!-- 这一页和「投递追踪」的编辑弹窗调的是同一个 AI 定制能力，区别只在「有没有先建投递记录」。
            不写清楚，用户会在两处各粘贴一遍简历，然后怀疑哪一份才是最新的。 -->
@@ -151,7 +158,7 @@ async function copy(text, key) {
 .form-row input,
 .resume-label textarea {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
@@ -180,7 +187,7 @@ async function copy(text, key) {
 }
 .apply-card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 14px;
 }
 .apply-name {
@@ -205,7 +212,7 @@ async function copy(text, key) {
   line-height: 1.8;
   background: #fafbfc;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 16px;
 }
 .btn-sm {

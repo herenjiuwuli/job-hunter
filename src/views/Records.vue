@@ -1,5 +1,15 @@
 <template>
   <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">面试记录</h1>
+        <div class="page-sub">每场模拟面试的得分、用时和逐题点评。点进去看完整对话与复盘。</div>
+      </div>
+      <div class="page-actions">
+        <router-link to="/interview" class="btn">练一场</router-link>
+      </div>
+    </div>
+
     <!-- 统计区（8.4） -->
     <template v-if="records.length">
       <div class="stat-grid">
@@ -47,9 +57,10 @@
     </template>
 
     <div class="card">
-      <div class="card-title">面试记录</div>
+      <!-- 空状态时不重复一遍「面试记录」——上面页头刚写过 -->
+      <div v-if="records.length" class="card-title">全部记录</div>
       <div v-if="loading" class="loading">加载中…</div>
-      <div v-else-if="!records.length" class="empty">还没有面试记录，去首页开始一场模拟面试吧。</div>
+      <div v-else-if="!records.length" class="empty">还没有面试记录 —— 点右上「练一场」开始第一场。</div>
       <div v-else class="record-list">
         <div v-for="r in records" :key="r.id" class="record-item">
           <div class="record-info">
@@ -153,7 +164,7 @@ onMounted(load)
 .stat-card {
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -193,14 +204,14 @@ onMounted(load)
 .dim-bar {
   flex: 1;
   height: 10px;
-  border-radius: 5px;
+  border-radius: 3px;
   background: #edeff1;
   overflow: hidden;
 }
 .dim-bar i {
   display: block;
   height: 100%;
-  border-radius: 5px;
+  border-radius: 3px;
   transition: width 0.3s;
 }
 .b-high {
@@ -258,13 +269,13 @@ onMounted(load)
   display: flex;
   align-items: flex-end;
   background: #f7f8fa;
-  border-radius: 6px;
+  border-radius: 3px;
   overflow: hidden;
 }
 .trend-bar {
   display: block;
   width: 100%;
-  border-radius: 6px 6px 0 0;
+  border-radius: 3px 3px 0 0;
   transition: height 0.3s;
 }
 .trend-idx {

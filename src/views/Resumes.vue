@@ -460,7 +460,7 @@ onMounted(load)
 }
 .sub-block {
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 12px;
   margin-bottom: 10px;
 }
@@ -478,10 +478,10 @@ onMounted(load)
 }
 .modal {
   background: var(--surface, #fff);
-  border-radius: 12px;
+  border-radius: 4px;
   padding: 24px;
   width: min(440px, 92vw);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 .modal-title {
   font-size: 16px;

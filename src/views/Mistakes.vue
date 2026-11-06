@@ -229,7 +229,7 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--text-secondary);
   background: #fafbfc;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 8px 12px;
   margin-bottom: 6px;
 }
@@ -249,7 +249,7 @@ onMounted(async () => {
 }
 .m-result {
   background: #fafbfc;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   margin-bottom: 6px;
 }

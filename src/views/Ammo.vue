@@ -1,11 +1,17 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, toRefs } from 'vue'
 import { api } from '../api.js'
+import { prepCtx } from '../store.js'
+
+/**
+ * 岗位和简历来自「面试工作台」顶部的共享上下文，这一页不再重复让人填。
+ * 用 toRefs 解构：直接 `const { job } = prepCtx` 会拿到快照，之后改上下文这页不跟着变。
+ * 本页自有的输入只有「项目名 + 项目材料」——那是弹药专属素材，别的模块用不到。
+ */
+const { job: targetRole, resume: resumeText } = toRefs(prepCtx)
 
 const projectName = ref('')
-const targetRole = ref('测试开发 / 前端')
 const projectContext = ref('')
-const resumeText = ref('')
 const loading = ref(false)
 const message = ref('')
 const messageError = ref(false)
@@ -54,23 +60,13 @@ const STATUS_CLASS = { '✅': 'mk-ok', '❌': 'mk-bad', '⚠️': 'mk-warn' }
     </div>
 
     <div class="card" style="margin-bottom: 18px;">
-      <div class="grid-2">
-        <div class="field" style="margin: 0;">
-          <label class="label">项目名称 <span class="req">*</span></label>
-          <input v-model="projectName" class="input" placeholder="如 job-hunter / api-test-platform" />
-        </div>
-        <div class="field" style="margin: 0;">
-          <label class="label">目标岗位</label>
-          <input v-model="targetRole" class="input" placeholder="测试开发 / 前端" />
-        </div>
+      <div class="field" style="margin: 0;">
+        <label class="label">项目名称 <span class="req">*</span></label>
+        <input v-model="projectName" class="input" placeholder="如 job-hunter / api-test-platform" />
       </div>
       <div class="field" style="margin-top: 14px;">
         <label class="label">项目真实材料 <span class="req">*</span></label>
         <textarea v-model="projectContext" class="textarea" style="min-height: 140px;" placeholder="粘贴 README、核心代码、你定需求与验收标准的记录。越真实，弹药越准；材料里出现的规模数字若非实测，会标 ⚠️ 待你自测。"></textarea>
-      </div>
-      <div class="field">
-        <label class="label">简历原文（可选，用于核对经历一致性）</label>
-        <textarea v-model="resumeText" class="textarea" style="min-height: 80px;" placeholder="可留空"></textarea>
       </div>
       <button class="btn btn-primary" :disabled="loading" @click="generate">
         {{ loading ? '生成中…' : '生成面试弹药' }}
@@ -181,7 +177,7 @@ const STATUS_CLASS = { '✅': 'mk-ok', '❌': 'mk-bad', '⚠️': 'mk-warn' }
   background: #fff7ed;
   border: 1px solid #fed7aa;
   color: #c2410c;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 12px 14px;
   font-size: 13px;
   line-height: 1.6;
@@ -199,7 +195,7 @@ section:first-of-type .sec-title {
 }
 .item {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   margin-bottom: 8px;
 }

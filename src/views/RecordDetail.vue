@@ -1,5 +1,15 @@
 <template>
   <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">{{ record?.job || '面试记录详情' }}</h1>
+        <div class="page-sub">这道题的完整对话、每题得分与用时。低分题会出现在错题本里。</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-ghost" @click="$router.push('/records')">返回列表</button>
+      </div>
+    </div>
+
     <div v-if="loading" class="card loading">加载中…</div>
 
     <div v-else-if="loadError" class="card">
@@ -170,7 +180,7 @@ onMounted(async () => {
 .bubble {
   max-width: 78%;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 4px;
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -246,7 +256,7 @@ onMounted(async () => {
 }
 .time-chip {
   background: #f1f3f5;
-  border-radius: 999px;
+  border-radius: 2px;
   padding: 2px 10px;
   font-size: 12px;
 }

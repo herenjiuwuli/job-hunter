@@ -502,7 +502,7 @@ onUnmounted(() => {
 .bubble {
   max-width: 78%;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 4px;
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -538,7 +538,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 2px;
   white-space: nowrap;
 }
 .score-g {
@@ -594,7 +594,7 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.7;
   background: #f6f2ff;
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   white-space: pre-wrap;
 }

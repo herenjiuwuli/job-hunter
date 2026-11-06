@@ -1,5 +1,15 @@
 <template>
   <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">面试报告</h1>
+        <div class="page-sub">这场面试的总分、逐题点评和改进建议。报告生成后会存进「面试记录」。</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-ghost" @click="$router.push('/records')">全部记录</button>
+      </div>
+    </div>
+
     <div v-if="loading" class="card loading">AI 正在生成面试报告，请稍候…</div>
 
     <div v-else-if="loadError" class="card">
@@ -80,7 +90,7 @@
       <div class="actions">
         <button class="btn btn-ghost" @click="$router.push('/home')">返回首页</button>
         <button class="btn btn-ghost" @click="$router.push('/apply')">去投递</button>
-        <button class="btn btn-ghost" @click="$router.push('/prep')">准备清单</button>
+        <button class="btn btn-ghost" @click="$router.push('/interview-prep?tab=prep')">准备清单</button>
         <button class="btn btn-ghost" :disabled="exportingText" @click="exportText">
           {{ exportingText ? '导出中…' : '导出文本' }}
         </button>
@@ -376,7 +386,7 @@ onMounted(() => {
 }
 .time-chip {
   background: #f1f3f5;
-  border-radius: 999px;
+  border-radius: 2px;
   padding: 2px 10px;
   font-size: 12px;
 }

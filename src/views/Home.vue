@@ -318,7 +318,7 @@ async function analyze() {
 .import-bar select {
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   font-size: 14px;
   outline: none;
   max-width: 320px;
@@ -342,7 +342,7 @@ async function analyze() {
 .toolbar select {
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   font-size: 14px;
   outline: none;
 }
@@ -443,7 +443,7 @@ async function analyze() {
 }
 .qcard {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   margin-bottom: 8px;
 }
@@ -472,7 +472,7 @@ async function analyze() {
 }
 .job-card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 14px;
   cursor: pointer;
   transition: all 0.2s;
@@ -531,7 +531,7 @@ async function analyze() {
   flex: 1;
   max-width: 240px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 9px 12px;
   font-size: 13px;
   font-family: inherit;

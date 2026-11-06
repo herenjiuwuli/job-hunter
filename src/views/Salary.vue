@@ -3,14 +3,8 @@
     <!-- 设置区 -->
     <div class="card">
       <div class="card-title">薪资谈判模拟</div>
-      <p class="tip">AI 扮演 HR 与你进行一轮真实的薪资谈判（最多 6 轮），每轮点评你的回应策略，结束后给出复盘报告。谈判素材不会用于任何真实沟通。</p>
+      <p class="tip">AI 扮演 HR 与你进行一轮真实的薪资谈判（最多 6 轮），每轮点评你的回应策略，结束后给出复盘报告。岗位和简历取自上方共享上下文。谈判素材不会用于任何真实沟通。</p>
       <div class="form-row">
-        <label>目标岗位（任意岗位，可直接输入）
-          <input v-model="job" list="salary-jobs" placeholder="输入岗位名，如：前端开发 / UI 设计师" />
-          <datalist id="salary-jobs">
-            <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
-          </datalist>
-        </label>
         <label>城市（可选）
           <input v-model="city" type="text" placeholder="如：上海" />
         </label>
@@ -18,9 +12,6 @@
           <input v-model="expectSalary" type="text" placeholder="如：15k-18k" />
         </label>
       </div>
-      <label class="resume-label">简历内容
-        <textarea v-model="resume" rows="5" placeholder="粘贴你的简历文本"></textarea>
-      </label>
       <div class="toolbar">
         <button class="btn" :disabled="loading || !resume.trim() || !job" @click="start">
           {{ loading ? '准备中…' : '开始谈判' }}
@@ -113,14 +104,14 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
-import { appState } from '../store.js'
-import { COMMON_JOBS } from '../jobs.js'
+import { ref, nextTick, toRefs } from 'vue'
+import { prepCtx } from '../store.js'
 
-const job = ref(appState.selectedJob || '')
+// 岗位 / 简历来自工作台共享上下文；城市和期望薪资是谈薪专属参数，留在本页
+const { job, resume } = toRefs(prepCtx)
+
 const city = ref('')
 const expectSalary = ref('')
-const resume = ref(appState.resume || '')
 
 const loading = ref(false)
 const thinking = ref(false)
@@ -137,10 +128,6 @@ const history = ref([])
 const report = ref(null)
 const reply = ref('')
 const chatBox = ref(null)
-
-onMounted(() => {
-  if (!job.value) job.value = appState.selectedJob || ''
-})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -282,7 +269,7 @@ function backHome() {
 .form-row input,
 .resume-label textarea {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
@@ -332,7 +319,7 @@ function backHome() {
 .bubble {
   max-width: 78%;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 4px;
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;

@@ -111,7 +111,7 @@ const actions = computed(() => {
       tone: 'warn',
       title: `模拟面试平均 ${s.interview.avgScore} 分，先复盘再练`,
       desc: '低分集中在同一类问题上时，继续加场次不如先把错题过一遍。',
-      to: '/mistakes',
+      to: '/interview-prep?tab=mistakes',
       cta: '看错题本',
     })
   }
@@ -351,7 +351,7 @@ onMounted(load)
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  box-shadow: none;
   padding: 16px 18px 8px;
   margin-bottom: 16px;
 }
@@ -381,17 +381,17 @@ onMounted(load)
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 9px;
+  border-radius: 4px;
   text-decoration: none;
   color: inherit;
-  background: #fafbfd;
+  background: #fafafa;
   border: 1px solid transparent;
   transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
   margin-bottom: 6px;
 }
 .next-item:hover {
-  background: #f4f6ff;
-  border-color: #dfe3f8;
+  background: #f4f4f5;
+  border-color: #d4d4d8;
 }
 .next-mark {
   width: 4px;
@@ -401,9 +401,9 @@ onMounted(load)
   flex-shrink: 0;
   background: #cbd5e1;
 }
-.tone-warn .next-mark { background: #f59e0b; }
+.tone-warn .next-mark { background: #d97706; }
 .tone-danger .next-mark { background: #ef4444; }
-.tone-info .next-mark { background: #6366f1; }
+.tone-info .next-mark { background: #52525b; }
 .tone-ok .next-mark { background: #22c55e; }
 
 .next-body {
@@ -442,7 +442,7 @@ onMounted(load)
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 15px 16px;
-  box-shadow: var(--shadow-card);
+  box-shadow: none;
 }
 .kpi-label {
   font-size: 12px;
@@ -518,7 +518,7 @@ onMounted(load)
 }
 .mini-track {
   height: 9px;
-  background: #f1f3f9;
+  background: #f1f1f3;
   border-radius: 99px;
   overflow: hidden;
 }
@@ -526,7 +526,7 @@ onMounted(load)
   display: block;
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, #818cf8, #4f46e5);
+  background: var(--primary);
   transition: width 0.35s var(--ease);
 }
 .mini-num {
@@ -543,12 +543,14 @@ onMounted(load)
 
 /* 空态：光一行小字加上被 grid 拉高的卡片，会留出半屏空白。
    给出「这里本该有什么」+ 一个直接入口，卡片才有存在感。 */
+/* 空状态：不用虚线框。虚线在直角风格里读起来像「这里还没做好」，
+   而它其实是个正常的空状态 —— 换成浅灰底，安静一点 */
 .blank {
-  border: 1px dashed var(--border-strong);
-  border-radius: 10px;
-  padding: 26px 20px;
+  border: none;
+  border-radius: 3px;
+  padding: 30px 20px;
   text-align: center;
-  background: #fbfcfe;
+  background: #fafafa;
 }
 .blank b {
   font-size: 13.5px;
@@ -567,9 +569,9 @@ onMounted(load)
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #fafbfd;
+  background: #fafafa;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 4px 9px 4px 4px;
   font-size: 12px;
 }
@@ -587,10 +589,10 @@ onMounted(load)
   gap: 7px;
 }
 .res-pending { background: #f3f4f6; color: #6b7280; }
-.res-submitted { background: #f0fdf4; color: #16a34a; }
-.res-skipped { background: #eff6ff; color: #2563eb; }
-.res-blocked { background: #fef2f2; color: #dc2626; }
-.res-needs-user { background: #fef4e6; color: #c47d10; }
+.res-submitted { background: #f0fdf4; color: #15803d; }
+.res-skipped { background: #eff6ff; color: #1d4ed8; }
+.res-blocked { background: #fef2f2; color: #b91c1c; }
+.res-needs-user { background: #fef4e6; color: #b45309; }
 
 /* ===== 面试 ===== */
 .score-row {
@@ -602,9 +604,9 @@ onMounted(load)
   flex: 1;
   text-align: center;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 12px 8px;
-  background: #fafbfd;
+  background: #fafafa;
 }
 .score-num {
   font-size: 24px;

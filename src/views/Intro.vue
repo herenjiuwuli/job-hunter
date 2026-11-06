@@ -2,14 +2,8 @@
   <div>
     <div class="card">
       <div class="card-title">自我介绍专项练习</div>
-      <p class="tip">写下你的面试自我介绍，AI 从内容相关性、结构、亮点、篇幅四个角度逐句点评，并给出同场景更优示例。</p>
+      <p class="tip">写下你的面试自我介绍，AI 从内容相关性、结构、亮点、篇幅四个角度逐句点评，并给出同场景更优示例。岗位和简历取自上方共享上下文。</p>
       <div class="form-row">
-        <label>目标岗位（任意岗位，可直接输入）
-          <input v-model="job" list="intro-jobs" placeholder="输入岗位名，如：前端开发 / 新媒体运营" />
-          <datalist id="intro-jobs">
-            <option v-for="j in COMMON_JOBS" :key="j" :value="j" />
-          </datalist>
-        </label>
         <label>时长
           <select v-model="duration">
             <option :value="60">1 分钟</option>
@@ -17,9 +11,6 @@
           </select>
         </label>
       </div>
-      <label class="resume-label">简历内容
-        <textarea v-model="resume" rows="4" placeholder="粘贴你的简历文本"></textarea>
-      </label>
       <label class="resume-label">
         自我介绍
         <textarea v-model="intro" rows="7" :placeholder="introTip"></textarea>
@@ -76,13 +67,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { appState } from '../store.js'
-import { COMMON_JOBS } from '../jobs.js'
+import { ref, computed, toRefs } from 'vue'
+import { prepCtx } from '../store.js'
 
-const job = ref(appState.selectedJob || '')
+// 岗位 / 简历来自工作台共享上下文；本页只留「时长」这个自我介绍专属参数
+const { job, resume } = toRefs(prepCtx)
+
 const duration = ref(60)
-const resume = ref(appState.resume || '')
 const intro = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -97,10 +88,6 @@ const wordCountClass = computed(() => {
   const [min, max] = Number(duration.value) === 180 ? [600, 800] : [200, 260]
   if (len === 0) return ''
   return len >= min && len <= max ? 'ok' : len < min ? 'short' : 'long'
-})
-
-onMounted(() => {
-  if (!job.value) job.value = appState.selectedJob || ''
 })
 
 async function submit() {
@@ -165,7 +152,7 @@ async function copyExample() {
 .form-row select,
 .resume-label textarea {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
@@ -247,7 +234,7 @@ async function copyExample() {
   line-height: 1.8;
   background: #fafbfc;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 16px;
 }
 .btn-sm {

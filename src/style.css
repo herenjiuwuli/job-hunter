@@ -1,42 +1,48 @@
 /* ============ 求职助手 统一样式（job-hunter + resume-interview 合并） ============
  *
- * 2026-11-06 视觉重做：只改「值」和「补充通用组件」，不改任何 class 名 ——
- * 21 个页面全在依赖这些类，改名的代价是逐页回归，收益为零。
+ * 2026-11-06 第二轮视觉重做：去掉圆框 / 模糊 / 阴影，改成「纸面文档」的质感。
  *
- * 层次约定（越靠上越"外层"）：
- *   底色 #f6f7fb（冷灰）→ 卡片纯白 + 细边 + 极淡双层阴影 → 内部按需分块
- * 阴影只给"浮在底色上的整块"，不给小块，否则满屏发灰。
+ * 三条硬规则（改样式前先读这三条，否则很容易把界面改回"卡片叠卡片"）：
+ *   1. **零阴影**。层次只用 1px 边框 + 背景明度差表达。阴影一多，满屏发灰，
+ *      而且真实屏幕（尤其 Windows 缩放 125%）上会糊成一团。
+ *   2. **零渐变**。渐变块在小尺寸元素上只会显得脏；品牌感靠留白和字重，不靠色块。
+ *   3. **圆角 ≤ 4px**。接近直角。胶囊（999px）只保留在真正的「状态点」上，
+ *      按钮、输入框、卡片一律直角化 —— 圆框会让人误以为是可点的 chip。
+ *
+ * 仍然是「只改值、不改 class 名」：21 个页面都在依赖这些类。
  */
 
 :root {
-  /* 主色 */
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-weak: #eef2ff;
-  /* 语义色 */
-  --success: #18a058;
-  --warning: #f59e0b;
-  --danger: #dc2626;
+  /* 主色：近黑。操作色永远中性，彩色只留给状态 —— 彩色按钮一多就没有重点了 */
+  --primary: #18181b;
+  --primary-hover: #000000;
+  --primary-weak: #f4f4f5;
+  /* 语义色：比常见的那套降一档饱和度，白底上不刺眼 */
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
   /* 文本：四级，严格按层级用 */
-  --text: #111827;
-  --text-secondary: #6b7280; /* resume-interview 用 */
-  --text-dim: #6b7280;        /* job-hunter 用（与 --text-secondary 同值） */
-  --text-faint: #9ca3af;
+  --text: #18181b;
+  --text-secondary: #52525b;
+  --text-dim: #52525b;        /* 与 --text-secondary 同值，两个名字来自两个项目 */
+  --text-faint: #8b8b93;
   /* 表面 */
-  --border: #e8eaf0;
-  --border-strong: #dfe2ea;
-  --bg: #f6f7fb;
-  --card: #ffffff;  /* resume-interview 用 */
-  --panel: #ffffff; /* job-hunter 用（与 --card 同值） */
+  /* 没有阴影时，边框就是唯一的边界。太浅（#e8e8e8 那档）会让卡片「糊」在灰底上 */
+  --border: #dededf;
+  --border-strong: #c8c8cf;
+  /* 底色比卡片深两档：没有阴影时，明度差就是唯一的「浮起」信号 */
+  --bg: #f2f2f3;
+  --card: #ffffff;
+  --panel: #ffffff;
   /* 形状 */
-  --radius: 12px;
-  --radius-sm: 8px;
-  --sidebar-w: 232px;
-  /* 阴影：双层，近处 1px 勾边感 + 远处 3px 呼吸感 */
-  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 8px rgba(16, 24, 40, 0.04);
-  --shadow-pop: 0 8px 24px rgba(16, 24, 40, 0.10), 0 2px 6px rgba(16, 24, 40, 0.06);
-  /* 动效：统一曲线，避免每处各写一个 ease */
+  --radius: 4px;
+  --radius-sm: 3px;
+  --sidebar-w: 216px;
+  /* 阴影：全部禁用。变量留着是因为各页还有 `box-shadow: var(--shadow-card)` 的引用，
+     值设 none 比逐页删声明安全（少 21 处回归点） */
+  --shadow-xs: none;
+  --shadow-card: none;
+  --shadow-pop: none;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -58,8 +64,8 @@ body {
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   color: var(--text);
   background: var(--bg);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -74,7 +80,7 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
-/* ============ 布局：侧边栏（job-hunter） ============ */
+/* ============ 布局：侧边栏 ============ */
 .app {
   display: flex;
   height: 100%;
@@ -83,7 +89,7 @@ th {
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
-  background: #fcfcfd;
+  background: #fff;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -91,34 +97,35 @@ th {
   overflow: hidden;
 }
 
+/* 品牌区：一个实心方块 + 两行字。方块不加圆角、不加渐变、不加高光 */
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  font-size: 14.5px;
+  gap: 9px;
   padding: 18px 16px 16px;
   letter-spacing: -0.01em;
   flex-shrink: 0;
 }
 
 .brand-dot {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--primary);
   flex-shrink: 0;
   position: relative;
 }
 
-/* 用 ::after 画一道斜切高光，避免只有一个色块的呆板 */
+/* 方块里挖一道白杠，代替原来的渐变高光 */
 .brand-dot::after {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0%, transparent 55%);
+  left: 5px;
+  top: 6px;
+  width: 12px;
+  height: 2px;
+  background: #fff;
+  box-shadow: 0 4px 0 #fff, 0 8px 0 #fff;
 }
 
 .brand-text {
@@ -129,30 +136,30 @@ th {
 }
 
 .brand-text b {
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 650;
   color: var(--text);
 }
 
 .brand-text small {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--text-faint);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1;
   overflow-y: auto;
   padding: 0 10px 12px;
   scrollbar-width: thin;
 }
 
-/* 分组：靠间距和标题区分，不加分割线（分割线多了界面会碎） */
 .nav-group {
-  margin-top: 16px;
+  margin-top: 15px;
 }
 
 .nav-group:first-child {
@@ -162,37 +169,36 @@ th {
 .nav-group-title {
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--text-faint);
-  letter-spacing: 0.08em;
+  color: #71717a;
+  letter-spacing: 0.1em;
   padding: 0 10px 6px;
-  text-transform: uppercase;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
-  color: #4b5563;
+  color: var(--text-secondary);
   text-decoration: none;
   font-weight: 500;
   font-size: 13px;
   position: relative;
-  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 
 .nav-item:hover {
-  background: #f1f2f7;
+  background: #f4f4f5;
   color: var(--text);
 }
 
-/* 活跃态：淡靛底 + 左侧竖条 + 加粗。
-   单纯换文字颜色在 15 项里不够显眼，加竖条才能"一眼定位"。 */
+/* 活跃态：浅灰底 + 左侧 2px 黑条 + 加粗。
+   不用彩色底 —— 侧边栏 4 组共 12 项，一处彩色会抢走内容区的注意力。 */
 .nav-item.active {
-  background: linear-gradient(90deg, #eef2ff 0%, #f5f3ff 100%);
-  color: var(--primary-hover);
-  font-weight: 600;
+  background: #f4f4f5;
+  color: var(--text);
+  font-weight: 650;
 }
 
 .nav-item.active::before {
@@ -201,25 +207,22 @@ th {
   left: -10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 3px;
-  height: 18px;
-  border-radius: 0 3px 3px 0;
+  width: 2px;
+  height: 100%;
   background: var(--primary);
 }
 
-/* 侧边栏底部：用户 + 退出，做成一张"卡"而不是一行小字 */
+/* 侧边栏底部：用户 + 退出 */
 .sidebar-footer {
   margin: 0 10px 12px;
-  padding: 10px 12px;
+  padding: 9px 10px;
   color: var(--text-dim);
   font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -234,20 +237,21 @@ th {
   color: var(--text);
 }
 
-/* 首字母头像：比一个纯文字用户名更容易被记住 */
+/* 首字母头像：方形，和品牌块同一套语言 */
 .sidebar-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #818cf8, #4f46e5);
+  background: var(--primary);
   text-transform: uppercase;
+  font-style: normal;
 }
 
 .sidebar-logout {
@@ -255,17 +259,17 @@ th {
   border: 1px solid var(--border);
   background: #fff;
   color: var(--text-dim);
-  font-size: 11.5px;
-  padding: 3px 9px;
-  border-radius: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.14s var(--ease);
+  font-family: inherit;
+  transition: all 0.12s var(--ease);
 }
 
 .sidebar-logout:hover {
-  border-color: #fca5a5;
-  color: var(--danger);
-  background: #fef2f2;
+  border-color: #a1a1aa;
+  color: var(--text);
 }
 
 /* ============ 登录页 ============ */
@@ -275,43 +279,41 @@ th {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background:
-    radial-gradient(1200px 600px at 50% -10%, #eef2ff 0%, transparent 60%),
-    var(--bg);
+  background: var(--bg);
 }
 
 .login-card {
   width: 100%;
-  max-width: 372px;
+  max-width: 360px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 30px 26px 26px;
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
+  padding: 32px 28px 26px;
 }
 
 .login-brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 650;
+  font-size: 17px;
   letter-spacing: -0.01em;
 }
 
 .login-sub {
-  margin: 8px 0 20px;
+  margin: 8px 0 22px;
   color: var(--text-dim);
   font-size: 12px;
   line-height: 1.65;
 }
 
+/* 分段控件：底槽 + 选中项白底描边，不用阴影浮起 */
 .login-tabs {
   display: flex;
-  gap: 4px;
-  background: #f3f4f8;
-  border-radius: 9px;
-  padding: 3px;
+  gap: 2px;
+  background: #f4f4f5;
+  border-radius: var(--radius-sm);
+  padding: 2px;
   margin-bottom: 18px;
 }
 
@@ -320,18 +322,19 @@ th {
   border: none;
   background: transparent;
   color: var(--text-dim);
-  font-size: 13px;
-  padding: 7px 0;
-  border-radius: 7px;
+  font-size: 12.5px;
+  padding: 6px 0;
+  border-radius: 2px;
   cursor: pointer;
-  transition: all 0.14s var(--ease);
+  font-family: inherit;
+  transition: all 0.12s var(--ease);
 }
 
 .login-tab.active {
-  background: var(--panel);
-  color: var(--primary);
-  font-weight: 600;
-  box-shadow: var(--shadow-xs);
+  background: #fff;
+  color: var(--text);
+  font-weight: 650;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .login-submit {
@@ -349,13 +352,13 @@ th {
 .content {
   flex: 1;
   overflow: auto;
-  padding: 28px 32px 48px;
+  padding: 28px 34px 64px;
   scroll-behavior: smooth;
 }
 
 /* 内容最大宽度：超宽屏上表格拉满整行会很难读 */
 .content > * {
-  max-width: 1200px;
+  max-width: 1120px;
 }
 
 /* 细滚动条（Windows 默认滚动条很宽，视觉上很抢） */
@@ -365,46 +368,45 @@ th {
 }
 .content::-webkit-scrollbar-thumb,
 .nav::-webkit-scrollbar-thumb {
-  background: #d8dbe4;
-  border-radius: 99px;
+  background: #d4d4d8;
+  border-radius: 0;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 .content::-webkit-scrollbar-thumb:hover,
 .nav::-webkit-scrollbar-thumb:hover {
-  background: #c2c6d2;
+  background: #a1a1aa;
   background-clip: content-box;
 }
 
-/* ============ 卡片 ============ */
+/* ============ 卡片 ============
+ * 只有 1px 边，没有阴影。相邻卡片靠 14px 间距分开，不叠加视觉厚度。 */
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
+  padding: 20px 22px;
 }
 
 .card + .card {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .card-title {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 650;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   letter-spacing: -0.01em;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* 卡片标题左侧的小竖条：让"这是独立一块"比纯加粗更明确 */
+/* 卡片标题左侧的小竖条：2px，直角 */
 .card-title::before {
   content: '';
-  width: 3px;
+  width: 2px;
   height: 13px;
-  border-radius: 2px;
   background: var(--primary);
   flex-shrink: 0;
 }
@@ -415,33 +417,30 @@ th {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: none;
+  border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
-  padding: 9px 16px;
+  padding: 7px 14px;
   font-size: 13px;
   font-weight: 550;
   font-family: inherit;
   cursor: pointer;
   background: var(--primary);
   color: #fff;
-  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease),
-    transform 0.1s var(--ease);
-  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.24);
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
 }
 
 .btn:hover {
   background: var(--primary-hover);
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+  border-color: var(--primary-hover);
 }
 
 .btn:active {
-  transform: translateY(0.5px);
+  background: #27272a;
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.35;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .btn-primary {
@@ -455,47 +454,51 @@ th {
   opacity: 1;
 }
 
+/* 次级按钮：白底黑字黑边。比"浅色底彩色字"更清楚，也不会被误读成已选中 */
 .btn-ghost {
-  background: var(--primary-weak);
-  color: var(--primary);
-  box-shadow: none;
+  background: #fff;
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 .btn-ghost:hover {
-  background: #e0e7ff;
+  background: #f4f4f5;
+  border-color: #a1a1aa;
   opacity: 1;
 }
 
 .btn-outline {
   border: 1px solid var(--border-strong);
-  background: var(--panel);
-  color: #374151;
-  box-shadow: var(--shadow-xs);
-  transition: all 0.15s var(--ease);
+  background: #fff;
+  color: var(--text);
+  transition: all 0.12s var(--ease);
 }
 
 .btn-outline:hover {
-  background: #f9fafb;
-  border-color: #cbd0dc;
+  background: #f4f4f5;
+  border-color: #a1a1aa;
   opacity: 1;
 }
 
+/* 删除类按钮：默认中性，hover 才红。
+   一屏几十行、每行两个红框的时候，「红」就不再是警告，而是背景噪音。 */
 .btn-danger {
-  color: var(--danger);
+  color: var(--text-secondary);
   background: #fff;
-  border: 1px solid #fecaca;
-  box-shadow: none;
+  border: 1px solid var(--border-strong);
 }
 
 .btn-danger:hover {
+  color: var(--danger);
   background: #fef2f2;
+  border-color: #fca5a5;
   opacity: 1;
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 4px 10px;
   font-size: 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 /* 键盘可达性：鼠标点击不出框，Tab 键必须看得见 */
@@ -506,66 +509,67 @@ th {
 .textarea:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--primary);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 /* ============ 表单 ============ */
 .field {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .label {
   display: block;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
-  color: #4b5563;
-  margin-bottom: 6px;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
 }
 
 .input,
 .textarea,
 .select {
   width: 100%;
-  padding: 8px 11px;
+  padding: 7px 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-family: inherit;
   color: var(--text);
   background: #fff;
-  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  transition: border-color 0.12s var(--ease);
 }
 
 .input::placeholder,
 .textarea::placeholder,
 textarea::placeholder {
-  color: #b6bac5;
+  color: #b0b0b8;
 }
 
+/* 聚焦不用光晕（那是阴影），只把边框加深 —— 光晕在密集表单里会连成一片 */
 .input:focus,
 .textarea:focus,
 .select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
 .textarea {
   resize: vertical;
-  min-height: 70px;
-  line-height: 1.5;
+  min-height: 68px;
+  line-height: 1.6;
 }
 
 textarea {
   width: 100%;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 12px;
-  font-size: 14px;
+  padding: 10px 11px;
+  font-size: 13px;
   font-family: inherit;
+  color: var(--text);
   resize: vertical;
   outline: none;
-  transition: border-color 0.15s var(--ease);
+  transition: border-color 0.12s var(--ease);
 }
 
 textarea:focus {
@@ -575,72 +579,75 @@ textarea:focus {
 /* ============ 徽章 ============ */
 .badge {
   display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 2px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.7;
   white-space: nowrap;
 }
 
-.badge-pending { background: #f3f4f6; color: #6b7280; }
-.badge-applied { background: #eff6ff; color: #2563eb; }
-.badge-chatted { background: #f0fdfa; color: #0d9488; }
-.badge-interview { background: #eef2ff; color: #4f46e5; }
-.badge-offer { background: #f0fdf4; color: #16a34a; }
-.badge-rejected { background: #fef2f2; color: #dc2626; }
+.badge-pending { background: #f4f4f5; color: #52525b; }
+.badge-applied { background: #eff6ff; color: #1d4ed8; }
+.badge-chatted { background: #f0fdfa; color: #0f766e; }
+.badge-interview { background: #eef2ff; color: #4338ca; }
+.badge-offer { background: #f0fdf4; color: #15803d; }
+.badge-rejected { background: #fef2f2; color: #b91c1c; }
 .badge-failed { background: #faf5ff; color: #7e22ce; }
 /* 我放弃：中性灰，不能跟「不合格」的红色混 —— 这不是被拒，是我自己筛掉的 */
-.badge-withdrawn { background: #f5f5f4; color: #57534e; border: 1px solid #e7e5e4; }
+.badge-withdrawn { background: #f5f5f4; color: #57534e; box-shadow: inset 0 0 0 1px #e7e5e4; }
 
-.badge-class-待投递 { background: #f3f4f6; color: #6b7280; }
-.badge-class-已投递 { background: #eff6ff; color: #2563eb; }
-.badge-class-已沟通 { background: #f0fdfa; color: #0d9488; }
-.badge-class-已面试 { background: #eef2ff; color: #4f46e5; }
-.badge-class-已offer { background: #f0fdf4; color: #16a34a; }
-.badge-class-已拒绝 { background: #fef2f2; color: #dc2626; }
+.badge-class-待投递 { background: #f4f4f5; color: #52525b; }
+.badge-class-已投递 { background: #eff6ff; color: #1d4ed8; }
+.badge-class-已沟通 { background: #f0fdfa; color: #0f766e; }
+.badge-class-已面试 { background: #eef2ff; color: #4338ca; }
+.badge-class-已offer { background: #f0fdf4; color: #15803d; }
+.badge-class-已拒绝 { background: #fef2f2; color: #b91c1c; }
 .badge-class-已淘汰 { background: #faf5ff; color: #7e22ce; }
 
 /* ---- 平台阶段徽章（stage 维度，与上面的手工 status 是两套） ----
    命名用 .stage-<key>，和 status 的 .badge-class-<中文> 区分开，
    避免以后有人以为它们是一回事。 */
-.stage-submitted { background: #eff6ff; color: #2563eb; }
-.stage-viewed { background: #f0fdfa; color: #0d9488; }
+.stage-submitted { background: #eff6ff; color: #1d4ed8; }
+.stage-viewed { background: #f0fdfa; color: #0f766e; }
 .stage-screening { background: #fef4e6; color: #b45309; }
 .stage-written { background: #f5f3ff; color: #6d28d9; }
-.stage-interview { background: #eef2ff; color: #4f46e5; }
-.stage-rejected { background: #fef2f2; color: #dc2626; }
-.stage-offer { background: #f0fdf4; color: #16a34a; }
+.stage-interview { background: #eef2ff; color: #4338ca; }
+.stage-rejected { background: #fef2f2; color: #b91c1c; }
+.stage-offer { background: #f0fdf4; color: #15803d; }
 
 /* 「待我回复」：平台已经抛球过来，我还没回话 */
-.need-action { color: #b45309; font-weight: 600; }
+.need-action { color: #b45309; font-weight: 650; }
 
 .hint-line {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-faint);
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
 /* ============ 标签 ============ */
 .tag {
   display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--primary-weak);
-  color: var(--primary);
+  padding: 1px 7px;
+  border-radius: 2px;
+  font-size: 11.5px;
+  font-weight: 550;
+  background: #f4f4f5;
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .tag-success {
-  background: #e8f7ef;
+  background: #f0fdf4;
   color: var(--success);
+  box-shadow: inset 0 0 0 1px #bbf7d0;
 }
 
 .tag-warning {
   background: #fef4e6;
-  color: #c47d10;
+  color: #b45309;
+  box-shadow: inset 0 0 0 1px #fed7aa;
 }
 
 /* ============ 页面头 / 提示 ============ */
@@ -649,7 +656,9 @@ textarea:focus {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .page-actions {
@@ -659,19 +668,19 @@ textarea:focus {
 }
 
 .page-title {
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 700;
   margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
 }
 
 .page-sub {
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 12.5px;
   margin-top: 4px;
-  line-height: 1.6;
-  max-width: 72ch;
+  line-height: 1.7;
+  max-width: 76ch;
 }
 
 .grid-2 {
@@ -685,8 +694,8 @@ textarea:focus {
 }
 
 .msg {
-  font-size: 13px;
-  color: var(--primary);
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }
 
 .msg-error {
@@ -696,28 +705,71 @@ textarea:focus {
 .empty {
   text-align: center;
   color: var(--text-faint);
-  padding: 44px 0;
+  padding: 40px 0;
   font-size: 13px;
 }
 
 .loading {
   text-align: center;
   color: var(--text-secondary);
-  padding: 44px 0;
+  padding: 40px 0;
 }
 
 .error-tip {
-  background: #fdebec;
+  background: #fef2f2;
   color: var(--danger);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin-top: 12px;
+  padding: 9px 12px;
+  margin-top: 10px;
   font-size: 12.5px;
+  box-shadow: inset 0 0 0 1px #fecaca;
+}
+
+/* ============ 标签页（面试工作台 / 漏斗等共用） ============
+ * 下划线式，不用"药丸切换"。药丸在中文里宽度不一致，一排看过去是毛边。 */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  position: relative;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-dim);
+  padding: 8px 14px 9px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--text);
+  font-weight: 650;
+  border-bottom-color: var(--primary);
+}
+
+.tab-count {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-weight: 500;
 }
 
 /* ============ 表格（全站统一） ============
- * 原来 .table / .tbl 各页各写一套，现在共用同一份视觉：
- * 表头用底色区分、行悬停、单元格上下留白足够。
+ * 表头不做 text-transform: uppercase —— 中文没有大小写，那条规则纯属噪音。
  */
 table {
   font-variant-numeric: tabular-nums;
@@ -726,8 +778,7 @@ table {
 .table,
 .tbl {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
   font-size: 13px;
 }
 
@@ -737,29 +788,19 @@ table {
 .tbl th {
   text-align: left;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   font-size: 11.5px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding: 9px 12px;
-  background: #f4f5fa;
-  border-bottom: 1px solid var(--border-strong);
+  padding: 8px 12px;
+  background: #fafafb;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
-}
-
-.table thead th:first-child,
-.tbl thead th:first-child {
-  border-top-left-radius: var(--radius-sm);
-}
-.table thead th:last-child,
-.tbl thead th:last-child {
-  border-top-right-radius: var(--radius-sm);
 }
 
 .table td,
 .tbl td {
-  padding: 11px 12px;
-  border-bottom: 1px solid #f1f2f6;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f1f3;
   vertical-align: middle;
 }
 
@@ -770,7 +811,7 @@ table {
 
 .table tbody tr:hover td,
 .tbl tbody tr:hover td {
-  background: #fafbff;
+  background: #fafafb;
 }
 
 .table .strong,
@@ -790,19 +831,19 @@ table {
   }
   .card {
     padding: 14px;
-    border-radius: 10px;
+    border-radius: var(--radius);
   }
   .card-title {
-    font-size: 14px;
+    font-size: 13.5px;
   }
   .btn {
-    padding: 12px 18px;
-    font-size: 15px;
-    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 42px;
   }
   .btn-sm {
-    min-height: 38px;
-    padding: 8px 14px;
+    min-height: 36px;
+    padding: 7px 12px;
   }
   textarea,
   input,
@@ -850,12 +891,12 @@ table {
     flex-direction: row;
     overflow-x: auto;
     padding: 0 10px 10px;
-    gap: 4px;
+    gap: 2px;
   }
   .nav-group {
     margin-top: 0;
     display: flex;
-    gap: 4px;
+    gap: 2px;
   }
   .nav-group-title {
     display: none;
@@ -873,7 +914,7 @@ table {
 
 /* ============ 表单必填标记 ============ */
 .req {
-  color: #dc2626;
+  color: var(--danger);
   margin-left: 2px;
   font-weight: 700;
 }
@@ -881,8 +922,8 @@ table {
 .field-hint {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--text-faint, #999);
-  line-height: 1.55;
+  color: var(--text-faint, #8b8b93);
+  line-height: 1.6;
 }
 
 /* ============ 打印（简历导出 PDF / 打印） ============ */
