@@ -527,6 +527,28 @@ async function currentLine() {
 async function refreshBatch() {
   const line = await currentLine()
   renderLine(line, await readBatchLine(line))
+  updateOneKeyLabel()
+}
+
+/**
+ * 按钮上写清「这一下会投哪个平台」。
+ * 旧版把「（实习僧）」写死在按钮上、逻辑也写死找实习僧的 tab：用户在 BOSS 页点它，
+ * 被直接拽到实习僧并按实习僧的条件开投（2026-11-06 真机事故）。
+ */
+async function updateOneKeyLabel() {
+  const el = document.getElementById('oneKeyBtn')
+  if (!el) return
+  const plat = await activeLine()
+  const text =
+    plat.key === 'boss'
+      ? '一键投递（BOSS）'
+      : plat.key === 'sx'
+        ? '一键投递（实习僧）'
+        : '一键投递（先切到平台页）'
+  if (el.textContent !== text) el.textContent = text
+  el.title = plat.key
+    ? `在眼前这个${plat.name}页面按表单条件开投；城市 / 类型等筛选以该页 URL 为准`
+    : '当前标签页不是实习僧 / BOSS，先切过去再点'
 }
 
 const isDetailUrl = (u) => /job_detail\/|shixiseng\.com\/intern\/inn_/i.test(String(u || ''))
@@ -881,6 +903,49 @@ function stripPageParam(u) {
 }
 
 /**
+ * 当前活动标签页属于哪条线 —— **严格版**：只认真正的平台页，猜不出来就返回空。
+ *
+ * 为什么不复用 currentLine()：那个是「状态栏显示用」的，当前页不是平台页时它会
+ * 按批次数据猜一条线。拿去决定「往哪个平台投」就危险了 —— 2026-11-06 真机：
+ * 用户在 BOSS 页点「一键」，代码硬编码 findLineTab('sx')，直接把他从 BOSS 拽到实习僧，
+ * 并按实习僧的关键词/城市开始投。所以「投哪个平台」这件事必须只看眼前这个页面。
+ */
+async function activeLine() {
+  const tab = await activeTab()
+  const u = String((tab && tab.url) || '')
+  if (/zhipin\.com/i.test(u)) return { key: 'boss', name: 'BOSS 直聘', tab }
+  if (/shixiseng\.com/i.test(u)) return { key: 'sx', name: '实习僧', tab }
+  return { key: '', name: '', tab }
+}
+
+// BOSS 的搜索页长这样：https://www.zhipin.com/web/geek/job?query=测试&city=101280600
+const isBossSearchUrl = (u) => /zhipin\.com\/web\/geek\/jobs?(\?|$)/i.test(String(u || ''))
+
+/**
+ * 拼 BOSS 的搜索页。
+ *
+ * ⚠️ 和实习僧不同，BOSS 的 city 是**数字编码**（实习僧是中文），插件里没有可靠的城市码表，
+ * 硬编一张错表会把深圳的岗投成别的城市。所以这里**只换 query，其余参数（city / 经验 / 学历…）
+ * 全部沿用模板页**——也就是「你当前页上看到的筛选条件」。换城市请在 BOSS 页面上换。
+ */
+function buildBossSearchUrl(baseUrl, keyword) {
+  let x
+  try {
+    x = new URL(baseUrl)
+  } catch {
+    return ''
+  }
+  if (!/zhipin\.com$/i.test(x.hostname)) return ''
+  // 聊天页 / 首页不能当模板：路径不对，拼出来的还是聊天页
+  if (!isBossSearchUrl(x.toString())) x.pathname = '/web/geek/job'
+  for (const k of ['page', 'p', 'pageNum']) x.searchParams.delete(k)
+  x.hash = ''
+  if (keyword) x.searchParams.set('query', keyword)
+  else x.searchParams.delete('query')
+  return x.toString()
+}
+
+/**
  * 拼出这次要落的搜索页。
  * 有模板 → 在模板上覆盖三个值（用户额外选的筛选条件全部保留）；
  * 没模板 → 用实习僧的标准参数格式（keyword / city / type）。
@@ -1094,12 +1159,40 @@ bindPagingForm()
 
 document.getElementById('pickUrlBtn').addEventListener('click', async () => {
   const tab = await activeTab()
-  if (!tab || !tab.url || !/shixiseng\.com/i.test(tab.url)) {
-    log('❌ 当前标签页不是实习僧 —— 先切到那个搜索结果页，再点「取当前页当模板」')
+  const u = String((tab && tab.url) || '')
+
+  // BOSS 的模板单独存（两家的参数格式完全不同：BOSS 的 city 是数字编码）
+  if (/zhipin\.com/i.test(u)) {
+    if (!isBossSearchUrl(u)) {
+      log(`❌ 这看起来不是 BOSS 的搜索结果页：${shortUrl(u)}\n先在 BOSS 筛好，停在列表页（带 ?query= 的那个）再取。`)
+      return
+    }
+    const bossUrl = stripPageParam(u)
+    await chrome.storage.local.set({ oneKeyBossTemplate: bossUrl })
+    // 关键词顺手填进表单（BOSS 的参数叫 query，不是 keyword）
+    try {
+      const kw = new URL(bossUrl).searchParams.get('query') || ''
+      const kwEl = document.getElementById('kwInput')
+      if (kwEl && kw && !kwEl.value) {
+        kwEl.value = kw
+        await saveOneKey({ keyword: kw })
+      }
+    } catch {
+      /* 解析失败不影响模板已存下 */
+    }
+    log(
+      `✅ 已把这一页存成 BOSS 模板（城市/经验/学历等筛选会保留）：\n${bossUrl}\n` +
+        '之后在 BOSS 任意页面点一键投递，都会按这套条件开投（只换关键词）。'
+    )
     return
   }
-  if (isDetailUrl(tab.url) || !isListUrl(tab.url)) {
-    log(`❌ 这看起来不是搜索结果页：${shortUrl(tab.url)}\n先在实习僧筛选好，停在结果列表页再取。`)
+
+  if (!/shixiseng\.com/i.test(u)) {
+    log('❌ 当前标签页既不是实习僧也不是 BOSS —— 先切到那个搜索结果页，再点「取当前页当模板」')
+    return
+  }
+  if (isDetailUrl(u) || !isListUrl(u)) {
+    log(`❌ 这看起来不是搜索结果页：${shortUrl(u)}\n先在实习僧筛选好，停在结果列表页再取。`)
     return
   }
   const url = stripPageParam(tab.url)
@@ -1186,6 +1279,43 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
       return
     }
 
+    // ===== 投哪个平台：只看眼前这个页面 =====
+    // 2026-11-06 真机：用户在 BOSS 页点「一键」，旧代码硬编码 findLineTab('sx')，
+    // 把他从 BOSS 直接拽到实习僧、并按实习僧的关键词/城市开始投 —— 他根本没想投实习僧。
+    // 所以平台判断必须由当前页决定，且**判不出来就不猜、不开投**。
+    const plat = await activeLine()
+    if (!plat.key) {
+      log(
+        '❌ 当前标签页既不是实习僧也不是 BOSS，不知道要在哪儿投。\n' +
+          '先切到要投的那个平台的页面（搜索/列表页），再点一键投递。'
+      )
+      return
+    }
+    const line = plat.key
+    const lineName = plat.name
+    const isBoss = line === 'boss'
+
+    // BOSS 城市是数字编码（实习僧是中文），插件没有可靠城市码表 → 筛选条件全部沿用当前页。
+    // 换城市 = 在 BOSS 页面上换，不在插件里换（硬编错表会把深圳的岗投成别的城市）。
+    let bossBase = ''
+    if (isBoss) {
+      const cur = String(plat.tab.url || '')
+      if (isBossSearchUrl(cur)) {
+        bossBase = stripPageParam(cur)
+      } else {
+        const r = await chrome.storage.local.get('oneKeyBossTemplate')
+        bossBase = r.oneKeyBossTemplate || ''
+      }
+      if (!bossBase) {
+        log(
+          '❌ 当前是 BOSS 的非搜索页（聊天 / 首页 / 职位详情），没有筛选条件可用，所以没开投。\n' +
+            '① 切到 BOSS 的搜索结果列表页（网址里带 ?query= 的那个）再点一键投递；或\n' +
+            '② 先在那个列表页点一次「取当前页当模板」，之后在 BOSS 任意页点都能按那套条件投。'
+        )
+        return
+      }
+    }
+
     // 关键词可以填多个（逗号 / 顿号 / 换行分隔）：一个词投完自动换下一个。
     // 只填一个时行为和以前完全一样。为什么要多个：一个词在实习僧上、一个城市里
     // 通常只有 20~40 个岗位，投完就没了（2026-11-05：测试+深圳+校招 两页 0 家可投）。
@@ -1198,8 +1328,10 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     // 城市 × 类型 × 关键词 展开成任务列表。实习僧的 city / type 都是单值参数，
     // 勾多个 = 跑多轮，顺序是「先把深圳·实习的几个词跑完，再跑深圳·校招，最后才轮到广州」。
     // type 放城市内层（换 type 和换词一样只改 query 不换入口），复用现成轮换机制。
-    const tasks =
-      window.JH_FILTERS && typeof window.JH_FILTERS.expandSearchTasks === 'function'
+    // ⚠️ BOSS 不展开：城市/类型都写在当前页的 URL 参数里，插件只负责换 query。
+    const tasks = isBoss
+      ? (kws.length ? kws : ['']).map((k) => ({ url: buildBossSearchUrl(bossBase, k) }))
+      : window.JH_FILTERS && typeof window.JH_FILTERS.expandSearchTasks === 'function'
         ? window.JH_FILTERS.expandSearchTasks(kws, final.cities, final.types, (p) =>
             buildSearchUrl({ ...final, ...p, type: p.type })
           )
@@ -1218,6 +1350,17 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
         ? `${final.types.map((t) => typeName[t] || t).join(' / ')}（共 ${final.types.length} 类，一类投完自动换下一类）`
         : typeName[final.types[0]] || final.types[0]
       : '⚠️ 未选'
+    // BOSS 的城市/类型不来自表单（插件不维护城市码表），直接显示「当前页 URL 里带了什么」，
+    // 这样用户一眼能看出「这一跳用的还是我页面上那套筛选」，而不是以为插件按勾选改了城市。
+    let bossCityText = ''
+    if (isBoss) {
+      try {
+        const c = new URL(bossBase).searchParams.get('city') || ''
+        bossCityText = c ? `沿用当前页参数（city=${c}）` : '沿用当前页参数（未带 city → 按站点默认城市）'
+      } catch {
+        bossCityText = '沿用当前页参数'
+      }
+    }
     const scopeText = [
       '本次范围：',
       `  关键词：${
@@ -1226,17 +1369,21 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
           : kws[0] || '⚠️ 不限（该城市全部岗位）'
       }`,
       `  城市：${
-        final.cities.length
-          ? final.cities.length > 1
-            ? `${final.cities.join(' / ')}（共 ${final.cities.length} 个，一个投完自动换下一个）`
-            : final.cities[0]
-          : '⚠️ 不限（全国）'
+        isBoss
+          ? bossCityText
+          : final.cities.length
+            ? final.cities.length > 1
+              ? `${final.cities.join(' / ')}（共 ${final.cities.length} 个，一个投完自动换下一个）`
+              : final.cities[0]
+            : '⚠️ 不限（全国）'
       }`,
-      `  类型：${typeText}`,
+      `  类型：${isBoss ? '沿用当前页参数（BOSS 没有实习/校招这个筛选项）' : typeText}`,
     ].join('\n')
-    const noTplTip = final.templateUrl
+    const noTplTip = isBoss
       ? ''
-      : '\n提示：没存过模板，地址是按「关键词 / 城市 / 类型」三个参数拼的。落到页面后如果和你在网站上看到的不一样（栏目没了、实习/校招不对），到目标列表页点一次「取当前页当模板」。'
+      : final.templateUrl
+        ? ''
+        : '\n提示：没存过模板，地址是按「关键词 / 城市 / 类型」三个参数拼的。落到页面后如果和你在网站上看到的不一样（栏目没了、实习/校招不对），到目标列表页点一次「取当前页当模板」。'
 
     // 多关键词必须开翻页：换词挂在「这个词翻到底」这个事件上，
     // 没开翻页就永远触发不了换词（会停在第 1 个词上，白排后面的词）
@@ -1255,14 +1402,15 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
             forcedPaging ? '（为了能跑到头，已自动勾上「投完自动翻页」）' : ''
           }`
         : ''
-    const tab = await findLineTab('sx')
+    // tab 必须和 platform 一致：BOSS 就用当前这个 tab，别再去找实习僧的页
+    const tab = isBoss ? plat.tab : await findLineTab('sx')
 
     // 已经停在目标页：不用跳，直接发（这时页面里的脚本还活着）
     if (tab && sameSearchPage(tab.url, startUrl)) {
       log('已经在起点页，直接开投…')
       const res = await sendToLine(
         tab,
-        { name: '实习僧' },
+        { name: lineName },
         {
           action: 'batchStart',
           limit: batchLimitValue(),
@@ -1273,7 +1421,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
         },
         '启动指令没发出去'
       )
-      log(startLogText(res, '实习僧'))
+      log(startLogText(res, lineName))
       setTimeout(refreshBatch, 800)
       return
     }
@@ -1283,7 +1431,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     await chrome.storage.local.set({
       oneKeyPending: {
         at: new Date().toISOString(),
-        line: 'sx',
+        line,
         limit: batchLimitValue(),
         force: batchForceChecked(),
         pagingConfig: paging,
@@ -1292,7 +1440,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     })
 
     if (!tab) {
-      log(`${scopeText}\n正在打开实习僧搜索页…（加载完会自动开始投）${pagingTip}${noTplTip}`)
+      log(`${scopeText}\n正在打开${lineName}搜索页…（加载完会自动开始投）${pagingTip}${noTplTip}`)
       await chrome.tabs.create({ url: startUrl, active: true })
     } else {
       log(`${scopeText}\n正在跳到起点：${plainUrl(startUrl)}\n加载完会自动开始投，弹窗可以直接关。${pagingTip}${noTplTip}`)
@@ -1846,6 +1994,9 @@ $('#loginBtn').addEventListener('click', async () => {
 // 为什么强制这一步：平台 DOM 一改就可能把公司名抓成奇怪的东西，
 // 静默入库之后是脏数据，而脏数据比没数据更难发现。
 let collectPreview = null
+// 最近一次采集的 debug。预览会被上传汇总覆盖，但「有几行没解析出来」这件事
+// 不能跟着预览一起消失 —— 它才是「页面 2 条 / 库里 1 条」的答案。
+let lastCollectDbg = null
 
 /**
  * 采集完 → 主流程上出现「确认上传（N 条）」。
@@ -1946,6 +2097,7 @@ async function collectProgress(probeMode) {
 
     collectPreview = Array.isArray(d.items) ? d.items : []
     const dbg = d.debug || {}
+    lastCollectDbg = dbg
     if (!collectPreview.length) {
       st.textContent = `没抓到可用的行（命中 ${dbg.hits || 0} 处｜取不到行 ${dbg.noRow || 0}｜取不到岗位 ${dbg.noName || 0}）`
       out.textContent = JSON.stringify(dbg, null, 2)
@@ -2029,6 +2181,19 @@ function renderPreview(items, dbg) {
     lines.push('判定：各 tab 列表互不相同 → 真分组，阶段按 tab 名判定')
   }
   if (dbg.mode === 'single') lines.push('\n未识别到分类 tab（BOSS 列表或平台改版），按单视图翻页采集')
+  // 被丢掉的行：页面上看得见、但没进预览（因此也不会入库）。
+  // 只说一个数字没用 —— 「初筛 2 条、这里 1 条」时，必须看到那条的原文才知道是
+  // 「解析器不认识这种卡片」还是「这一条本来就该跳过」。
+  if (dbg.noName) {
+    lines.push(`\n⚠️ 有 ${dbg.noName} 行没解析出来（没进预览，也不会入库）：`)
+    const ds = dbg.dropped || []
+    if (ds.length) {
+      for (const d of ds.slice(0, 6)) lines.push(`  · ${d}`)
+      if (dbg.noName > ds.length) lines.push(`  … 还有 ${dbg.noName - ds.length} 行（只保留前 6 条原文）`)
+    } else {
+      lines.push('  · （没留下原文，点「探测（校准用）」看页面结构）')
+    }
+  }
   if (dbg.notes && dbg.notes.length) lines.push(`\n[提示] ${dbg.notes.join('；')}`)
   return lines.join('\n')
 }
@@ -2052,6 +2217,7 @@ async function collectAllProgress() {
     const d = res.data || {}
     const items = Array.isArray(d.items) ? d.items : []
     const dbg = d.debug || {}
+    lastCollectDbg = dbg
     if (!items.length) {
       st.textContent = `没抓到可用的行（${dbg.stopped || '该页面没有投递记录'}）`
       out.textContent = renderPreview([], dbg)
@@ -2205,8 +2371,16 @@ async function runCollectAndUpload() {
   const skipped = before - collectPreview.length
   if (!collectPreview.length) {
     st.textContent = `✅ 无新变化（${before} 条均已同步且阶段未变）`
+    // 「无新变化」≠「数据齐了」：解析失败的行根本不在这里面。
+    // 不把这句话带出来，用户会以为平台的投递数量已经全对上了。
+    const dropTip =
+      lastCollectDbg && lastCollectDbg.noName
+        ? `\n\n⚠️ 但另有 ${lastCollectDbg.noName} 行没解析出来（没入库）：\n` +
+          ((lastCollectDbg.dropped || []).slice(0, 6).map((d) => `  · ${d}`).join('\n') ||
+            '  · （没留下原文，点「探测（校准用）」看页面结构）')
+        : ''
     out.textContent =
-      '平台没往后推进，没有需要更新的。\n\n想确认「全阶段采集」本身抓到了什么，点「全阶段采集（先看预览）」。'
+      '平台没往后推进，没有需要更新的。\n\n想确认「全阶段采集」本身抓到了什么，点「全阶段采集（先看预览）」。' + dropTip
     setUploadReady(0)
     return
   }
@@ -2359,6 +2533,17 @@ async function uploadProgress(opts = {}) {
         `\n会话采集（不推阶段）：已读 ${readN} 条 / 对方回过话 ${repliedN} 条` +
           (withdrawnN ? ` / 我放弃 ${withdrawnN} 条（记入「我放弃」，不算被拒）` : '')
       )
+
+    // 页面上有、但连预览都没进的行（解析失败）。上传只覆盖预览里的那些，
+    // 所以必须单独说一句 —— 否则「初筛 2 条、库里只有 1 条」永远查不出原因，
+    // 而界面上看着「已同步、一切正常」。
+    if (lastCollectDbg && lastCollectDbg.noName) {
+      lines.push('')
+      lines.push(`⚠️ 另有 ${lastCollectDbg.noName} 行没解析出来（没上传，所以库里没有）：`)
+      const ds = lastCollectDbg.dropped || []
+      for (const d of ds.slice(0, 6)) lines.push(`  · ${d}`)
+      if (!ds.length) lines.push('  · （没留下原文，点「探测（校准用）」看页面结构）')
+    }
 
     // 公司名被后端订正过的 —— 必须说出来。这条记录以前一直显示别人家的名字，
     // 而且正因为它对不上，它的已读/被拒一直传不进来。不报的话用户会以为界面上

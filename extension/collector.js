@@ -790,6 +790,11 @@ function collectFromPage() {
     duplicate: 0,
     via: 'link',
     samples: [],
+    // 被丢掉的行原文（最多 6 条）。
+    // 为什么单独存：noName 只给一个数字，「页面上明明有 2 条、库里只有 1 条」时
+    // 这个数字是唯一线索，但用户看不出**是哪一条**、原文长什么样。
+    // 2026-11-06：实习僧初筛有 2 家（科睿国际 / 法雷奥），只进了 1 家，就是查不出原因。
+    dropped: [],
   }
 
   const push = (raw, jobId, source) => {
@@ -831,6 +836,7 @@ function collectFromPage() {
     const parsed = parseRowLines(r.lines, { tabStage })
     if (!parsed) {
       debug.noName++
+      if (debug.dropped.length < 6) debug.dropped.push(r.lines.join(' ｜ ').slice(0, 120))
       if (debug.samples.length < 5) debug.samples.push({ source: 'link', lines: r.lines, skipped: '取不到岗位/公司' })
       continue
     }
@@ -846,12 +852,14 @@ function collectFromPage() {
       debug.rows++
       if (!row) {
         debug.noName++
+        if (debug.dropped.length < 6) debug.dropped.push(`（找不到行容器）阶段文字：${hit.text}`)
         continue
       }
       const lines = linesOf(row)
       const parsed = parseRowLines(lines, { tabStage })
       if (!parsed) {
         debug.noName++
+        if (debug.dropped.length < 6) debug.dropped.push(lines.join(' ｜ ').slice(0, 120))
         if (debug.samples.length < 5) debug.samples.push({ source: 'text', stage: hit.text, lines, skipped: '取不到岗位/公司' })
         continue
       }
@@ -2656,6 +2664,7 @@ async function collectAllPages(opts = {}) {
     duplicate: 0,
     noName: 0,
     stopped: '',
+    dropped: [],
   }
 
   for (let page = 1; page <= maxPages; page++) {
@@ -2663,7 +2672,10 @@ async function collectAllPages(opts = {}) {
     debug.pages = page
     debug.rows += res.debug.rows
     debug.noName += res.debug.noName
-
+    // 丢弃原文也要跨页合并，否则「第 1 页丢的那条」在翻到第 2 页后就被覆盖没了
+    for (const d of res.debug.dropped || []) {
+      if (debug.dropped.length < 6) debug.dropped.push(`第 ${page} 页：${d}`)
+    }
     for (const it of res.items) {
       const key = it.jobId || `${it.company}|${it.jobTitle}`
       if (seen.has(key)) {
@@ -2759,6 +2771,8 @@ async function collectAllTabs(opts = {}) {
     noName: 0,
     tabs: [],
     notes: [],
+    // 被丢掉的行原文（带 tab 名）—— 「页面上 2 条、库里 1 条」时这是唯一能定位的线索
+    dropped: [],
   }
 
   const tabs = tabPanes().filter((t) => t.head && t.stage)
@@ -2911,6 +2925,9 @@ async function collectAllTabs(opts = {}) {
       const parsed = parseRowLines(r.lines, { tabStage })
       if (!parsed) {
         debug.noName++
+        if (debug.dropped.length < 6) {
+          debug.dropped.push(`【${b.tab.name}】${r.lines.join(' ｜ ').slice(0, 110)}`)
+        }
         continue
       }
       const it = itemOf(parsed, r.jobId, platform)
