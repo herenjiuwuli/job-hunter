@@ -22,12 +22,6 @@ const REF = new Set()
 for (const m of js.matchAll(/\$\('#([\w-]+)'\)/g)) REF.add(m[1])
 for (const m of js.matchAll(/getElementById\('([\w-]+)'\)/g)) REF.add(m[1])
 
-/** 动态拼的 id：`${prefix}-${L.key}` 这种，LINES 只有 sx / boss 两条线 */
-const LINES = ['sx', 'boss']
-for (const k of LINES) {
-  for (const p of ['state', 'start', 'stop', 'info', 'queue', 'pending']) REF.add(`${p}-${k}`)
-}
-
 const HAVE = new Set([...html.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]))
 const missing = [...REF].filter((i) => !HAVE.has(i)).sort()
 const unused = [...HAVE].filter((i) => !REF.has(i) && !i.startsWith('pane-')).sort()

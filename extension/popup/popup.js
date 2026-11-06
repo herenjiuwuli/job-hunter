@@ -278,18 +278,22 @@ async function readBatchLine(line) {
 }
 
 function renderLine(line, b) {
-  const box = document.getElementById(`line-${line}`)
-  const infoEl = document.getElementById(`info-${line}`)
-  const stateEl = document.getElementById(`state-${line}`)
-  const qEl = document.getElementById(`queue-${line}`)
+  // 只剩「当前页」一条线，状态固定渲染到单一容器（id 不再带 line 后缀）。
+  const box = document.getElementById('line-current')
+  const nameEl = document.getElementById('line-current-name')
+  const infoEl = document.getElementById('info-current')
+  const stateEl = document.getElementById('state-current')
+  const qEl = document.getElementById('queue-current')
   if (!box || !infoEl || !stateEl) return
+
+  if (nameEl) nameEl.textContent = line === 'boss' ? 'BOSS 直聘' : '实习僧'
 
   if (!b) {
     box.className = 'linebox'
     stateEl.textContent = '未启动'
     infoEl.textContent = '—'
     if (qEl) qEl.textContent = ''
-    const pEl = document.getElementById(`pending-${line}`)
+    const pEl = document.getElementById('pending-current')
     if (pEl) pEl.textContent = ''
     return
   }
@@ -407,7 +411,7 @@ function renderLine(line, b) {
  * 所以只列出来 —— 点标题能先看岗位，点「加入」才进队列。
  */
 function renderPending(line, b) {
-  const box = document.getElementById(`pending-${line}`)
+  const box = document.getElementById('pending-current')
   if (!box) return
   const list = Array.isArray(b && b.pending) ? b.pending : []
   const blocked = Array.isArray(b && b.blockedList) ? b.blockedList : []
@@ -501,10 +505,28 @@ async function adoptPendingOne(index, line) {
   setTimeout(refreshBatch, 800)
 }
 
-async function refreshBatch() {
-  for (const L of LINES) {
-    renderLine(L.key, await readBatchLine(L.key))
+// 判断当前活动标签页属于哪条线（只剩「当前页」操作后，状态只显示这一条）。
+async function currentLine() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const u = String((tab && tab.url) || '')
+    if (/zhipin\.com/i.test(u)) return 'boss'
+    if (/shixiseng\.com/i.test(u)) return 'sx'
+  } catch {
+    /* 读不到就退回按批次数据判断 */
   }
+  // 当前页不是平台页时，优先显示有活动的线（BOSS 优先，因为它在聊天页跳转后 url 会变）
+  const boss = await readBatchLine('boss')
+  const sx = await readBatchLine('sx')
+  if (boss && boss.running) return 'boss'
+  if (sx && sx.running) return 'sx'
+  if (boss) return 'boss'
+  return 'sx'
+}
+
+async function refreshBatch() {
+  const line = await currentLine()
+  renderLine(line, await readBatchLine(line))
 }
 
 const isDetailUrl = (u) => /job_detail\/|shixiseng\.com\/intern\/inn_/i.test(String(u || ''))
@@ -611,27 +633,6 @@ async function sendToLine(tab, L, msg, fallback) {
       }
     }
   }
-}
-
-async function startLine(line, limit, force) {
-  const L = LINES.find((x) => x.key === line) || { name: line }
-  const tab = await findLineTab(line)
-  if (!tab) {
-    return { ok: false, error: `没找到「${L.name}」的标签页 —— 先在浏览器打开它的搜索结果列表页` }
-  }
-  return sendToLine(
-    tab,
-    L,
-    { action: 'batchStart', limit, force, pagingConfig: await pagingConfig() },
-    `「${L.name}」启动指令没发出去`
-  )
-}
-
-async function stopLine(line) {
-  const L = LINES.find((x) => x.key === line) || { name: line }
-  const tab = await findLineTab(line)
-  if (!tab) return { ok: false, error: '没找到该平台的标签页' }
-  return sendToLine(tab, L, { action: 'batchStop' }, `「${L.name}」停止指令没发出去（页面可能正在跳转，等两秒再停）`)
 }
 
 // 每 1.5 秒刷新一次：原来只在打开 popup 那一刻读一次，
@@ -779,54 +780,6 @@ function startLogText(res, name) {
     return parts.join('；')
   }
   return `❌ ${name}：${(res && res.error) || '启动失败'}`
-}
-
-// 双线并发启动：两条线各发一条指令，各自跳自己的标签页，互不等待。
-// 真正的并行发生在两个标签页里（各自的 content script 独立推进），popup 只是发令枪。
-document.getElementById('batchBothBtn').addEventListener('click', async () => {
-  const limit = batchLimitValue()
-  const force = batchForceChecked()
-  const btn = document.getElementById('batchBothBtn')
-  btn.disabled = true
-  log(`正在并行启动两条线（每条 ${limit} 家）…`)
-  try {
-    const results = await Promise.all(LINES.map((L) => startLine(L.key, limit, force)))
-    log(results.map((r, i) => startLogText(r, LINES[i].name)).join('\n'))
-  } finally {
-    btn.disabled = false
-    setTimeout(refreshBatch, 800)
-  }
-})
-
-// 每条线单独的启动 / 停止
-for (const L of LINES) {
-  const startBtn = document.getElementById(`start-${L.key}`)
-  if (startBtn) {
-    startBtn.addEventListener('click', async () => {
-      startBtn.disabled = true
-      log(`正在启动「${L.name}」这条线…`)
-      try {
-        const res = await startLine(L.key, batchLimitValue(), batchForceChecked())
-        log(startLogText(res, L.name))
-      } finally {
-        startBtn.disabled = false
-        setTimeout(refreshBatch, 500)
-      }
-    })
-  }
-
-  const stopBtn = document.getElementById(`stop-${L.key}`)
-  if (stopBtn) {
-    stopBtn.addEventListener('click', async () => {
-      const res = await stopLine(L.key)
-      log(
-        res && res.ok
-          ? `${L.name}：${res.message || '已请求停止'}`
-          : `❌ ${L.name}：${(res && res.error) || '停止失败'}`
-      )
-      refreshBatch()
-    })
-  }
 }
 
 // 只在当前标签页启动（就在那一页上操作时用）
@@ -1730,7 +1683,6 @@ $('#fetchGreetingBtn').addEventListener('click', () => fetchGreetingFromBackend(
 const SCOPE_TARGET = {
   single: 'applyBtn',
   page: 'batchBtn',
-  both: 'batchBothBtn',
   onekey: 'oneKeyBtn',
 }
 
@@ -1743,20 +1695,15 @@ $('#goBtn').addEventListener('click', () => {
   const scope = currentScope()
   const btn = document.getElementById(SCOPE_TARGET[scope])
   if (!btn) return log(`❌ 找不到「${scope}」对应的执行入口`)
-  if (btn.disabled) return log('那条线正在跑，先点「停止」再启动')
-  log(`▶ 开始：${scope === 'single' ? '当前岗位' : scope === 'page' ? '当前列表页' : scope === 'both' ? '双线并发' : '一键（翻页/换词）'}`)
+  if (btn.disabled) return log('正在跑，先点「停止」再启动')
+  log(`▶ 开始：${scope === 'single' ? '当前岗位' : scope === 'page' ? '当前列表页' : '一键（翻页/换词）'}`)
   btn.click()
 })
 
 $('#stopBtn').addEventListener('click', async () => {
-  // 双线/一键可能同时在两个平台跑 → 两条线都发一次停止，别只停一边
-  const scope = currentScope()
-  const targets = scope === 'both' || scope === 'onekey' ? ['stop-sx', 'stop-boss', 'batchStopBtn'] : ['batchStopBtn']
   log('⏹ 请求停止…')
-  for (const id of targets) {
-    const btn = document.getElementById(id)
-    if (btn) btn.click()
-  }
+  const btn = document.getElementById('batchStopBtn')
+  if (btn) btn.click()
 })
 
 initGreeting()

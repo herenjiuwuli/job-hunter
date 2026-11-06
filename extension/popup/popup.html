@@ -35,7 +35,6 @@
     <div class="scopes">
       <label class="scope"><input type="radio" name="scope" value="single" checked /><span>当前岗位</span></label>
       <label class="scope"><input type="radio" name="scope" value="page" /><span>当前列表页</span></label>
-      <label class="scope"><input type="radio" name="scope" value="both" /><span>双线并发</span></label>
       <label class="scope"><input type="radio" name="scope" value="onekey" /><span>一键（翻页/换词）</span></label>
     </div>
 
@@ -44,6 +43,21 @@
       <input type="number" id="batchLimit" class="num" value="5" min="1" max="20" />
       <button id="goBtn" class="primary">开始</button>
       <button id="stopBtn" class="ghost">停止</button>
+    </div>
+
+    <!-- 当前页投递实时状态：进度 / 成功失败 / 卡住检测 / 待定清单。
+         以前藏在「高级·分线单独控制」折叠区里，投递时根本看不到（和「确认上传」被折叠是同一类坑）。 -->
+    <div class="linebox" id="line-current">
+      <div class="linehead">
+        <b id="line-current-name">当前页</b>
+        <span class="linestate" id="state-current">未启动</span>
+      </div>
+      <div class="lineinfo" id="info-current">—</div>
+      <details>
+        <summary>队列</summary>
+        <pre id="queue-current" class="inspect"></pre>
+        <div id="pending-current" class="pend"></div>
+      </details>
     </div>
 
     <label class="check">
@@ -66,44 +80,7 @@
     </div>
 
     <details>
-      <summary>高级 · 分线单独控制</summary>
-      <div class="linebox" id="line-sx">
-        <div class="linehead">
-          <b>实习僧</b>
-          <span class="linestate" id="state-sx">未启动</span>
-        </div>
-        <div class="lineinfo" id="info-sx">—</div>
-        <div class="row">
-          <button class="mini" id="start-sx">启动这条线</button>
-          <button class="mini" id="stop-sx">停止</button>
-        </div>
-        <details>
-          <summary>队列</summary>
-          <pre id="queue-sx" class="inspect"></pre>
-          <div id="pending-sx" class="pend"></div>
-        </details>
-      </div>
-
-      <div class="linebox" id="line-boss">
-        <div class="linehead">
-          <b>BOSS 直聘</b>
-          <span class="linestate" id="state-boss">未启动</span>
-        </div>
-        <div class="lineinfo" id="info-boss">—</div>
-        <div class="row">
-          <button class="mini" id="start-boss">启动这条线</button>
-          <button class="mini" id="stop-boss">停止</button>
-        </div>
-        <details>
-          <summary>队列</summary>
-          <pre id="queue-boss" class="inspect"></pre>
-          <div id="pending-boss" class="pend"></div>
-        </details>
-      </div>
-
-      <div class="row">
-        <button id="batchBothBtn" class="ghost">双线并发启动</button>
-      </div>
+      <summary>高级 · 当前页操作</summary>
       <div class="row">
         <button id="batchBtn" class="ghost">只投当前列表页</button>
         <button id="batchStopBtn" class="ghost">停当前页</button>
@@ -167,8 +144,8 @@
     </details>
 
     <div class="tip">
-      数字 = <b>每条线各投几家</b>；两条线<b>各自独立算额度</b>。上限填 <b>0 = 不限</b>。<br />
-      「当前列表页 / 双线」需要两个平台各开一个<b>搜索结果列表页</b>标签页；「一键」会自己翻页、投完自动换关键词。<br />
+      数字 = <b>本轮投几家</b>；额度<b>分平台各自记账</b>。上限填 <b>0 = 不限</b>。<br />
+      「当前列表页」需要在当前平台开着<b>搜索结果列表页</b>；「一键」会自己翻页、投完自动换关键词。<br />
       间隔：实习僧 15~30 秒，BOSS 30~60 秒。本地账本里投过的自动排除。
     </div>
   </section>
