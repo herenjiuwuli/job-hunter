@@ -615,6 +615,20 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
   // 3) 方向：标题优先，标题看不出再看 JD 前 1500 字
   if (f.directions.length) {
     const inTitle = matchedDirections(title)
+    // 先查「其他方向词」：标题已经明确是**别的**方向（如「量化交易分析师」里的
+    // 「量化/交易」），就直接拦，别再退回 JD 全文 —— 否则 JD 里提一嘴「测试」，
+    // 这个量化岗就被当成测试岗放行（2026-11-06 真机：量化交易分析师被自动投了话术）。
+    const otherTitle =
+      window.JH_FILTERS && typeof window.JH_FILTERS.otherDirectionOf === 'function'
+        ? window.JH_FILTERS.otherDirectionOf(title)
+        : []
+    if (otherTitle.length && !inTitle.length) {
+      return {
+        blocked: true,
+        reason: `是「${otherTitle[0]}」等其他方向`,
+        meta,
+      }
+    }
     const pool = inTitle.length ? inTitle : matchedDirections(String(jdText || '').slice(0, 1500))
     const samples = dirSamples(f.directions)
     if (!pool.length) {

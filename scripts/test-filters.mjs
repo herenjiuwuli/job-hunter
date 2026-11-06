@@ -218,6 +218,15 @@ eq(dirHit('Test Automation Intern'), ['qa', 'auto'], 'Test Automation 同时命�
 eq(dirHit('Latest Technologies Intern'), [], '标题里有 latest 不等于测试岗（不能误放行）')
 eq(dirHit('前端开发实习生'), ['fe'], '中文方向分组不受影响')
 
+// 其他方向词：标题明确是「别的方向」时，即使 JD 提到「测试」也不该放行
+// （2026-11-06 真机：量化交易分析师被自动投了话术，因为 JD 里提了「测试/回测」）
+eq(F.otherDirectionOf('量化交易分析师').length > 0, true, '「量化交易分析师」命中其他方向词（量化/交易）')
+eq(F.otherDirectionOf('算法工程师').length > 0, true, '「算法工程师」命中其他方向词（算法）')
+eq(F.otherDirectionOf('销售顾问').length > 0, true, '「销售顾问」命中其他方向词（销售）')
+eq(F.otherDirectionOf('测试工程师').length, 0, '「测试工程师」不命中其他方向词（是目标方向）')
+eq(F.otherDirectionOf('自动化测试实习生').length, 0, '「自动化测试实习生」不命中其他方向词')
+eq(F.otherDirectionOf('技术质量工程师').length, 0, '「技术质量工程师」不命中其他方向词（中性标题，交给 JD 兜底）')
+
 // ——————————————————————————————————————————————
 console.log('\n— 关键词切分（一键投递可以排多个词）—')
 // 一个词在一个城市通常只有 20~40 个岗位，投完就没了，所以要能排几个词轮着跑。
