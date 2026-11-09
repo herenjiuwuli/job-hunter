@@ -3212,7 +3212,7 @@ async function bootNextPage() {
     // popup 可能已经关了，结果落盘，下次打开能看到为什么停
     try {
       await chrome.storage.local.set({
-        lastOneKeyResult: { ok: false, error: why, at: new Date().toISOString() },
+        lastOneKeyResult: { ok: false, error: why, platform: platform(), at: new Date().toISOString() },
       })
     } catch (_) {
       /* 落盘失败不影响停 */
@@ -3288,7 +3288,7 @@ async function bootNextPage() {
           })
         }
         try {
-          await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+          await chrome.storage.local.set({ lastOneKeyResult: { ...res, platform: platform(), at: new Date().toISOString() } })
         } catch (_) {
           /* 落盘失败不影响投递 */
         }
@@ -3402,7 +3402,7 @@ async function bootNextPage() {
       })
     }
     try {
-      await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+      await chrome.storage.local.set({ lastOneKeyResult: { ...res, platform: platform(), at: new Date().toISOString() } })
     } catch (_) {
       /* 落盘失败不影响投递 */
     }
@@ -3462,7 +3462,7 @@ async function bootOneKey() {
   }
   // popup 可能已经关了，结果落盘，下次打开能看到上次发生了什么
   try {
-    await chrome.storage.local.set({ lastOneKeyResult: { ...res, at: new Date().toISOString() } })
+    await chrome.storage.local.set({ lastOneKeyResult: { ...res, platform: platform(), at: new Date().toISOString() } })
   } catch (_) {
     /* 落盘失败不影响投递 */
   }

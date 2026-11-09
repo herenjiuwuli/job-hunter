@@ -118,5 +118,11 @@ if (keepSrc && anySrc) {
   eq('非法地址返回空', fromAny('nope'), '')
 }
 
+// 启动结果的回显不能写死平台：BOSS 上启动后 5 分钟内重开插件，
+// 日志会写「✅ 实习僧：3 家已启动」，而实际一家都没投到实习僧（2026-11-09 顺手修）
+const contentSrc = fs.readFileSync(path.join(root, 'extension/content.js'), 'utf8')
+ok('回显平台名不写死', !/startLogText\(lastOneKeyResult, '实习僧'\)/.test(src), '还在写死实习僧')
+ok('content 上报结果带平台名', /lastOneKeyResult: \{ \.\.\.res, platform: platform\(\)/.test(contentSrc), 'content 没把平台名写进 lastOneKeyResult')
+
 console.log(`\n结果：${fail ? '失败' : '通过'}（${pass} 通过 / ${fail} 失败）`)
 process.exit(fail ? 1 : 0)

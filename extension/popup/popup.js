@@ -1259,7 +1259,9 @@ bindPagingForm()
   if (!lastOneKeyResult) return
   const age = Date.now() - new Date(lastOneKeyResult.at || 0).getTime()
   if (!(age >= 0 && age < 5 * 60 * 1000)) return
-  log(startLogText(lastOneKeyResult, '实习僧'))
+  // ⚠️ 平台名不能写死「实习僧」：BOSS 上一键启动后 5 分钟内重开插件，
+  // 日志会显示「✅ 实习僧：3 家已启动」，而其实一家都没投到实习僧（2026-11-09 顺手修）
+  log(startLogText(lastOneKeyResult, lastOneKeyResult.platform || '实习僧'))
 })()
 
 document.getElementById('pickUrlBtn').addEventListener('click', async () => {
