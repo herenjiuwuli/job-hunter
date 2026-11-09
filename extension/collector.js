@@ -884,7 +884,53 @@ function collectFromPage() {
  * ⚠️ 只允许在「某个已知容器内」或「全页唯一候选」时用，
  * **绝不能拿它当 document.querySelector 的全页通配**（见 findCompanyName 的事故说明）。
  */
-const COMPANY_SEL = '[class*="company-name"], .company-name, .cname, .com-name'
+const COMPANY_SEL = [
+  '[class*="company-name"]',
+  '.company-name',
+  '.cname',
+  '.com-name',
+  // ⭐ 2026-11-09：BOSS 46/61 条记成「未知公司」，原因是上面四个**全是 class 名**，
+  // 而 BOSS 新版详情页压根没有 company-name 这类 class → 候选数组为空 → 唯一性判定
+  // 「0 个候选 ≠ 1 个候选」→ 返回空。class 名会随改版变，**公司详情页的路由不会变**：
+  // BOSS 的公司页十几年来一直是 /gongsi/xxx.html。按 href 取比按 class 取稳得多。
+  'a[href*="/gongsi/"]',
+  // 有的版面公司名不在链接里，而在信息区标题上
+  '[class*="company-info"] a',
+  '[class*="company-info"] h3',
+].join(', ')
+
+/**
+ * 从一个候选元素里取出**干净的公司名**。
+ *
+ * 为什么不能直接 textOf：`a[href*="/gongsi/"]` 里常塞着「公司名 + 融资状态 + 规模」，
+ * textOf 会把它们压成一行「正浩创新 智能硬件 1000-9999人」，长度过 30 直接被 looksLikeCompany 枪毙。
+ * 所以先按**原始换行**切，取第一个自己就长得像公司名的行；都没有再退回整串（让上层去否决）。
+ */
+function companyTextOf(el) {
+  if (!el) return ''
+  let raw = ''
+  try {
+    raw = String(el.innerText || el.textContent || '')
+  } catch (_) {
+    return ''
+  }
+  // 只有 logo 图 / 空文字的链接：文本取不到，退到 title / aria-label（BOSS 的 logo 链接常带 title）
+  if (!raw.trim()) {
+    try {
+      raw = String(el.getAttribute('title') || el.getAttribute('aria-label') || '')
+    } catch (_) {
+      raw = ''
+    }
+  }
+  const lines = raw
+    .split('\n')
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+  for (const l of lines) {
+    if (looksLikeCompany(l)) return l
+  }
+  return textOf(el)
+}
 
 /** 像不像一个公司名（滤掉「公司信息」这类区块标题、纯数字、以及被拼成一段话的整块文本） */
 function looksLikeCompany(s) {
@@ -900,6 +946,55 @@ function looksLikeCompany(s) {
   return true
 }
 
+/**
+ * 岗位名元素候选。
+ *
+ * ⭐ 2026-11-09：BOSS 上一键投递建的档，岗位名全是「测试实习生 3-5K」这种
+ * **带薪资的字符串** —— 这是 `jobEl` 全落空、退回 `document.title` 的铁证
+ * （真实节点里不会把薪资和岗位名挤在同一行）。所以这里补上按**结构**（banner 里的 h1）
+ * 和按**部分 class** 的候选，不只认那几个写死的 `.job-banner .name`。
+ */
+const JOB_TITLE_SEL = [
+  '.job-banner .name',
+  '.job-primary .name',
+  '.job-detail-box .name',
+  '.job-name',
+  '.job-title',
+  '.position-name',
+  '[class*="job-banner"] h1',
+  '[class*="job-banner"] [class*="name"]',
+  '[class*="job-detail"] h1',
+  '[class*="job-title"]',
+  '[class*="position"] h1',
+  'h1',
+].join(', ')
+
+/** 找岗位名元素；找不到返回 null（调用方据此决定要不要回退到 document.title） */
+function findJobTitleEl(doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null)
+  if (!d) return null
+  let els = []
+  try {
+    els = [...d.querySelectorAll(JOB_TITLE_SEL)]
+  } catch (_) {
+    return null
+  }
+  if (!els.length) return null
+  // 优先看得见的；列表页会命中一堆卡片标题，那时返回首个可见的，和旧行为等价
+  for (const el of els) {
+    const t = textOf(el)
+    if (!t || t.length > 80) continue
+    let vis = true
+    try {
+      vis = !!(el.offsetHeight || el.offsetWidth)
+    } catch (_) {
+      vis = true
+    }
+    if (vis) return el
+  }
+  return els[0] || null
+}
+
 /** 某个范围里出现了哪些**不同**的公司名（去重；过滤掉不像公司名的候选） */
 function namesIn(scope) {
   const out = []
@@ -911,7 +1006,7 @@ function namesIn(scope) {
     list = []
   }
   for (const el of list) {
-    const t = textOf(el)
+    const t = companyTextOf(el)
     if (looksLikeCompany(t) && out.indexOf(t) === -1) out.push(t)
   }
   return out
@@ -2966,6 +3061,10 @@ window.__jhCollector = {
   probeMessageRows,
   probeCompanyScope,
   findCompanyName,
+  companyTextOf,
+  findJobTitleEl,
+  JOB_TITLE_SEL,
+  COMPANY_SEL,
   namesIn,
   looksLikeCompany,
   findChatPanel,

@@ -875,10 +875,35 @@ console.log('\n— 公司名取值（只在岗位名所在容器里找，绝不�
 
 {
   // 迷你 DOM：只实现这套逻辑真正用到的 querySelector / querySelectorAll
-  const isCompanyNode = (n) => {
-    const cls = String(n.className || '')
-    return /company-name/.test(cls) || cls === 'cname' || cls === 'com-name'
+  //
+  // ⚠️ 这里必须**真按选择器匹配**，不能自己维护一份「什么算公司节点」的白名单。
+  // 第一版就是白名单：把 /gongsi/ 判断写进了白名单，于是把 COMPANY_SEL 里的
+  // gongsi 候选删掉，测试照样全绿（变异测试白做）。选择器的正确性必须由选择器自己承担。
+  const attrVal = (n, name) => {
+    if (name === 'class') return String(n.className || '')
+    if (name === 'href') return String(n.href || (n.getAttribute && n.getAttribute('href')) || '')
+    return String((n.getAttribute && n.getAttribute(name)) || n[name] || '')
   }
+  const matchOneSel = (n, raw) => {
+    let s = String(raw || '').trim()
+    if (!s) return true
+    // 后代组合器只取最后一段（这套假 DOM 不做层级匹配；用到的三个复合选择器末段都够用）
+    s = s.split(/\s+/).pop()
+    const tagM = s.match(/^([a-zA-Z][\w-]*)/)
+    if (tagM && String(n.tagName || '').toLowerCase() !== tagM[1].toLowerCase()) return false
+    let m
+    const attrRe = /\[([\w-]+)\*?=\s*["']?([^"'\]]*)["']?\]/g
+    while ((m = attrRe.exec(s))) {
+      if (!attrVal(n, m[1]).includes(m[2])) return false
+    }
+    const clsRe = /\.([\w-]+)/g
+    while ((m = clsRe.exec(s))) {
+      const toks = String(n.className || '').split(/\s+/)
+      if (toks.indexOf(m[1]) === -1) return false
+    }
+    return true
+  }
+  const matchSel = (n, sel) => String(sel || '*').split(',').some((one) => matchOneSel(n, one))
   const descendants = (n, out = []) => {
     for (const c of n.children || []) {
       out.push(c)
@@ -895,8 +920,8 @@ console.log('\n— 公司名取值（只在岗位名所在容器里找，绝不�
       children,
       parentElement: null,
     }
-    el.querySelectorAll = () => descendants(el).filter(isCompanyNode)
-    el.querySelector = () => el.querySelectorAll()[0] || null
+    el.querySelectorAll = (sel) => descendants(el).filter((n) => matchSel(n, sel))
+    el.querySelector = (sel) => el.querySelectorAll(sel)[0] || null
     for (const c of children) c.parentElement = el
     return el
   }
@@ -964,6 +989,107 @@ console.log('\n— 公司名取值（只在岗位名所在容器里找，绝不�
     false,
     '被拼成一整段的整块文本不算公司名（长度超 30）'
   )
+
+  // 直接测清洗函数：链接里常是「公司名 \n 规模 \n 融资」，取整串会被 looksLikeCompany 枪毙
+  const gEl = {
+    innerText: '深圳市云启智造科技有限公司\n100-499人\n已融资',
+    textContent: '',
+    getAttribute: () => null,
+  }
+  eq(
+    C.companyTextOf(gEl),
+    '深圳市云启智造科技有限公司',
+    '多行链接文本：只取第一行公司名，不把「100-499人 / 已融资」带进账本'
+  )
+  eq(
+    C.looksLikeCompany(
+      C.companyTextOf({
+        innerText: '深圳市云启智造科技有限公司 100-499人',
+        textContent: '',
+        getAttribute: () => null,
+      })
+    ),
+    false,
+    '单行挤在一起时不许硬猜，交给 looksLikeCompany 否决（上层留空 → 未知公司）'
+  )
+
+  // ★ 2026-11-09 真机：BOSS 新版详情页**全程没有 company-name 这类 class**，
+  // 公司名只在公司页链接里，链接文本还是「公司名 \n 规模 \n 融资」这种多行。
+  // 旧实现四个候选全是 class 名 → 候选 0 个 → 「0 ≠ 1」→ 返回空 → 46/61 条记成未知公司。
+  const gco = mk('A', 'company-link', '深圳市云启智造科技有限公司\n100-499人\n已融资', [])
+  gco.href = '/gongsi/8f1c2d3e4a.html'
+  const gTitle = mk('H1', '', '测试实习生')
+  const gbanner = mk('DIV', 'job-banner', '测试实习生 150-200元/天 深圳', [gTitle])
+  const ginfo = mk('DIV', 'company-info', '深圳市云启智造科技有限公司 100-499人', [gco])
+  const groot = makeRoot([gbanner, ginfo])
+  eq(
+    C.findCompanyName(gTitle, groot),
+    '深圳市云启智造科技有限公司',
+    '★ 没有 company-name class，靠 /gongsi/ 链接也能取到，且只取第一行公司名（不能把「100-499人」一起塞进账本）'
+  )
+
+  // 反例：全页出现多家公司（列表页 + 推荐位）时仍然必须留空 ——
+  // 新加的选择器不能把 2026-11-05 那次「10 条错 4 条公司名」的事故带回来
+  const another = mk('A', 'company-link', '别的公司B', [])
+  another.href = '/gongsi/abc.html'
+  const manyRoot = makeRoot([gbanner, ginfo, mk('DIV', 'recommend', '别的公司B', [another])])
+  eq(
+    C.findCompanyName(gTitle, manyRoot),
+    '',
+    '★ 全页多家公司且找不到「只含一家」的容器时仍返回空（宁可未知，不可张冠李戴）'
+  )
+}
+
+console.log('\n— 岗位名元素定位（BOSS 新版没有 .job-banner .name 时不能直接摆烂）—')
+
+{
+  // 第二个迷你 DOM：这次真的按选择器匹配（只实现 tag / .class 两种形式）
+  const matchOne = (el, sel) => {
+    const s = String(sel || '').trim()
+    if (!s) return false
+    // 复合选择器只取最后一段：`[class*="job-banner"] h1` → h1
+    const last = s.split(/\s+/).pop()
+    if (last.startsWith('.')) return String(el.className || '').includes(last.slice(1))
+    if (last.startsWith('[')) return false // 属性选择器这套假 DOM 不实现
+    return String(el.tagName || '').toLowerCase() === last.toLowerCase()
+  }
+  const matches = (el, sel) => String(sel).split(',').some((one) => matchOne(el, one))
+  const desc = (n, out = []) => {
+    for (const c of n.children || []) {
+      out.push(c)
+      desc(c, out)
+    }
+    return out
+  }
+  const mk2 = (tag, cls, text, children = []) => {
+    const el = {
+      tagName: tag,
+      className: cls || '',
+      id: '',
+      innerText: text || '',
+      textContent: text || '',
+      offsetHeight: 20,
+      offsetWidth: 100,
+      children,
+      parentElement: null,
+    }
+    el.querySelectorAll = (sel) => desc(el).filter((n) => matches(n, sel))
+    for (const c of children) c.parentElement = el
+    return el
+  }
+
+  // 回归 2026-11-09 真机：账本里出现「测试实习生 3-5K」这种岗位名，
+  // 说明 jobEl 全落空、退回 document.title（真实节点不会把薪资和岗位名挤一行）
+  const h1 = mk2('H1', '', '自动化测试工程师助理')
+  const banner = mk2('DIV', 'job-banner-inner', '自动化测试工程师助理 7-9K 深圳', [h1])
+  const page = mk2('DIV', 'page', '', [banner])
+  eq(
+    C.findJobTitleEl(page) === h1,
+    true,
+    '★ banner 里只有 h1、没有 .job-banner .name 时也要认得出来（否则岗位名退回 document.title，把薪资一起带进账本）'
+  )
+  eq(C.findJobTitleEl(page).innerText, '自动化测试工程师助理', '取到的是纯岗位名，不含薪资')
+  eq(C.findJobTitleEl(mk2('DIV', 'page', '空页', [])), null, '真空页返回 null，交给上层回退')
 }
 
 console.log('\n— 会话逐条采集（点开 → 读岗位卡 → 判谁说的）—')

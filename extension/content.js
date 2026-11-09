@@ -335,16 +335,24 @@ function extractJobInfo() {
   const title = document.title || ''
   // 顺序按精确度排：BOSS 详情页 → 列表页右侧面板 → 通用
   // ⚠️ 裸的 .name 不能单独用：在 BOSS 上会命中别处的节点，把薪资也带进来
-  const jobEl = document.querySelector(
-    '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
-  )
+  const C0 = window.__jhCollector
+  // ⭐ 2026-11-09：选择器收进 collector 的 findJobTitleEl（多认 banner 里的 h1 / 部分 class）。
+  // 之前那段写死的选择器在 BOSS 新版上全部落空 → 岗位名退回 document.title，
+  // 于是账本里出现「测试实习生 3-5K」这种带薪资的岗位名。
+  const jobEl =
+    (C0 && typeof C0.findJobTitleEl === 'function' ? C0.findJobTitleEl() : null) ||
+    document.querySelector(
+      '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
+    )
   // ⚠️ 不能直接取 innerText 第一行：实习僧岗位名元素里是「27届\n测试实习生」，
   // 第一行是届别标签。真机上 3 条不同岗位的标题全成了「27届」（见 collector 的 PURE_TAG_LINE）。
-  const C0 = window.__jhCollector
   const rawLabel = (jobEl && jobEl.innerText) || ''
+  // ⚠️ title 这条兜底也必须剥薪资：标题常是「岗位名 3-5K-深圳-BOSS直聘」，
+  // 原来直接把首段塞进账本，于是「测试实习生 3-5K」原样入库。
+  const titleHead = cleanLabel(String(title).split(/[-_—|｜]/)[0] || '')
   const jobTitle =
     (C0 && C0.firstTitleLine ? C0.firstTitleLine(rawLabel) : cleanLabel(rawLabel)) ||
-    title.split(/[-_—|｜]/)[0].trim() ||
+    titleHead ||
     '未知岗位'
 
   // 公司名走 collector.js 的受控查找：只在「岗位名所在容器」里取，或全页唯一候选。
@@ -360,11 +368,31 @@ function extractJobInfo() {
   const C = window.__jhCollector
   const company = C && C.findCompanyName ? C.findCompanyName(jobEl) : ''
 
+  // 取不到时把「为什么」记下来 —— 这条会进 popup 日志。
+  // 没有它，界面上只有「未知公司」四个字，看不出是 collector 没注入 / jobEl 没找到 / 选择器不匹配。
+  const companyDebug = company
+    ? ''
+    : (() => {
+        try {
+          const links = document.querySelectorAll('a[href*="/gongsi/"]')
+          const cands = C && typeof C.namesIn === 'function' ? C.namesIn(document) : []
+          return (
+            `jobEl=${jobEl ? '有' : '无'}｜全页 /gongsi/ 链接 ${links.length} 个｜` +
+            `过筛候选 ${cands.length} 个` +
+            (cands.length ? `（${cands.slice(0, 3).join(' / ')}）` : '') +
+            `｜title=${String(title).slice(0, 40)}`
+          )
+        } catch (e) {
+          return `诊断失败：${(e && e.message) || e}`
+        }
+      })()
+
   return {
     // 空 → 未知公司：宁可留空让人看见，也不要一个错的（错的会稳定匹配到错误的记录）
     company: company || '未知公司',
     jobTitle,
     companyUnverified: !company,
+    companyDebug,
   }
 }
 
@@ -381,9 +409,12 @@ function extractJobInfo() {
 function cityTextNearTitle() {
   const F = window.JH_FILTERS
   if (!F || typeof F.firstCity !== 'function') return ''
-  const el = document.querySelector(
-    '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
-  )
+  const C = window.__jhCollector
+  const el =
+    (C && typeof C.findJobTitleEl === 'function' ? C.findJobTitleEl() : null) ||
+    document.querySelector(
+      '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
+    )
   if (!el) return ''
   let cur = el
   for (let i = 0; i < 6; i++) {
@@ -818,6 +849,16 @@ async function writeback(info, greeting, jobId) {
     appliedAt: new Date().toISOString(),
   }
 
+  // ⚠️ 取不到公司名会写进账本变成「未知公司」——必须留痕。
+  // 没有这行，事后只能从账本倒推「是没注入、没找到元素、还是选择器不匹配」，而这三种修法完全不同。
+  if (!info.company || info.company === '未知公司') {
+    try {
+      console.warn('[jh] 公司名未取到，将记成「未知公司」：', info.companyDebug || '(无诊断信息)')
+    } catch (_) {
+      /* 控制台不可用就算了，不能因此中断投递 */
+    }
+  }
+
   // 优先走 background（不受页面 CSP 限制）
   try {
     const r = await chrome.runtime.sendMessage({ action: 'backendPost', path: '/api/applications', body })
@@ -1038,20 +1079,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       jobInfo: extractJobInfo(),
       company: (() => {
         const C = window.__jhCollector
-        const jobEl = (() => {
-          try {
-            return document.querySelector(
-              '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
-            )
-          } catch (_) {
-            return null
-          }
-        })()
+        const jobEl =
+          (C && typeof C.findJobTitleEl === 'function' ? C.findJobTitleEl() : null) ||
+          (() => {
+            try {
+              return document.querySelector(
+                '.job-banner .name, .job-primary .name, .job-detail-box .name, .job-name, .job-title, .position-name, h1'
+              )
+            } catch (_) {
+              return null
+            }
+          })()
         // COMPANY_SEL 的候选全列出来：如果这里一个都没有，就是选择器对不上（平台改版）
         const cands = []
         try {
           for (const el of document.querySelectorAll(
-            '[class*="company-name"], .company-name, .cname, .com-name'
+            (C && C.COMPANY_SEL) || '[class*="company-name"], .company-name, .cname, .com-name'
           )) {
             const t = String(el.innerText || '').trim().replace(/\s+/g, ' ')
             if (!t) continue
@@ -1636,6 +1679,8 @@ async function runBossApply(msg) {
     verified: result.state === 'success',
     company: info.company,
     jobTitle: info.jobTitle,
+    // 公司名没取到时把原因带回弹窗，直接显示在日志里（不用去开 Console）
+    companyDebug: info.companyDebug || '',
     used: quota.used,
     limit: quota.limit,
     backendError: wbBoss && !wbBoss.ok ? wbBoss.error || '回写后端失败' : '',

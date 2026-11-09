@@ -185,7 +185,12 @@ async function apply(force = false) {
         res.limit > 0
           ? `本平台今日 ${res.used}/${res.limit}，还剩 ${Math.max(0, res.limit - res.used)}`
           : `本平台今日 ${res.used} 次（不限）`
-      log(`✅ ${res.company} · ${res.jobTitle}\n${detail}（${quotaText}）`)
+      log(
+        `✅ ${res.company} · ${res.jobTitle}\n${detail}（${quotaText}）` +
+          // 公司名没取到时会记成「未知公司」，把原因一并摆出来，
+          // 否则界面上只有四个字，看不出是选择器不匹配还是页面结构根本不同
+          (res.companyDebug ? `\n⚠️ 公司名没取到：${res.companyDebug}` : '')
+      )
     } else {
       log(`❌ ${(res && res.error) || '执行失败'}`)
     }
