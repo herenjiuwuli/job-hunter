@@ -289,7 +289,12 @@ router.post('/api/applications/collect', async (req, res) => {
         // ⚠️ 用 || 不用 ??：采集端「只靠分类 tab 判定阶段」的行，stageRaw 是空串
         // （行内没有阶段词），而 stage 是有效的 key。?? 只挡 null/undefined，
         // 空串会原样传下去 → parseStage('') → null → 这一档永远推不上去。
-        const stage = parseStage(raw.stageRaw || raw.stage)
+        //
+        // ⭐ BOSS 不改平台状态：HR 拒绝只发一句「不太匹配」，列表页 tab 一直停在「已投递」。
+        // 所以聊天里明确拒了也必须能推进到「不合格」，否则账本永远停在已投递（2026-11-09 主人提的）。
+        // 只升不降仍由下面的 shouldAdvance 统一把关（已是 offer 的不会被一条消息推翻）。
+        const chatSaidNo = String(raw.chatVerdict || '') === 'rejected'
+        const stage = chatSaidNo ? 'rejected' : parseStage(raw.stageRaw || raw.stage)
 
         /**
          * 「待我回复」信号：三态。
@@ -396,8 +401,10 @@ router.post('/api/applications/collect', async (req, res) => {
           patch.stage = stage
           patch.stageUpdatedAt = now
           patch.stageHistory = pushHistory(cur.stageHistory, stage, {
-            source: 'collect',
-            raw: raw.stageRaw || '',
+            // source 分开记：'chat' 表示这不是平台状态，是从聊天内容判出来的 ——
+            // 以后要核对「这条为什么被算成不合格」，得能一眼找到依据那句话
+            source: chatSaidNo ? 'chat' : 'collect',
+            raw: chatSaidNo ? String(raw.chatVerdictText || '').slice(0, 60) : raw.stageRaw || '',
             at: now,
           })
           advancedList.push({ company, jobTitle, from: cur.stage || null, to: stage })

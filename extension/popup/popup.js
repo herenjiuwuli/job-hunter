@@ -2477,6 +2477,9 @@ function renderChatPreview(items, dbg) {
     // 我自己说不合适 = 我放弃，不是被拒。这两件事在后端是两个字段，
     // 预览里必须分开标 —— 否则用户以为这条被人拒了。
     if (x.withdrawn) flags.push('🙋 我放弃（我最后说不合适）')
+    // 对方明确说不要了 —— BOSS 不改平台状态，只发消息，所以这条要单独标出来，
+    // 否则用户看到「已投递」会以为还在流程里（实际早就被拒了）
+    if (x.chatVerdict === 'rejected') flags.push('✗ 对方说不合适')
     // 我一句话都没说过 = 是 HR 主动找我，不是我投的（这类不该计入投递量）
     if (x.myMsgCount === 0) flags.push('⚠️ 我没发过消息')
     else if (x.firstFrom === 'me') flags.push('我先开口')
@@ -2710,12 +2713,16 @@ async function uploadProgress(opts = {}) {
     let readN = 0
     let repliedN = 0
     let withdrawnN = 0
+    let verdictNoN = 0
     for (const it of collectPreview) {
       if (it.stage) dist[it.stage] = (dist[it.stage] || 0) + 1
       else noStage++
       if (it.read) readN++
       if (it.replied) repliedN++
       if (it.withdrawn) withdrawnN++
+      // 对方在聊天里明确拒了 → 后端会把这档推到「不合格」。
+      // 必须在汇总里说出来，否则「会话采集不推阶段」这句话就成了假的。
+      if (it.chatVerdict === 'rejected') verdictNoN++
     }
     const order = ['submitted', 'viewed', 'screening', 'written', 'interview', 'rejected', 'offer', 'unknown']
     const distTxt = order
@@ -2725,8 +2732,9 @@ async function uploadProgress(opts = {}) {
     if (distTxt) lines.push(`\n本次上报：${distTxt}`)
     if (noStage)
       lines.push(
-        `\n会话采集（不推阶段）：已读 ${readN} 条 / 对方回过话 ${repliedN} 条` +
-          (withdrawnN ? ` / 我放弃 ${withdrawnN} 条（记入「我放弃」，不算被拒）` : '')
+        `\n会话采集（一般不推阶段，除非对方明确拒绝）：已读 ${readN} 条 / 对方回过话 ${repliedN} 条` +
+          (withdrawnN ? ` / 我放弃 ${withdrawnN} 条（记入「我放弃」，不算被拒）` : '') +
+          (verdictNoN ? ` / ✗ 对方说不合适 ${verdictNoN} 条（会记成「不合格」）` : '')
       )
 
     // 页面上有、但连预览都没进的行（解析失败）。上传只覆盖预览里的那些，

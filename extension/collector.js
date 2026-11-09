@@ -2058,6 +2058,44 @@ function looksWithdrawn(lastFrom, lastText) {
 }
 
 /**
+ * 「对方明确不要我了」的措辞。
+ *
+ * ⚠️ 只喂**对方**发的消息。BOSS 上 HR 拒绝不会改平台状态，只会发一句
+ * 「不好意思，您和岗位不太匹配」—— 不读消息内容，账本就永远停在「已投递」。
+ *
+ * ⚠️ 必须**保守**：这是不可逆结论（判成 rejected，漏斗里就少一条进行中）。
+ * 所以三类一律不算：
+ *   ① 问句（「是哪里不合适吗？」）
+ *   ② 否定式（「不是不合适，是岗位调整了」）
+ *   ③ 纯客套（「已收到您的简历」「感谢投递」）—— 词表里压根没有这些词，天然不会命中
+ */
+const REJECT_RE =
+  /(不太?合适|不太?匹配|不匹配|不符合(?:我们|岗位|要求|条件)|未通过|没有通过|未录用|不予录用|不录用|已招满|招满了|岗位(?:已)?关闭|停止招聘|已下架|已停招|暂无(?:合适)?(?:的)?(?:岗位|空缺)|没有名额|已有人选|已找到(?:人|合适)|暂时不(?:需要|招|考虑))/i
+
+/**
+ * 噪声：出现这些就别判拒绝。
+ * 「不是不合适」是否定式；「薪资不合适的话我们再谈」是**在谈**，不是拒绝 ——
+ * 后者特别容易误伤：同一句里既有「不合适」又有「再谈」。
+ */
+const REJECT_NOISE_RE = /(不是不合适|没有不合适|并不是不合适|是否合适|合不合适|不是说|再谈|再商量|可以调整|还能调整)/
+
+/**
+ * 从「对方说过的所有话」里判最终结论。
+ * @param {string[]} texts 只传 from==='other' 的文本
+ * @returns {{verdict:''|'rejected', text:string, hit:string}}
+ */
+function chatVerdictOf(texts) {
+  const list = (Array.isArray(texts) ? texts : []).map((s) => String(s || '').trim()).filter(Boolean)
+  for (const t of list) {
+    if (/[？?]\s*$/.test(t)) continue // 问句不是结论
+    if (REJECT_NOISE_RE.test(t)) continue
+    const m = t.match(REJECT_RE)
+    if (m) return { verdict: 'rejected', text: t.slice(0, 60), hit: m[1] }
+  }
+  return { verdict: '', text: '', hit: '' }
+}
+
+/**
  * 读当前打开的那条会话。
  * 真机样本（2026-11-05，赵怡和智传信）：
  *   `.chat-position-content` 的 lines = ["社媒运营实习生（多平台 / 发布与维护）", "120-150元/天", "深圳", "查看职位"]
@@ -2112,6 +2150,10 @@ function readOpenChat(panel) {
   // 但那条根本没进过我的投递漏斗，混进「已投递」分母会把投递量撑大。
   let firstFrom = ''
   let myMsgCount = 0
+  // 对方说过的所有话（用于判「有没有明确拒我」）。
+  // 不能只看最后一条：HR 说完「不太匹配」我又回了句「好的谢谢」，
+  // 最后一条就变成我发的了 —— 拒绝信号会被后面这句客套盖掉。
+  const otherTexts = []
   for (let k = 0; k < rows.length; k++) {
     const row = rows[k]
     const cls = classTokens(row).join(' ')
@@ -2124,12 +2166,15 @@ function readOpenChat(panel) {
     const isSystem = /system|notice/i.test(cls)
     const from = isSystem ? 'system' : hasStatus ? 'me' : 'other'
     if (hasStatus) myMsgCount++
+    if (from === 'other') otherTexts.push(textOf(row).slice(0, 120))
     if (!firstFrom && from !== 'system') firstFrom = from
     if (k === rows.length - 1) {
       lastFrom = from
       lastText = textOf(row).slice(0, 60)
     }
   }
+
+  const verdict = chatVerdictOf(otherTexts)
 
   return {
     jobTitle,
@@ -2142,6 +2187,10 @@ function readOpenChat(panel) {
     myMsgCount,
     // 只看最后一条且必须是我发的：HR 说「不合适」是被拒，我说「不合适」是我放弃
     withdrawn: looksWithdrawn(lastFrom, lastText),
+    // 对方明确说不要了 → 才能推进到「不合格」。空串 = 判不出来（保持原状）
+    chatVerdict: verdict.verdict,
+    chatVerdictText: verdict.text,
+    chatVerdictHit: verdict.hit,
   }
 }
 
@@ -2368,6 +2417,10 @@ async function collectChatDetails(opts = {}) {
       replied: chat.lastFrom === 'other',
       // 我主动放弃（最后一条是我发的「不太适合我」之类）。不动 stage，后端单独记 withdrawnAt。
       withdrawn: chat.withdrawn,
+      // 对方明确拒了（「不太匹配」「已招满」）。后端据此把 stage 推到「不合格」——
+      // BOSS 不会改平台状态，只发一条消息，不读内容账本就永远停在「已投递」。
+      chatVerdict: chat.chatVerdict,
+      chatVerdictText: chat.chatVerdictText,
       source: 'chat',
       // 公司名是拆文本猜出来的 → 预览里必须标出来，让用户能核对
       companyGuess: who.guess,
@@ -3067,6 +3120,8 @@ window.__jhCollector = {
   COMPANY_SEL,
   namesIn,
   looksLikeCompany,
+  chatVerdictOf,
+  looksWithdrawn,
   findChatPanel,
   chatPanelKey,
   readOpenChat,
