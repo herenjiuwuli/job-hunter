@@ -99,6 +99,24 @@ function customStatus(a) {
   return s && s !== '已投递' && s !== '待投递' ? s : ''
 }
 
+/**
+ * 「不合格」如果是聊天内容判出来的，必须把依据那句话摆出来。
+ *
+ * 理由和「假待办比没有待办更坏」同源：**误判的拒绝比没有拒绝更坏**。
+ * BOSS 不改平台状态，拒绝只发一句消息，所以这一层是机器读出来的结论 ——
+ * 用户得能自己核对「系统凭什么说我不合格」，而不是只能信。
+ */
+function chatVerdictNote(a) {
+  const h = Array.isArray(a.stageHistory) ? a.stageHistory : []
+  for (let i = h.length - 1; i >= 0; i--) {
+    const it = h[i]
+    if (it && it.stage === 'rejected' && it.source === 'chat') {
+      return it.raw ? `依据：对方说「${it.raw}」` : '依据：聊天里对方明确拒绝'
+    }
+  }
+  return ''
+}
+
 // 公司名联想：从已有投递记录去重，越用越省事（仍可自由输入新公司）
 const companyOptions = computed(() => {
   return [...new Set(apps.value.map((a) => a.company).filter(Boolean))]
@@ -282,6 +300,8 @@ onMounted(load)
               <!-- 到达轨迹：判了不合格的记录也曾经到过面试，只看当前态会把这段抹掉。
                    但只有一步时它就是上面徽章的重影，不必显示。 -->
               <div v-if="hasReachedPath(a)" class="stage-path">{{ stagePath(a) }}</div>
+              <!-- 聊天判出来的「不合格」：把依据那句话放出来，用户能自己核对 -->
+              <div v-if="chatVerdictNote(a)" class="verdict-note">{{ chatVerdictNote(a) }}</div>
               <div v-if="customStatus(a)" class="my-mark">我的标记：{{ customStatus(a) }}</div>
               <div v-if="a.result && a.result !== '待处理'" class="my-mark">
                 投递结果：{{ a.result }}
@@ -510,6 +530,15 @@ onMounted(load)
   margin-top: 2px;
   font-size: var(--fs-2xs);
   color: var(--c-amber);
+}
+
+/* 聊天判出的「不合格」依据：比轨迹再灰一档，但必须能读清 —— 它是可核对性的入口 */
+.verdict-note {
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
+  color: var(--text-faint);
+  line-height: 1.4;
+  max-width: 34ch;
 }
 
 /* 投递结果徽章（applypilot 五态）—— 与全局状态色同一套 */
