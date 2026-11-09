@@ -538,6 +538,9 @@ async function refreshBatch() {
 async function updateOneKeyLabel() {
   const el = document.getElementById('oneKeyBtn')
   const plat = await activeLine()
+  // 顺手记下「这次在用的 BOSS 筛选」：用户往往是先看列表、再点进详情，
+  // 到详情页才点继续投。等他到详情页时，这层记忆就是唯一还活着的筛选条件。
+  if (plat.key === 'boss') await rememberBossBase(plat.tab && plat.tab.url)
   const text =
     plat.key === 'boss'
       ? '一键投递（BOSS）'
@@ -579,6 +582,18 @@ function shortUrl(u) {
   } catch {
     return String(u || '').slice(0, 80)
   }
+}
+
+/** 给日志用的「几小时前」：只写到分钟，不写年月，避免一句话太长。 */
+function shortTime(ms) {
+  const t = Number(ms)
+  if (!t) return '时间未知'
+  const mins = Math.round((Date.now() - t) / 60000)
+  if (mins < 1) return '刚刚'
+  if (mins < 60) return `${mins} 分钟前`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.round(hours / 24)} 天前`
 }
 
 /**
@@ -939,6 +954,79 @@ async function activeLine() {
 const isBossSearchUrl = (u) => /zhipin\.com\/web\/geek\/jobs?(\?|$)/i.test(String(u || ''))
 
 /**
+ * 从**任意** BOSS 页面 URL 里捞筛选参数，拼成一个搜索入口。
+ *
+ * 为什么需要它：用户投完一个岗位、人还停在详情页（或聊天页）时点「继续投」，
+ * 这时没有搜索页、也可能没存模板（2026-11-09 真机）。但详情页 URL 常常还挂着
+ * 点进来时的 `city=`，把它捞出来就能保住城市，不至于按站点默认城市乱投。
+ *
+ * ⚠️ **只搬白名单里的参数**：`securityId` / `lid` / `ka` 这些是一次性签名，
+ * 搬进搜索页没有意义，还可能被服务端判成异常请求。
+ */
+const BOSS_KEEP_PARAMS = ['city', 'experience', 'degree', 'salary', 'industry', 'scale', 'stage', 'jobType']
+
+function bossBaseFromAnyUrl(u) {
+  let x
+  try {
+    x = new URL(u)
+  } catch {
+    return ''
+  }
+  if (!/(^|\.)zhipin\.com$/i.test(x.hostname)) return ''
+  const out = new URL('https://www.zhipin.com/web/geek/job')
+  for (const k of BOSS_KEEP_PARAMS) {
+    const v = x.searchParams.get(k)
+    if (v) out.searchParams.set(k, v)
+  }
+  return out.toString()
+}
+
+/**
+ * 记住「最近一次真正用过的 BOSS 筛选条件」。
+ *
+ * 目的和模板不同：模板是用户**显式**点「取当前页当模板」存的；这里是插件顺手记的。
+ * 用户下次打开插件可能已经在详情页了（点进岗位 → 投 → 继续投），这时模板可能从没存过，
+ * 至少有这条记录能保住城市/经验/学历。
+ */
+const BOSS_LAST_BASE_KEY = 'bossLastSearch'
+
+async function rememberBossBase(u0) {
+  const u = stripPageParam(u0)
+  if (!isBossSearchUrl(u)) return
+  try {
+    const x = new URL(u)
+    // 没有 query 的搜索页不能当条件用（等于「该城市全部岗位」），别记它去误导下一次
+    if (!x.searchParams.get('query')) return
+    // 同一套条件不重复写：面板每次刷新都会调到这里，一直覆盖时间戳的话
+    // 日志里的「几分钟前」就永远显示「刚刚」，反而看不出这份条件有多旧
+    const old = (await chrome.storage.local.get(BOSS_LAST_BASE_KEY))[BOSS_LAST_BASE_KEY]
+    if (old && old.url === u) return
+    await chrome.storage.local.set({ [BOSS_LAST_BASE_KEY]: { url: u, at: Date.now() } })
+  } catch {
+    /* 解析失败就算了，记忆是锦上添花，不能让它打断主流程 */
+  }
+}
+
+/** 浏览器里其他开着的 BOSS 搜索页 —— 「刚才找岗的那一页」往往就在这里。 */
+async function findBossSearchTab(curUrl) {
+  try {
+    const tabs = await chrome.tabs.query({})
+    const cand = tabs.find((t) => {
+      if (!t || !t.url || t.url === curUrl) return false
+      if (!isBossSearchUrl(t.url)) return false
+      try {
+        return !!new URL(t.url).searchParams.get('query')
+      } catch {
+        return false
+      }
+    })
+    return (cand && cand.url) || ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * 拼 BOSS 的搜索页。
  *
  * ⚠️ 和实习僧不同，BOSS 的 city 是**数字编码**（实习僧是中文），插件里没有可靠的城市码表，
@@ -1186,6 +1274,9 @@ document.getElementById('pickUrlBtn').addEventListener('click', async () => {
     }
     const bossUrl = stripPageParam(u)
     await chrome.storage.local.set({ oneKeyBossTemplate: bossUrl })
+    // 顺手记成「上次用的 BOSS 筛选」：模板只有点了这个按钮才有，
+    // 而「上次筛选」在用户直接开投时也会更新，两层互为备份
+    await rememberBossBase(bossUrl)
     // 关键词顺手填进表单（BOSS 的参数叫 query，不是 keyword）
     try {
       const kw = new URL(bossUrl).searchParams.get('query') || ''
@@ -1312,25 +1403,63 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     const lineName = plat.name
     const isBoss = line === 'boss'
 
-    // BOSS 城市是数字编码（实习僧是中文），插件没有可靠城市码表 → 筛选条件全部沿用当前页。
-    // 换城市 = 在 BOSS 页面上换，不在插件里换（硬编错表会把深圳的岗投成别的城市）。
+    // BOSS 城市是数字编码（实习僧是中文），插件没有可靠城市码表 → 筛选条件全部沿用
+    // 「你刚才在 BOSS 上用的那一套」，插件只换关键词。
+    //
+    // 2026-11-09 真机：用户投完一个岗位、人停在**职位详情页**，点继续投被拒了 ——
+    // 旧代码只有「当前页是搜索页」和「存过模板」两条路，两条都不满足就直接不开投。
+    // 但「继续投」这个动作恰恰**总是**发生在详情页/聊天页（投完人就在那儿）。
+    // 所以改成四层回退，每层都写明「这次用的是哪份条件」：
+    //   ① 当前页就是搜索结果页       → 用它（最准）
+    //   ② 存过 BOSS 模板             → 用模板（用户显式存过）
+    //   ③ 别的标签页还开着 BOSS 搜索页 → 用它（往往是刚才找岗那一页）
+    //   ④ 插件顺手记的上次筛选        → 用它（可能有点旧，但保住了城市/学历）
+    // 走到 ④ 还是空，才用「当前页 URL 里的筛选参数」兜底；连参数都没有就按站点默认城市，
+    // 并在日志里写清「城市没锁」，不静默。
     let bossBase = ''
+    let bossBaseSrc = ''
     if (isBoss) {
       const cur = String(plat.tab.url || '')
       if (isBossSearchUrl(cur)) {
         bossBase = stripPageParam(cur)
-      } else {
+        bossBaseSrc = '当前页（BOSS 搜索结果页）'
+      }
+      if (!bossBase) {
         const r = await chrome.storage.local.get('oneKeyBossTemplate')
-        bossBase = r.oneKeyBossTemplate || ''
+        if (r.oneKeyBossTemplate) {
+          bossBase = r.oneKeyBossTemplate
+          bossBaseSrc = 'BOSS 模板（你点过「取当前页当模板」）'
+        }
+      }
+      if (!bossBase) {
+        const t = await findBossSearchTab(cur)
+        if (t) {
+          bossBase = stripPageParam(t)
+          bossBaseSrc = '另一个开着的 BOSS 搜索页标签'
+        }
+      }
+      if (!bossBase) {
+        const r = await chrome.storage.local.get(BOSS_LAST_BASE_KEY)
+        const rec = r[BOSS_LAST_BASE_KEY]
+        if (rec && rec.url) {
+          bossBase = rec.url
+          bossBaseSrc = `插件记住的上次 BOSS 筛选（${shortTime(rec.at)}）`
+        }
+      }
+      if (!bossBase) {
+        bossBase = bossBaseFromAnyUrl(cur)
+        bossBaseSrc = '当前页 URL 里带的筛选参数'
       }
       if (!bossBase) {
         log(
-          '❌ 当前是 BOSS 的非搜索页（聊天 / 首页 / 职位详情），没有筛选条件可用，所以没开投。\n' +
-            '① 切到 BOSS 的搜索结果列表页（网址里带 ?query= 的那个）再点一键投递；或\n' +
-            '② 先在那个列表页点一次「取当前页当模板」，之后在 BOSS 任意页点都能按那套条件投。'
+          '❌ 拿不到 BOSS 的筛选条件，没开投。\n' +
+            '① 切到 BOSS 的搜索结果列表页（网址里带 ?query= 的那个）再点；或\n' +
+            '② 在那个列表页点一次「取当前页当模板」，之后 BOSS 任意页都能按那套条件投。'
         )
         return
       }
+      // 真正用过的搜索页才值得记：详情页兜底拼出来的条件没有城市时，记下来会误导下一次
+      if (bossBaseSrc === '当前页（BOSS 搜索结果页）') await rememberBossBase(bossBase)
     }
 
     // 关键词可以填多个（逗号 / 顿号 / 换行分隔）：一个词投完自动换下一个。
@@ -1367,15 +1496,18 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
         ? `${final.types.map((t) => typeName[t] || t).join(' / ')}（共 ${final.types.length} 类，一类投完自动换下一类）`
         : typeName[final.types[0]] || final.types[0]
       : '⚠️ 未选'
-    // BOSS 的城市/类型不来自表单（插件不维护城市码表），直接显示「当前页 URL 里带了什么」，
-    // 这样用户一眼能看出「这一跳用的还是我页面上那套筛选」，而不是以为插件按勾选改了城市。
+    // BOSS 的城市/类型不来自表单（插件不维护城市码表），只显示「实际生效的那份条件里带了什么」。
+    // ⚠️ 说「没锁城市」而不是「按站点默认」：站点默认到底是不是深圳，插件根本不知道 ——
+    // 真出问题时用户看到这句话才知道该去哪儿加筛选。
     let bossCityText = ''
     if (isBoss) {
       try {
         const c = new URL(bossBase).searchParams.get('city') || ''
-        bossCityText = c ? `沿用当前页参数（city=${c}）` : '沿用当前页参数（未带 city → 按站点默认城市）'
+        bossCityText = c
+          ? `沿用条件来源里的筛选（city=${c}）`
+          : '⚠️ 城市没锁（条件里没有 city → 落到 BOSS 当前站点城市；要锁城市请先到列表页取一次模板）'
       } catch {
-        bossCityText = '沿用当前页参数'
+        bossCityText = '沿用条件来源里的筛选'
       }
     }
     const scopeText = [
@@ -1395,6 +1527,9 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
             : '⚠️ 不限（全国）'
       }`,
       `  类型：${isBoss ? '沿用当前页参数（BOSS 没有实习/校招这个筛选项）' : typeText}`,
+      // BOSS 的筛选条件可能来自四个不同地方，必须写出来 —— 用户换城市/学历后
+      // 到底哪一份生效，只能靠这一行看（2026-11-09 加的）
+      ...(isBoss ? [`  条件来源：${bossBaseSrc}`] : []),
     ].join('\n')
     const noTplTip = isBoss
       ? ''
