@@ -3,6 +3,13 @@ import { randomUUID } from 'node:crypto'
 import { updateJSON } from '../lib/store.js'
 import { listMine, getMine, isMine } from '../lib/scope.js'
 import { STAGE_KEYS, STAGES, parseStage, shouldAdvance, pushHistory, stageFromStatus } from '../lib/stages.js'
+import {
+  CHAT_STEPS,
+  CHAT_STEP_KEYS,
+  shouldAdvanceChat,
+  pushChatHistory,
+  chatStepLabel,
+} from '../lib/chatSteps.js'
 import { lookupDirection, normKey } from '../lib/jobsIndex.js'
 
 const router = Router()
@@ -56,6 +63,18 @@ function sanitize(input = {}, prev = {}) {
     // ⭐ 我主动放弃 ≠ 被拒。塞进 stage=rejected 会把「被拒率」算高：
     //   HR 没拒我，是我不去了。所以单开一个字段，且**永不参与 stage 权重**。
     withdrawnAt: input.withdrawnAt || prev.withdrawnAt || '',
+    // ---- BOSS 聊天推进（六档）：**独立于 stage**，只由采集器写 ----
+    // 为什么不合并进 stage：BOSS 不推进平台状态（HR 拒绝都不改），进度只能从聊天内容读。
+    // 两套混在一起，漏斗层数就不可比了（实习僧七档 / BOSS 聊天六档各有各的分母）。
+    chatStep: CHAT_STEP_KEYS.includes(input.chatStep) ? input.chatStep : prev.chatStep || '',
+    chatStepAt: input.chatStepAt || prev.chatStepAt || '',
+    // 依据那句话：以后要核对「这条为什么算交换微信」，得能一眼看到原文
+    chatStepEvidence: String(input.chatStepEvidence || prev.chatStepEvidence || '').slice(0, 120),
+    chatStepHistory: Array.isArray(input.chatStepHistory)
+      ? input.chatStepHistory.slice(-60)
+      : Array.isArray(prev.chatStepHistory)
+        ? prev.chatStepHistory
+        : [],
     stageHistory: Array.isArray(input.stageHistory)
       ? input.stageHistory.slice(-60)
       : Array.isArray(prev.stageHistory)
@@ -356,6 +375,17 @@ router.post('/api/applications/collect', async (req, res) => {
           if (raw.read) item.readAt = raw.readAt || now
           if (raw.replied) item.repliedAt = raw.repliedAt || now
           if (raw.withdrawn) item.withdrawnAt = raw.withdrawnAt || now
+          // 新建时就把聊天推进档位记下来：第一次采集可能已经在「交换微信」这一步了，
+          // 不写就得等第二次同步才显示，而它正是这条记录最有价值的信息。
+          if (raw.source === 'chat' && CHAT_STEPS[String(raw.chatStep || '')]) {
+            item.chatStep = raw.chatStep
+            item.chatStepAt = now
+            item.chatStepEvidence = String(raw.chatStepText || '').slice(0, 120)
+            item.chatStepHistory = pushChatHistory([], raw.chatStep, {
+              raw: raw.chatStepText || '',
+              at: now,
+            })
+          }
           // 新建时就把「对方在等我回」记下来，否则这条要等下一次采集才会出现在待办里
           if (awaiting === true && boot !== 'rejected') {
             item.awaitingReply = true
@@ -453,6 +483,35 @@ router.post('/api/applications/collect', async (req, res) => {
           if (awaitingFinal && !cur.awaitingReplyAt) patch.awaitingReplyAt = now
           changed = true
         }
+        /**
+         * ⭐ BOSS 聊天推进（六档）：已投递 → 已读不回 → 有进一步交流 → 交换微信/要简历 → 面试邀请 → Offer。
+         *   - 只升不降（shouldAdvanceChat 按权重）；
+         *   - 只有聊天页来源能写（列表页没有聊天上下文，raw.chatStep 为空 → 不动），
+         *     否则一次列表同步就把已有进展冲没了；
+         *   - 已判「不合格」的不再往前推（人都不考虑了，还挂个「面试邀请」只会误导）。
+         */
+        const stepIn = raw.source === 'chat' ? String(raw.chatStep || '') : ''
+        if (
+          stepIn &&
+          CHAT_STEPS[stepIn] &&
+          (patch.stage || cur.stage) !== 'rejected' &&
+          shouldAdvanceChat(patch.chatStep || cur.chatStep, stepIn)
+        ) {
+          patch.chatStep = stepIn
+          patch.chatStepAt = now
+          patch.chatStepEvidence = String(raw.chatStepText || '').slice(0, 120)
+          patch.chatStepHistory = pushChatHistory(patch.chatStepHistory || cur.chatStepHistory, stepIn, {
+            raw: raw.chatStepText || '',
+            at: now,
+          })
+          changed = true
+          note(raw, 'chatAdvanced', {
+            from: cur.chatStep || null,
+            to: stepIn,
+            label: chatStepLabel(stepIn),
+          })
+        }
+
         if (!cur.direction) {
           // 先信扩展报的（投递那一刻按标题判的），没有再查语料
           const d = remote.direction || lookupDirection(company, jobTitle)

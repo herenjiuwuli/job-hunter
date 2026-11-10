@@ -2200,9 +2200,17 @@ async function collectProgress(probeMode) {
       // 卡片边界锁不准是这个页面最致命的错，所以状态栏直接给结论，不用去 JSON 里翻。
       const L = d.listing
       if (L) {
+        const head = L.byCompany
+          ? `投递记录页：${L.companyLinks} 个公司链接（没有岗位链接）｜锁到 ${L.rowCount} 行`
+          : `列表页：${L.links} 个岗位链接｜锁到 ${L.rowCount} 个容器`
+        // 能不能取到公司名，是这页存在的唯一意义 —— 直接给结论，别让人去 JSON 里找
+        const parsedN = (L.cards || []).filter((c) => c.parsed).length
+        const cardN = (L.cards || []).length
         st.textContent =
-          `列表页：${L.links} 个岗位链接｜锁到 ${L.rowCount} 个容器` +
-          (L.sharedRows && L.sharedRows.length ? `｜⚠️ ${L.sharedRows.length} 处边界锁大了` : '｜边界正常')
+          head +
+          (L.sharedRows && L.sharedRows.length ? `｜⚠️ ${L.sharedRows.length} 处边界锁大了` : '｜边界正常') +
+          (cardN ? `｜前 ${cardN} 行里 ${parsedN} 行能取到公司名` : '') +
+          ` —— 点上方「复制整段」发我`
         return
       }
       const m = d.mirror
@@ -2272,7 +2280,7 @@ async function collectProgress(probeMode) {
       .join('\n')
     setUploadReady(collectPreview.length)
   } catch (e) {
-    st.textContent = '❌ 请先打开实习僧「我的投递」或 BOSS 对话列表页'
+    st.textContent = '❌ 请先打开「我的投递 / 已投简历」列表页，或 BOSS 对话列表页'
   }
 }
 
@@ -2284,6 +2292,16 @@ const STAGE_CN = {
   interview: '面试',
   rejected: '不合格',
   offer: '录用',
+}
+
+/** BOSS 聊天推进六档（与 server/lib/chatSteps.js 一一对应） */
+const CHAT_STEP_CN = {
+  submitted: '已投递',
+  readNoReply: '已读不回',
+  replied: '有进一步交流',
+  contact: '交换微信 / 要简历',
+  interview: '面试邀请',
+  offer: '拿到 Offer',
 }
 
 /**
@@ -2390,7 +2408,7 @@ async function collectAllProgress() {
     out.textContent = renderPreview(items, dbg)
     setUploadReady(collectPreview.length)
   } catch (e) {
-    st.textContent = '❌ 请先打开实习僧「我的投递 → 投递反馈」页'
+    st.textContent = '❌ 请先打开实习僧「我的投递 → 投递反馈」页，或 BOSS「已投简历」列表页'
   }
 }
 
@@ -2480,6 +2498,11 @@ function renderChatPreview(items, dbg) {
     // 对方明确说不要了 —— BOSS 不改平台状态，只发消息，所以这条要单独标出来，
     // 否则用户看到「已投递」会以为还在流程里（实际早就被拒了）
     if (x.chatVerdict === 'rejected') flags.push('✗ 对方说不合适')
+    // BOSS 聊天推进档位：平台状态永远停在「已投递」，真实进展只能从聊天读。
+    // 上传前必须能看到「这条会被判成哪一档」——判错了当场就能发现。
+    if (x.chatStep && x.chatStep !== 'submitted') {
+      flags.push(`推进：${CHAT_STEP_CN[x.chatStep] || x.chatStep}`)
+    }
     // 我一句话都没说过 = 是 HR 主动找我，不是我投的（这类不该计入投递量）
     if (x.myMsgCount === 0) flags.push('⚠️ 我没发过消息')
     else if (x.firstFrom === 'me') flags.push('我先开口')

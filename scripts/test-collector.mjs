@@ -1040,6 +1040,146 @@ console.log('\n— 公司名取值（只在岗位名所在容器里找，绝不�
   )
 }
 
+console.log('\n— BOSS 投递记录页：按路由特征取字段（不靠行序赌公司名）—')
+
+{
+  // 第三套迷你 DOM：**真按选择器匹配**（tag / .class / [attr*=值]），并实现 getAttribute。
+  // 为什么必须真匹配：2026-11-09 那次「假 DOM 白名单」让变异测试整个空转 ——
+  // 把采集器里的候选选择器删掉，测试照样全绿。
+  const desc3 = (n, out = []) => {
+    for (const c of n.children || []) {
+      out.push(c)
+      desc3(c, out)
+    }
+    return out
+  }
+  const matchOne3 = (n, raw) => {
+    let s = String(raw || '').trim()
+    if (!s) return true
+    s = s.split(/\s+/).pop() // 后代组合器只取最后一段
+    const tagM = s.match(/^([a-zA-Z][\w-]*)/)
+    if (tagM && String(n.tagName || '').toLowerCase() !== tagM[1].toLowerCase()) return false
+    let m
+    const attrRe = /\[([\w-]+)\*?=\s*["']?([^"'\]]*)["']?\]/g
+    while ((m = attrRe.exec(s))) {
+      if (!String(n.getAttribute(m[1]) || '').includes(m[2])) return false
+    }
+    const clsRe = /\.([\w-]+)/g
+    while ((m = clsRe.exec(s))) {
+      if (String(n.className || '').split(/\s+/).indexOf(m[1]) === -1) return false
+    }
+    return true
+  }
+  const match3 = (n, sel) => String(sel || '*').split(',').some((one) => matchOne3(n, one))
+  const mk3 = (tag, cls, text, children = []) => {
+    const el = {
+      tagName: tag,
+      className: cls || '',
+      href: '',
+      attrs: {},
+      innerText: text || '',
+      textContent: text || '',
+      children,
+      parentElement: null,
+    }
+    el.getAttribute = (n) =>
+      n === 'href' ? el.href : n === 'class' ? el.className : el.attrs[n] || ''
+    el.querySelectorAll = (sel) => desc3(el).filter((n) => match3(n, sel))
+    el.querySelector = (sel) => el.querySelectorAll(sel)[0] || null
+    for (const c of children) c.parentElement = el
+    return el
+  }
+  const jobA = (title, id) => {
+    const a = mk3('A', 'job-name', title)
+    a.href = `/job_detail/${id}.html`
+    return a
+  }
+  const coA = (name, id) => {
+    const a = mk3('A', 'company-name', name)
+    a.href = `/gongsi/${id}.html`
+    return a
+  }
+
+  // 一张 BOSS 投递记录卡：岗位 / 薪资 / 公司 / 城市 / 状态 / 时间
+  const lines1 = ['测试实习生', '3-5K', '乔安', '深圳', '已投递', '2026-11-10']
+  const row1 = mk3('DIV', 'job-card', lines1.join('\n'), [
+    jobA('测试实习生', '9b6af1f00b1a41a2'),
+    mk3('SPAN', 'salary', '3-5K'),
+    coA('乔安\n100-499人\n已融资', '8f1c2d3e'),
+    mk3('SPAN', 'city', '深圳'),
+    mk3('SPAN', 'state', '已投递'),
+    mk3('SPAN', 'time', '2026-11-10'),
+  ])
+  eq(
+    pick(C.parseRowDom(row1, lines1)),
+    {
+      company: '乔安',
+      city: '深圳',
+      jobTitle: '测试实习生',
+      appliedAt: new Date(2026, 10, 10).toISOString(),
+      stage: 'submitted',
+    },
+    '★ 公司名从 /gongsi/ 链接取，不从「第 2 行」猜'
+  )
+
+  // 岗位名不在链接文字里（链接只有「查看职位」）→ 退回行序取第一个不像噪声的行
+  const btnOnly = mk3('A', 'btn', '查看职位')
+  btnOnly.href = '/job_detail/e8c0dd36d4bc2ae1.html'
+  const lines2 = ['产品测试实习生', '乔安', '已投递']
+  const row2 = mk3('DIV', 'job-card', lines2.join('\n'), [
+    btnOnly,
+    coA('乔安', '8f1c2d3e'),
+    mk3('SPAN', 'state', '已投递'),
+  ])
+  eq(
+    pick(C.parseRowDom(row2, lines2)),
+    {
+      company: '乔安',
+      city: '',
+      jobTitle: '产品测试实习生',
+      appliedAt: '',
+      stage: 'submitted',
+    },
+    '岗位链接只有按钮文案时，岗位名从行文本取（不能记成「查看职位」）'
+  )
+
+  // 行内出现两家公司 → 容器锁大了，必须放弃公司名（宁可未知，不可张冠李戴）
+  const row3 = mk3('DIV', 'job-card', '测试实习生 乔安 别的公司B 已投递', [
+    jobA('测试实习生', 'aaa'),
+    coA('乔安', 'c1'),
+    coA('别的公司B', 'c2'),
+    mk3('SPAN', 'state', '已投递'),
+  ])
+  eq(
+    C.parseRowDom(row3, ['测试实习生', '乔安', '别的公司B', '已投递']),
+    null,
+    '★ 同一行两家公司 → 返回 null（交给上行留「未知公司」，不猜）'
+  )
+
+  // 岗位名带薪资 → 剥掉再入库（账本里出现过「测试实习生 3-5K」这种脏值）
+  eq(C.stripSalary('测试实习生 3-5K'), '测试实习生', '剥「3-5K」')
+  eq(C.stripSalary('软件测试工程师（双休自研 偏测开） 15-30K·14薪'), '软件测试工程师（双休自研 偏测开）', '剥「15-30K·14薪」')
+  eq(C.stripSalary('运营实习生 200-210元/天'), '运营实习生', '剥「200-210元/天」')
+  eq(C.stripSalary('A98648质量运营专员-深圳 面议'), 'A98648质量运营专员-深圳', '剥「面议」，但保留岗位名里的城市后缀')
+
+  // 行容器边界：两张卡各有一家公司，靠公司链接定位时不能锁成一整片
+  const jobB = jobA('内容运营实习生', 'bbb')
+  const coB = coA('别的公司B', 'c2')
+  const rowB = mk3('DIV', 'job-card', '内容运营实习生 别的公司B 已投递', [
+    jobB,
+    coB,
+    mk3('SPAN', 'state', '已投递'),
+  ])
+  const list = mk3('DIV', 'job-list', '', [row1, rowB])
+  const coInRow1 = row1.querySelectorAll('a[href*="/gongsi/"]')[0]
+  eq(
+    C.rowOfCompanyLink(coInRow1) === row1,
+    true,
+    '★ 公司链接向上找行：停在「只含一家公司」的卡片上，不锁到整个列表'
+  )
+  eq(C.uniqueCompanyHrefs(list), 2, '列表层有 2 家公司 → 边界判据就是它')
+}
+
 console.log('\n— 岗位名元素定位（BOSS 新版没有 .job-banner .name 时不能直接摆烂）—')
 
 {
@@ -1456,6 +1596,37 @@ const mkPanel = (opts) => {
   )
   eq(C.chatVerdictOf(['抱歉岗位已招满']).text, '抱歉岗位已招满', '命中时带上原文，界面能核对')
   eq(C.chatVerdictOf(['抱歉岗位已招满']).hit, '已招满', '带上命中词，排查时不用猜')
+}
+
+// ⑬ BOSS 聊天推进六档（2026-11-10 主人定的口径）
+//
+//   已投递 → 已读不回 → 有进一步交流 → 交换微信 / 要简历 → 面试邀请 → 拿到 Offer
+//
+// 为什么要单测：BOSS 不推进平台状态，90 条投递在库里全停在「已投递」，
+// 而其中一部分 HR 已经要了微信。这一层判错不会报错，只会让看板长期显示「没进展」——
+// 于是用户干脆不看它了。
+{
+  const S = (texts, extra = {}) => C.chatStepOf({ texts, ...extra }).step
+  eq(S(['方便加个微信聊吗']), 'contact', '★ 要微信 → 交换微信（问句也是明确意图，这里不当噪声）')
+  eq(S(['我加你微信，把简历发你']), 'contact', '我发微信 + 发简历：命中更高档')
+  eq(S(['能不能先把简历发我一份']), 'contact', '★ HR 主动要简历也算一步')
+  eq(S(['周三下午方便来面试吗']), 'interview', '★ 约面试 → 面试邀请')
+  eq(S(['面试通过了，稍后给你发 offer']), 'offer', '★ 同一句里既像面试又像 offer → 取最高档')
+  eq(S(['我们决定录用你，下周入职']), 'offer', '录用 → 拿到 Offer')
+  eq(S(['这个岗位主要做接口自动化和性能压测']), 'replied', '★ 真聊起来了 → 有进一步交流')
+  eq(S(['你好，我们对你的简历很感兴趣']), 'submitted', '★ 自动招呼模板不算「聊起来了」')
+
+  // 被拒 / 在谈的话不许当进展证据（同一句在拒绝判定里也是噪声）
+  eq(S(['面试不合适，抱歉']), 'submitted', '★ 「面试不合适」不是面试邀请')
+  eq(S(['薪资不合适的话我们再谈']), 'submitted', '「再谈」不是在谈进展')
+  eq(S(['您好，您和岗位不太匹配']), 'submitted', '拒信不能算「有进一步交流」')
+
+  // 已读不回必须建立在「我方消息真被读了」这个事实上
+  eq(S([], { read: true, lastFrom: 'me' }), 'readNoReply', '★ 已读但对方没回 → 已读不回')
+  eq(S([], { read: false, lastFrom: 'me' }), 'submitted', '★ 只送达未读 ≠ 已读不回（没人看过）')
+  eq(S([], { read: null, lastFrom: 'me' }), 'submitted', '读不出来也不许猜成已读不回')
+  eq(S([], { read: true, lastFrom: 'other' }), 'submitted', '对方最后说话了就不叫「不回」')
+  eq(S([]), 'submitted', '什么都没发生 → 已投递（最低档，不撒谎）')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} collector 解析用例：${pass} 通过 / ${fail} 失败`)

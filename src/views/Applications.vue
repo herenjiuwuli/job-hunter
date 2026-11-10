@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import { COMMON_JOBS } from '../jobs.js'
 import { PLATFORMS } from '../options.js'
 import { STAGES, STAGE_LABELS, STAGE_KEYS, stagePath, needsMyAction } from '../stages.js'
+import { chatStepLabel, chatStepPath, hasChatProgress, chatStepEvidence } from '../chatSteps.js'
 
 // status 是**人工标记**（我想不想去 / 是不是我主动放弃的），采集器从不写它。
 // 平台真实进度在 stage 里 —— 所以列表主列是 stage，status 只在编辑弹窗里改。
@@ -97,6 +98,24 @@ function hasReachedPath(a) {
 function customStatus(a) {
   const s = a.status || ''
   return s && s !== '已投递' && s !== '待投递' ? s : ''
+}
+
+/**
+ * BOSS 聊天推进那句话。
+ *
+ * 为什么单独一行而不是并进徽章：platform 徽章显示的是**平台**进度，
+ * BOSS 那边永远是「已投递」。真实进展（要了微信 / 约了面试）只在聊天里 ——
+ * 不单独说一句，用户看列表只会以为 90 条全在海里。
+ * 最低档（已投递）不显示：它和左边那颗徽章一字不差，说出来是噪音。
+ */
+function chatStepLine(a) {
+  if (!hasChatProgress(a)) return ''
+  const path = chatStepPath(a)
+  const cur = chatStepLabel(a.chatStep)
+  if (!cur) return ''
+  const route = path && path !== cur ? `：${path}` : `：${cur}`
+  const ev = chatStepEvidence(a)
+  return `BOSS 聊天推进${route}` + (ev ? ` · ${ev}` : '')
 }
 
 /**
@@ -302,6 +321,8 @@ onMounted(load)
               <div v-if="hasReachedPath(a)" class="stage-path">{{ stagePath(a) }}</div>
               <!-- 聊天判出来的「不合格」：把依据那句话放出来，用户能自己核对 -->
               <div v-if="chatVerdictNote(a)" class="verdict-note">{{ chatVerdictNote(a) }}</div>
+              <!-- BOSS 的进度只能从聊天读（平台永远停在「已投递」）-->
+              <div v-if="chatStepLine(a)" class="chat-step">{{ chatStepLine(a) }}</div>
               <div v-if="customStatus(a)" class="my-mark">我的标记：{{ customStatus(a) }}</div>
               <div v-if="a.result && a.result !== '待处理'" class="my-mark">
                 投递结果：{{ a.result }}

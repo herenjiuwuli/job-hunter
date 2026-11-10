@@ -72,6 +72,15 @@ const NOISE = /^\s*(查看|立即沟通|继续沟通|投递简历|已投递简�
 const DATE_LIKE = /^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(\s+\d{1,2}:\d{2}(:\d{2})?)?|\d{1,2}[-/.]\d{1,2}|今天|昨天|\d+\s*(分钟|小时|天|周|月)前)$/
 const MONEY_LIKE = /^(\d+[-~]\d+\s*元?\/?天|\d+\s*[kK]|\d+[-~]\d+\s*[kK]|\d+\s*元\/天|面议)/
 
+/**
+ * 操作按钮文案（不是岗位名）。
+ * ⚠️ NOISE 是**整行全等**匹配，`查看职位` 这种带后缀的按钮会漏过去 ——
+ * 2026-11-10 单测直接抓到：岗位详情链接的文字就是「查看职位」，
+ * 于是账本里的岗位名变成「查看职位」（比「未知岗位」更坏：它看着像个正常值）。
+ */
+const BTN_TEXT_RE =
+  /^(查看职位|立即沟通|继续沟通|投个简历|投递简历|已投递简历|撤回|删除|举报|收藏|分享|查看|详情|更多|展开|收起|立即查看|查看详情|去沟通|聊一聊)$/
+
 // 城市兜底表（页面上没有 filters-data 时也能拆「公司-城市」）
 const COMMON_CITIES = [
   '北京', '上海', '天津', '重庆', '深圳', '广州', '东莞', '佛山', '珠海', '中山', '惠州', '江门', '汕头', '湛江',
@@ -493,6 +502,100 @@ function parseRowLines(lines, opts = {}) {
   }
 }
 
+/**
+ * 从岗位名里剥掉薪资尾巴。
+ * BOSS 的卡片有时把「测试实习生 3-5K」渲染在同一个节点里；真实岗位名不会这么拼。
+ * 带着薪资进账本有两个代价：`sameApply` 按标题认人时对不上，人工核对也看不出是哪一条。
+ */
+function stripSalary(s) {
+  return String(s || '')
+    .replace(/\s*\d+(?:\.\d+)?\s*[-~－]\s*\d+(?:\.\d+)?\s*[kK千]\s*(?:·\s*\d+\s*薪)?/g, '')
+    .replace(/\s*\d+(?:\.\d+)?\s*[-~－]\s*\d+(?:\.\d+)?\s*(?:元)?\s*\/?\s*(?:天|月|小时|时)/g, '')
+    .replace(/\s*(?:面议|\d+(?:\.\d+)?\s*[kK])\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * 行容器 → 投递：**先按 DOM 的路由特征取字段**，取不到再交给 parseRowLines 按行序猜。
+ *
+ * 为什么需要：parseRowLines 的隐含假设是「第 1 行岗位、第 2 行公司-城市」——
+ * 那是实习僧「我的投递」的版面。BOSS 的投递记录把岗位 / 薪资 / 公司 / 状态排成
+ * 自己的顺序，按行序猜会把状态词或城市当成公司名。公司名一旦写错比留空更糟：
+ * 它会稳定匹配到错误的记录（2026-11-05 那次 10 条错 4 条就是这么来的）。
+ *
+ * 这里只认两件 BOSS 十几年没变过的东西：岗位详情链接 `/job_detail/xxx.html`、
+ * 公司主页链接 `/gongsi/xxx.html`。class 名会随改版消失，路由不会（2026-11-09 教训）。
+ *
+ * @returns {null|{company,city,jobTitle,appliedAt,stageRaw,stage}}
+ *   null = 这行没拿到公司名，交给行序解析（拿到公司名才是这条路的唯一意义）
+ */
+function parseRowDom(el, lines, opts = {}) {
+  if (!el || !el.querySelectorAll) return null
+  const list = Array.isArray(lines) ? lines : linesOf(el)
+
+  // 公司：行内**只能有一家**。多家 = 容器锁大了（把相邻两家装进同一行），
+  // 此时不给公司名 —— 张冠李戴比「未知公司」难发现得多。
+  let company = ''
+  const coLinks = el.querySelectorAll('a[href*="/gongsi/"]')
+  if (coLinks.length === 1) company = companyTextOf(coLinks[0])
+  if (!company) return null
+
+  // 岗位：岗位详情链接自己的文字最准（不在链接里的岗位名只能靠行序猜）
+  let jobTitle = ''
+  for (const a of jobLinksIn(el)) {
+    const t = stripSalary(textOf(a))
+    if (!t || NOISE.test(t) || BTN_TEXT_RE.test(t) || t.length < 2 || t.length > 60) continue
+    if (t.length > jobTitle.length) jobTitle = t
+  }
+  if (!jobTitle) {
+    for (const s of list) {
+      if (!s || NOISE.test(s) || BTN_TEXT_RE.test(s) || DATE_LIKE.test(s) || MONEY_LIKE.test(s)) continue
+      if (isStageWord(s) || /^[\d\s\-~.]+$/.test(s)) continue
+      if (s === company) continue
+      jobTitle = stripSalary(s)
+      if (jobTitle) break
+    }
+  }
+  if (!jobTitle) return null
+
+  // 城市：公司名自带的优先（「中金财富（深圳）」），否则在行里找城市词
+  const sm = splitCompanyCity(company)
+  let city = sm.city
+  if (!city) {
+    const cities = citySet()
+    for (const s of list) {
+      if (s.length > 8 || /\d/.test(s)) continue
+      if (cities.has(s)) {
+        city = s
+        break
+      }
+    }
+  }
+
+  let appliedAt = ''
+  for (const s of list) {
+    if (!appliedAt && DATE_LIKE.test(s)) appliedAt = toIso(s)
+  }
+
+  // 阶段：行内文案 vs 分类 tab，取权重大的那个（与 parseRowLines 同一规则）
+  const rowKey = stageInLines(list)
+  const rowW = rowKey ? rowKey.weight : 0
+  const tabW = opts.tabStage ? WEIGHT_BY_KEY[opts.tabStage] || 0 : 0
+  let stage = null
+  if (rowW && tabW) stage = rowW >= tabW ? rowKey.key : opts.tabStage
+  else stage = rowKey ? rowKey.key : opts.tabStage || null
+
+  return {
+    company: sm.company || company,
+    city,
+    jobTitle,
+    appliedAt,
+    stageRaw: rowKey ? rowKey.word : '',
+    stage,
+  }
+}
+
 // ============================================================
 // 二、DOM 区
 // ============================================================
@@ -564,6 +667,42 @@ function rowOfLink(a) {
     if (uniqueJobIdsIn(up) > 1) break // 越界了（装进了别的岗位），上一轮的 best 才是行
     const lines = linesOf(up)
     if (lines.length > 12) break // 太大，不像一行
+    best = up
+    cur = up
+  }
+  return best
+}
+
+/** 容器里有多少个**不同**的公司主页链接（按 href 去重） */
+function uniqueCompanyHrefs(root) {
+  const hrefs = new Set()
+  for (const a of root.querySelectorAll('a[href*="/gongsi/"]')) {
+    const h = String(a.getAttribute('href') || '')
+    if (h) hrefs.add(h)
+  }
+  return hrefs.size
+}
+
+/**
+ * 由**公司主页链接**反推「这一行的容器」。
+ *
+ * 为什么还要一条以公司链接为锚的路：BOSS「已投简历」列表里，岗位详情链接不一定
+ * 渲染成 `<a href="/job_detail/...">`（有的整卡是 JS 跳转），但公司名一定挂在
+ * `/gongsi/xxx.html` 上 —— 那是它自己的公司主页入口。按岗位链接定位这条路走不通时，
+ * 公司链接是唯一还能锁住「这一行是哪一条投递」的东西。
+ *
+ * 边界判据和 rowOfLink 一样：装进第二家公司 / 第二个岗位就停。
+ * 只按链接元素个数算会在第一层就停住（同一张卡常有 logo + 名字两个链接）。
+ */
+function rowOfCompanyLink(a) {
+  let cur = a
+  let best = null
+  for (let i = 0; i < 12; i++) {
+    const up = cur.parentElement
+    if (!up || up === document.body || up === document.documentElement) break
+    if (uniqueCompanyHrefs(up) > 1) break
+    if (uniqueJobIdsIn(up) > 1) break
+    if (linesOf(up).length > 12) break
     best = up
     cur = up
   }
@@ -698,32 +837,75 @@ async function waitTabReady(name, timeoutMs = 5000) {
  *
  * @param {Element} [root]        在哪个子树里找（默认整页）
  * @param {boolean} [onlyShown]   是否跳过不可见的行（默认 true）
+ * @param {Function} [onSkip]     被跳过的行回调 (原因, 行文本, 元素)
  *
  * ⚠️ onlyShown 的来历：实习僧 7 个分类 tab 是同一份列表复制了 7 份，
  * 其他 6 份是 display:none 但 DOM 还在，querySelectorAll 照样能找到。
  * 不跳过隐藏 tab，翻页判断会把 7 份链接混在一起，永远判「列表没变」。
  * 但也正因为这份重复，**分阶段采集时反而要主动进到隐藏 pane 里读**（onlyShown: false）。
+ *
+ * ⚠️ onSkip 的来历（2026-11-10）：「BOSS 点了同步只补上 1 家公司名，其余 74 条还是未知」
+ * —— 页面上的行在**这一层就被 continue 掉了**，而这里原来一个字符都不留，
+ * 于是 debug 里只有「采到 1 条」，看不出另外 74 条是「没渲染」「锁不到容器」还是
+ * 「行里没日期没状态」。看不见的丢失比丢失本身更难修。
  */
-function rowsInRoot(root, onlyShown = true) {
+function rowsInRoot(root, onlyShown = true, onSkip = null) {
   const out = []
   const seen = new Set()
   const scope = root || document
+  const skip = (reason, lines, el) => {
+    if (typeof onSkip === 'function') onSkip(reason, Array.isArray(lines) ? lines : [], el)
+  }
   for (const a of jobLinksIn(scope)) {
     const el = rowOfLink(a)
-    if (!el || seen.has(el)) continue
-    if (onlyShown && !isShown(el)) continue
+    if (!el) {
+      skip('锁不到行容器', linesOf(a))
+      continue
+    }
+    if (seen.has(el)) continue
     seen.add(el)
+    if (onlyShown && !isShown(el)) continue // 隐藏 tab 属正常情况，不算丢失
     const lines = linesOf(el)
-    if (lines.length < 2) continue
+    if (lines.length < 2) {
+      skip(`行内只有 ${lines.length} 行文本`, lines)
+      continue
+    }
     // 必须带日期或状态词，否则多半抓到了导航/页脚之类的容器
-    if (!lines.some((l) => DATE_LIKE.test(l)) && !lines.some((l) => isStageWord(l))) continue
+    if (!lines.some((l) => DATE_LIKE.test(l)) && !lines.some((l) => isStageWord(l))) {
+      skip('行内既没有日期也没有状态词', lines)
+      continue
+    }
     out.push({ el, lines, jobId: jobIdFrom(el) || jobIdOfHref(a.getAttribute('href')) })
   }
   return out
 }
 
-function candidateRows() {
-  return rowsInRoot(document, true)
+function candidateRows(onSkip) {
+  return rowsInRoot(document, true, onSkip)
+}
+
+/**
+ * 当前页「行的指纹」——用来判断翻页 / 加载更多之后列表有没有真的变。
+ *
+ * 为什么要按公司链接兜底：BOSS「已投简历」页的行走的是公司链接锚点（策略 C），
+ * 它们**没有 jobId**。只看 jobId 的话指纹恒为空，「加载更多」点完永远判「没变化」，
+ * 于是一页之后就停止 —— 90 条投递只能采到前 20 条。
+ */
+function pageRowKeys() {
+  const ids = candidateRows()
+    .map((r) => r.jobId)
+    .filter(Boolean)
+  if (ids.length) return ids.join('|')
+  const hrefs = []
+  try {
+    for (const a of document.querySelectorAll('a[href*="/gongsi/"]')) {
+      const h = String(a.getAttribute('href') || '')
+      if (h) hrefs.push(h)
+    }
+  } catch (_) {
+    /* 取不到就当空页 */
+  }
+  return hrefs.join('|')
 }
 
 // ---- 兜底策略：没有岗位链接的页面（BOSS 对话列表）只能按阶段词反查 ----
@@ -830,10 +1012,18 @@ function collectFromPage() {
   }
 
   // 策略 A：结构（实习僧投递列表走这条）
-  const rows = candidateRows()
+  // skipped：**在 rowsInRoot 里就被丢掉**的行。它们连 debug.dropped 都进不去，
+  // 而「页面上 75 条、只同步了 1 条」的答案往往就在这里。
+  const skipped = []
+  const onSkip = (reason, lines) => {
+    if (skipped.length < 20) skipped.push(`${reason}：${lines.join(' ｜ ').slice(0, 100) || '（空行）'}`)
+  }
+  const rows = candidateRows(onSkip)
   debug.rows = rows.length
+  debug.skipped = skipped
   for (const r of rows) {
-    const parsed = parseRowLines(r.lines, { tabStage })
+    // DOM 优先：公司名只在 /gongsi/ 链接里（BOSS 投递记录页），行序解析只作兜底
+    const parsed = parseRowDom(r.el, r.lines, { tabStage }) || parseRowLines(r.lines, { tabStage })
     if (!parsed) {
       debug.noName++
       if (debug.dropped.length < 6) debug.dropped.push(r.lines.join(' ｜ ').slice(0, 120))
@@ -844,8 +1034,39 @@ function collectFromPage() {
     push(parsed, r.jobId, 'link')
   }
 
+  // 策略 C：**公司主页链接**锚点（BOSS「已投简历 / 投递记录」页）。
+  // 这类页面不一定把岗位渲染成 /job_detail/ 链接（有的整卡是 JS 跳转），
+  // 但公司名一定挂在 /gongsi/xxx.html 上 —— 策略 A 一条都拿不到时，只能靠它锁行。
+  // 门槛与 A 一致：行内必须有日期或状态词，否则会把页头 / 推荐位当成投递记录。
+  if (!items.length) {
+    const seenRows = new Set()
+    let coRows = 0
+    for (const a of document.querySelectorAll('a[href*="/gongsi/"]')) {
+      const row = rowOfCompanyLink(a)
+      if (!row || seenRows.has(row)) continue
+      seenRows.add(row)
+      if (!isShown(row)) continue
+      coRows++
+      const lines = linesOf(row)
+      if (lines.length < 2 || (!lines.some((l) => DATE_LIKE.test(l)) && !lines.some((l) => isStageWord(l)))) {
+        onSkip('公司链接行里没有日期/状态词', lines)
+        continue
+      }
+      const parsed = parseRowDom(row, lines, { tabStage }) || parseRowLines(lines, { tabStage })
+      if (!parsed) {
+        debug.noName++
+        if (debug.dropped.length < 6) debug.dropped.push(lines.join(' ｜ ').slice(0, 120))
+        continue
+      }
+      parsed.__lines = lines
+      push(parsed, jobIdFrom(row), 'company-link')
+    }
+    debug.companyRows = coRows
+    if (items.length) debug.via = 'company-link'
+  }
+
   // 策略 B：文本兜底（没有岗位链接的页面，如 BOSS 对话列表）
-  if (!rows.length) {
+  if (!items.length) {
     debug.via = 'text'
     for (const hit of stageNodes()) {
       const row = rowOfStageNode(hit.el)
@@ -2096,6 +2317,77 @@ function chatVerdictOf(texts) {
 }
 
 /**
+ * 对方消息 → BOSS 聊天推进档位（六档，口径见 server/lib/chatSteps.js）。
+ *
+ * 只喂三样事实：对方说过的话（**已排除系统消息**）、我方消息有没有被读、对方最后有没有发言。
+ * 判定顺序从高到低、命中即停 —— HR 说「面试通过了，稍后发 offer」时这句同时含两个词。
+ *
+ * 保守点：
+ *   - 「加个微信吗？」是问句，但意图明确，**不当噪声排除**（这里和拒绝判定相反：
+ *     拒绝判错代价是漏斗少一条，进展判错只是显示乐观一点，而且随时会被下一句纠正）；
+ *   - 模板招呼（「你好，对你的简历感兴趣」）不算「有进一步交流」—— 那是自动话术，
+ *     真聊过至少得说点这条岗位相关的话。
+ */
+const CHAT_STEP_RULES = [
+  { step: 'offer', re: /(录用|offer|入职通知|入职时间|意向书|发录用)/i },
+  { step: 'interview', re: /(面试|面谈|到面|复试|终面|视频面|现场面)/ },
+  {
+    step: 'contact',
+    re: /(加(个|一下)?微信|微信(聊|沟通|联系|发|号|详聊)|vx|weixin|简历(发|给|投)|发(一份|下)?(你的|你)?简历|要(一下|下)?(你的)?简历)/i,
+  },
+]
+
+/** 自动招呼模板：这些不算「聊起来了」 */
+const TEMPLATE_HELLO_RE =
+  /^(你好|您好|在吗|方便聊聊吗|你的简历我们(已经)?收到|感谢(你)?(的)?投递|我们对你的简历很感兴趣|请(先)?发送(一份)?简历)/
+
+/**
+ * 这句话是不是「拒信 / 正在谈价」。
+ * 这类句子不能拿来当进展证据：「面试不合适」含「面试」，「薪资不合适的话再谈」含「再谈」，
+ * 直接丢进规则里会判成「面试邀请」—— 同一句话在拒绝判定里是噪声，在这里也是。
+ */
+function isNegativeChatLine(s) {
+  const t = String(s || '')
+  if (REJECT_NOISE_RE.test(t)) return true // 「不是不合适」「再谈」：在谈，不是结论
+  return REJECT_RE.test(t)
+}
+
+/** 对方的消息里有没有「真人说的实质内容」 */
+function hasSubstantiveOther(texts) {
+  for (const t of texts) {
+    const s = String(t || '').trim()
+    if (!s) continue
+    if (TEMPLATE_HELLO_RE.test(s) && s.length <= 24) continue
+    if (isNegativeChatLine(s)) continue // 拒信不是「交流进展」
+    if (s.length >= 8) return true
+  }
+  return false
+}
+
+/**
+ * @param {{texts?:string[], read?:boolean|null, lastFrom?:string}} info
+ * @returns {{step:string, raw:string}} step 一定是六档之一（判不出来给最低档，不给 null）
+ */
+function chatStepOf(info = {}) {
+  const texts = (Array.isArray(info.texts) ? info.texts : []).map((s) => String(s || '').trim()).filter(Boolean)
+  for (const rule of CHAT_STEP_RULES) {
+    for (const t of texts) {
+      if (isNegativeChatLine(t)) continue
+      const m = t.match(rule.re)
+      if (m) return { step: rule.step, raw: t.slice(0, 60) }
+    }
+  }
+  if (hasSubstantiveOther(texts)) {
+    const t = texts.find((x) => !(TEMPLATE_HELLO_RE.test(x) && x.length <= 24)) || texts[0]
+    return { step: 'replied', raw: String(t || '').slice(0, 60) }
+  }
+  // 已读不回：我方消息被读过，但对方（还）没开口。
+  // ⚠️ 只有 `read===true` 才算 —— BOSS 上「已送达未读」等于没人看，不能算「已读不回」。
+  if (info.read === true && info.lastFrom !== 'other') return { step: 'readNoReply', raw: '' }
+  return { step: 'submitted', raw: '' }
+}
+
+/**
  * 读当前打开的那条会话。
  * 真机样本（2026-11-05，赵怡和智传信）：
  *   `.chat-position-content` 的 lines = ["社媒运营实习生（多平台 / 发布与维护）", "120-150元/天", "深圳", "查看职位"]
@@ -2154,15 +2446,29 @@ function readOpenChat(panel) {
   // 不能只看最后一条：HR 说完「不太匹配」我又回了句「好的谢谢」，
   // 最后一条就变成我发的了 —— 拒绝信号会被后面这句客套盖掉。
   const otherTexts = []
+  // 我方消息「被读了没有」—— 判「已读不回」的唯一依据。
+  // null = 读不出来（没有图标 / 不是我发的），不能当成「未读」：那会把「已读不回」判成「已投递」。
+  let myRead = null
   for (let k = 0; k < rows.length; k++) {
     const row = rows[k]
     const cls = classTokens(row).join(' ')
     // 我方消息带 [已读]/[送达] 图标；对方不带；系统消息（"发送了面试结果"）也不带，
     // 但它不是「对方在跟我说话」—— 不排除的话会把拒信记成 repliedAt，面试层跟着虚高。
-    const hasStatus = !!(
-      row.querySelector &&
-      row.querySelector('[class*="message-status"], [class*="status-read"], [class*="status-delivery"]')
-    )
+    let statusEl = null
+    try {
+      statusEl =
+        (row.querySelector &&
+          row.querySelector('[class*="message-status"], [class*="status-read"], [class*="status-delivery"]')) ||
+        null
+    } catch (_) {
+      statusEl = null
+    }
+    const hasStatus = !!statusEl
+    const statusCls = String((statusEl && statusEl.className) || '')
+    // 图标分两种：status-read = 对方已读；status-delivery = 只送达未读。
+    // 后一条消息可能还是「送达」状态，所以只要出现过一次已读就算已读（读是单向的）。
+    if (hasStatus && /status-read/.test(statusCls)) myRead = true
+    else if (hasStatus && /status-delivery/.test(statusCls) && myRead !== true) myRead = false
     const isSystem = /system|notice/i.test(cls)
     const from = isSystem ? 'system' : hasStatus ? 'me' : 'other'
     if (hasStatus) myMsgCount++
@@ -2175,8 +2481,13 @@ function readOpenChat(panel) {
   }
 
   const verdict = chatVerdictOf(otherTexts)
+  // 聊天推进档位：只升不降由后端管，这里只报「这次看到哪一档」
+  const step = chatStepOf({ texts: otherTexts, read: myRead, lastFrom })
 
   return {
+    readState: myRead === true ? 'read' : myRead === false ? 'delivered' : 'none',
+    chatStep: step.step,
+    chatStepText: step.raw,
     jobTitle,
     salary,
     city,
@@ -2407,7 +2718,7 @@ async function collectChatDetails(opts = {}) {
       jobId: '', // 聊天页拿不到，后端按「公司 + 岗位名」匹配
       city: chat.city,
       salary: chat.salary,
-      read: r.read === true,
+      read: chat.readState === 'read' || r.read === true,
       // readRaw 是**三态**，read 只是给后端用的布尔。
       // 以前预览拿 read 渲染，于是「没有图标」被显示成「未读」——
       // 而这批数据里根本没有「对方没看我消息」这条信息（左栏图标说的是「我方最后一条」），
@@ -2421,6 +2732,10 @@ async function collectChatDetails(opts = {}) {
       // BOSS 不会改平台状态，只发一条消息，不读内容账本就永远停在「已投递」。
       chatVerdict: chat.chatVerdict,
       chatVerdictText: chat.chatVerdictText,
+      // BOSS 聊天推进档位（六档）：已投递 → 已读不回 → 有进一步交流 → 交换微信/要简历 → 面试邀请 → Offer
+      // 只升不降在后端做；这里报的是「这条会话现在到哪一档」
+      chatStep: chat.chatStep,
+      chatStepText: chat.chatStepText,
       source: 'chat',
       // 公司名是拆文本猜出来的 → 预览里必须标出来，让用户能核对
       companyGuess: who.guess,
@@ -2543,32 +2858,57 @@ function probeSignals() {
  */
 function probeListing() {
   const links = [...document.querySelectorAll('a[href]')].filter(isJobLink)
-  if (links.length < 2) return null
+  let coLinks = []
+  try {
+    coLinks = [...document.querySelectorAll('a[href*="/gongsi/"]')]
+  } catch (_) {
+    coLinks = []
+  }
+  // 只有公司链接、没有岗位链接的页面（BOSS 投递记录页）也必须能探 ——
+  // 那正是「页面上一堆投递、采集一条都拿不到」时唯一能取证的地方。
+  if (links.length < 2 && coLinks.length < 2) return null
+  const byCompany = links.length < 2
 
   const F = window.JH_FILTERS
   const allCities = F ? F.PROVINCES.flatMap((p) => p.cities) : []
   const buckets = new Map() // 容器元素 → 落在它上面的 jobId
   const cards = []
 
-  for (const a of links.slice(0, 40)) {
+  for (const a of (byCompany ? coLinks : links).slice(0, 40)) {
     const href = a.getAttribute('href') || ''
-    const jobId = jobIdOfHref(href)
-    const row = rowOfLink(a)
+    const jobId = byCompany ? '' : jobIdOfHref(href)
+    const row = byCompany ? rowOfCompanyLink(a) : rowOfLink(a)
     if (!row) continue
     if (!buckets.has(row)) buckets.set(row, [])
     buckets.get(row).push(jobId || '(无id)')
 
     const text = (row.innerText || '').trim()
+    const lines = linesOf(row)
     const btns = [...row.querySelectorAll('button, a, [role="button"], [class*="btn"]')]
       .map((el) => (el.innerText || '').trim())
       .filter(Boolean)
+    // 这一行**采集时能不能取到字段**，在这里直接给出结论 ——
+    // 比让人对着一堆 lines 自己猜「公司名到底去哪了」有用得多。
+    const dom = parseRowDom(row, lines)
     cards.push({
       jobId,
       rowTag: row.tagName + (row.className ? '.' + String(row.className).split(/\s+/).filter(Boolean).slice(0, 2).join('.') : ''),
-      lines: linesOf(row).slice(0, 6),
+      lines: lines.slice(0, 6),
       textLen: text.length,
       hasChatBtn: /立即沟通|立即打招呼|继续沟通/.test(btns.join('|')),
       buttons: [...new Set(btns)].slice(0, 5),
+      companyLink: (() => {
+        let cs = []
+        try {
+          cs = [...row.querySelectorAll('a[href*="/gongsi/"]')]
+        } catch (_) {
+          cs = []
+        }
+        return cs.length ? { count: cs.length, text: companyTextOf(cs[0]) } : null
+      })(),
+      stageWords: lines.filter((l) => isStageWord(l)),
+      // 采集器实际会写成什么（null = 这行会被丢）
+      parsed: dom ? { company: dom.company, jobTitle: dom.jobTitle, stage: dom.stage } : null,
       // 筛选就是吃这些：城市命中几个、天/周与月数能不能读出来。
       // 读不到 = 这两项门槛在列表页等于没生效（不会误杀，但也不会拦）。
       cities: F ? F.detectCity(text, allCities).slice(0, 3) : [],
@@ -2582,14 +2922,19 @@ function probeListing() {
   const sharedRows = [...buckets.values()].filter((ids) => ids.length > 1)
   return {
     links: links.length,
+    companyLinks: coLinks.length,
+    // 按公司链接定位的页面：卡片边界只能靠公司名复核（同一行里出现两家公司 = 锁大了）
+    byCompany,
     uniqueIds: new Set(links.map((a) => jobIdOfHref(a.getAttribute('href'))).filter(Boolean)).size,
     rowCount: buckets.size,
     // 空数组 = 每张卡各自锁到独立容器（正确）；有内容 = 多张卡挤在一个容器里（锁大了）
     sharedRows,
     cards: cards.slice(0, 8),
-    note: sharedRows.length
-      ? '⚠️ 多个岗位链接锁到了同一个容器 → 卡片边界锁大了，筛选会拿混在一起的文本判断，必须先修 rowOfLink'
-      : '每张卡各自独立，卡片边界正确',
+    note: byCompany
+      ? `页面上没有岗位详情链接，改用 ${coLinks.length} 个公司主页链接定位行 → 锁到 ${buckets.size} 行；看 parsed 是否为 null 就知道采集器能不能取到公司名`
+      : sharedRows.length
+        ? '⚠️ 多个岗位链接锁到了同一个容器 → 卡片边界锁大了，筛选会拿混在一起的文本判断，必须先修 rowOfLink'
+        : '每张卡各自独立，卡片边界正确',
   }
 }
 
@@ -2701,6 +3046,31 @@ function nextBtn() {
   return null
 }
 
+/**
+ * 找「加载更多」按钮。
+ *
+ * 为什么需要：BOSS「已投简历」是**追加式加载**，没有 Element UI 那套 `btn-next`。
+ * 只认分页按钮的话，90 条投递永远只采到第 1 页的 20 条 —— 剩下的公司名补不上，
+ * 界面上看起来像「同步了但没效果」。
+ */
+function loadMoreBtn() {
+  const scope = pagerScope()
+  const cands = [...scope.querySelectorAll('button, [role="button"], a, [class*="load-more"], [class*="loadmore"]')]
+  const re = /^(加载更多|查看更多|更多|展开更多|点击加载更多|显示更多)/
+  for (const b of cands) {
+    let t = ''
+    try {
+      t = String(b.innerText || b.textContent || '').replace(/\s+/g, '').trim()
+    } catch (_) {
+      t = ''
+    }
+    if (!t || t.length > 10 || !re.test(t)) continue
+    if (!isShown(b) || isDisabledBtn(b)) continue
+    return b
+  }
+  return null
+}
+
 /** 找「上一页」按钮。标准 Element UI 分页是 <button class="btn-prev">。 */
 function prevBtn() {
   const scope = pagerScope()
@@ -2748,7 +3118,9 @@ async function waitForListChange(prevKeys, timeoutMs = 8000) {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
     await new Promise((r) => setTimeout(r, 400))
-    const now = candidateRows().map((r) => r.jobId).filter(Boolean).join('|')
+    // 用 pageRowKeys 而不是只看 jobId：BOSS 投递记录页的行没有 jobId（走公司链接锚点），
+    // 只比 jobId 会让「加载更多」永远判成「没变化」，一页就停。
+    const now = pageRowKeys()
     if (now && now !== prevKeys) return true
   }
   return false
@@ -2836,14 +3208,16 @@ async function collectAllPages(opts = {}) {
     }
 
     const btn = nextBtn()
-    if (!btn) {
-      debug.stopped = `第 ${page} 页后无「下一页」（已到底或分页组件不认识）`
+    // BOSS 投递记录页没有分页组件，只有「加载更多」→ 追加式。两条路都试。
+    const more = btn ? null : loadMoreBtn()
+    if (!btn && !more) {
+      debug.stopped = `第 ${page} 页后没找到「下一页 / 加载更多」（已到底或组件不认识）`
       break
     }
 
-    // 记录当前页 jobId 集合，用来判断翻页后列表有没有真的变
-    const prevKeys = candidateRows().map((r) => r.jobId).filter(Boolean).join('|')
-    btn.click()
+    // 记录当前页指纹，用来判断翻页后列表有没有真的变
+    const prevKeys = pageRowKeys()
+    ;(btn || more).click()
     const changed = await waitForListChange(prevKeys)
     if (!changed) {
       debug.stopped = `第 ${page} 页点「下一页」后列表没变化，停止（可能已到底或加载慢）`
@@ -3121,6 +3495,7 @@ window.__jhCollector = {
   namesIn,
   looksLikeCompany,
   chatVerdictOf,
+  chatStepOf,
   looksWithdrawn,
   findChatPanel,
   chatPanelKey,
@@ -3135,7 +3510,11 @@ window.__jhCollector = {
   probeSignals,
   // 纯函数也导出：单测与日后排查直接调，不用再复制一份规则
   parseRowLines,
+  parseRowDom,
+  stripSalary,
   rowOfLink,
+  rowOfCompanyLink,
+  uniqueCompanyHrefs,
   jobIdOfHref,
   stageOfText,
   stageOfTabName,
