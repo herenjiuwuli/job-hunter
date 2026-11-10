@@ -407,6 +407,47 @@ function toIso(s) {
 }
 
 /**
+ * 从一行文案里抽日期（比 toIso 宽容，但**只认能确定是日期的写法**）。
+ *
+ * 为什么要它：BOSS 的投递记录页写的是「11-08 投递」「投递于 11-08」「11月08日」，
+ * 没有年份、还夹着汉字。原来的 `DATE_LIKE` 要求**整行就是日期**，于是一条也读不到 ——
+ * 表现就是「同步完投递日期没了」。
+ *
+ * 为什么这么克制（只认三种写法）：`3-5K` 里的 `3-5` 长得和 `08-05` 一模一样，
+ * 放开成「任意 数字-数字」会把薪资当投递日期写进账本 —— 那比没有日期坏得多。
+ * 所以宁可漏（返回空 = 界面显示未知），不许错。
+ */
+function dateFromText(s) {
+  const t = String(s || '')
+  const full = toIso(t)
+  if (full) return full
+  const m =
+    t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日?/) ||
+    t.match(/(\d{1,2})[-/.](\d{1,2})\s*(?:投递|申请|沟通)/) ||
+    t.match(/(?:投递于|投递时间|申请于|沟通于)\s*[:：]?\s*(\d{1,2})[-/.](\d{1,2})/)
+  if (!m) return ''
+  const now = new Date()
+  const mk = (y) => new Date(y, +m[1] - 1, +m[2])
+  let d = mk(now.getFullYear())
+  if (isNaN(d.getTime()) || +m[1] < 1 || +m[1] > 12 || +m[2] < 1 || +m[2] > 31) return ''
+  // 算出来比今天还晚一个多月 → 那是去年的同月同日（跨年）
+  if (d.getTime() - now.getTime() > 40 * 864e5) d = mk(now.getFullYear() - 1)
+  return isNaN(d.getTime()) ? '' : d.toISOString()
+}
+
+/** 这一行除了日期/「投递于」这类词之外，还有没有别的内容 */
+function isDateOnlyLine(s) {
+  const rest = String(s || '')
+    .replace(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/g, '')
+    .replace(/\d{1,2}:\d{2}(?::\d{2})?/g, '')
+    .replace(/\d{1,2}\s*月\s*\d{1,2}\s*日?/g, '')
+    .replace(/\d{1,2}[-/.]\d{1,2}/g, '')
+    .replace(/投递于|投递时间|投递|申请于|申请|沟通于|沟通|日|[:：]/g, '')
+    .trim()
+  return rest.length < 2
+}
+
+/**
  * 纯标签行：届别 / 批次 / 急招这类**不是岗位名**的独立行。
  *
  * 真机事故（2026-11-03，华曦达 3 条）：实习僧岗位名元素的 innerText 实际是
@@ -456,9 +497,16 @@ function parseRowLines(lines, opts = {}) {
   const keep = []
 
   for (const s of list) {
+    // 整行就是日期（实习僧的「2026-10-30 13:28:33」）—— 老规矩：读成投递时间，整行丢掉
     if (DATE_LIKE.test(s)) {
-      if (!appliedAt) appliedAt = toIso(s)
+      if (!appliedAt) appliedAt = toIso(s) || dateFromText(s)
       continue
+    }
+    const dt = dateFromText(s)
+    if (dt) {
+      if (!appliedAt) appliedAt = dt
+      // 「11-08 投递」「投递于 11-08」这类夹着汉字、整行没有别的信息 → 也不进候选
+      if (isDateOnlyLine(s)) continue
     }
     if (stageWordCount(s) >= 3) continue // tab 标签串，整行丢掉
     if (NOISE.test(s)) continue
@@ -575,7 +623,8 @@ function parseRowDom(el, lines, opts = {}) {
 
   let appliedAt = ''
   for (const s of list) {
-    if (!appliedAt && DATE_LIKE.test(s)) appliedAt = toIso(s)
+    if (appliedAt) break
+    appliedAt = dateFromText(s)
   }
 
   // 阶段：行内文案 vs 分类 tab，取权重大的那个（与 parseRowLines 同一规则）
@@ -870,8 +919,10 @@ function rowsInRoot(root, onlyShown = true, onSkip = null) {
       skip(`行内只有 ${lines.length} 行文本`, lines)
       continue
     }
-    // 必须带日期或状态词，否则多半抓到了导航/页脚之类的容器
-    if (!lines.some((l) => DATE_LIKE.test(l)) && !lines.some((l) => isStageWord(l))) {
+    // 必须带日期或状态词，否则多半抓到了导航/页脚之类的容器。
+    // ⚠️ 判「有没有日期」必须用 dateFromText，不能用 DATE_LIKE —— 后者要求**整行就是日期**，
+    // 而 BOSS 写「11-08 投递」「投递于 08-05」，整行永远等不上 → 每一行都被当成页脚跳过。
+    if (!lines.some((l) => dateFromText(l)) && !lines.some((l) => isStageWord(l))) {
       skip('行内既没有日期也没有状态词', lines)
       continue
     }
@@ -1038,7 +1089,11 @@ function collectFromPage() {
   // 这类页面不一定把岗位渲染成 /job_detail/ 链接（有的整卡是 JS 跳转），
   // 但公司名一定挂在 /gongsi/xxx.html 上 —— 策略 A 一条都拿不到时，只能靠它锁行。
   // 门槛与 A 一致：行内必须有日期或状态词，否则会把页头 / 推荐位当成投递记录。
-  if (!items.length) {
+  //
+  // ⚠️ 不再用 `if (!items.length)` 挡着：那等于「策略 A 只要采到 1 条（比如页头推荐位），
+  // 这条路整条不跑」，症状就是「页面明明有几十条投递，只同步上来 1 条」。
+  // 重复靠 push 的 seenKey 去重（jobId 或 公司|岗位），多跑一遍不会写重。
+  {
     const seenRows = new Set()
     let coRows = 0
     for (const a of document.querySelectorAll('a[href*="/gongsi/"]')) {
@@ -1048,7 +1103,7 @@ function collectFromPage() {
       if (!isShown(row)) continue
       coRows++
       const lines = linesOf(row)
-      if (lines.length < 2 || (!lines.some((l) => DATE_LIKE.test(l)) && !lines.some((l) => isStageWord(l)))) {
+      if (lines.length < 2 || (!lines.some((l) => dateFromText(l)) && !lines.some((l) => isStageWord(l)))) {
         onSkip('公司链接行里没有日期/状态词', lines)
         continue
       }
@@ -1062,7 +1117,7 @@ function collectFromPage() {
       push(parsed, jobIdFrom(row), 'company-link')
     }
     debug.companyRows = coRows
-    if (items.length) debug.via = 'company-link'
+    if (!debug.via && items.length) debug.via = 'company-link'
   }
 
   // 策略 B：文本兜底（没有岗位链接的页面，如 BOSS 对话列表）
@@ -3511,6 +3566,8 @@ window.__jhCollector = {
   // 纯函数也导出：单测与日后排查直接调，不用再复制一份规则
   parseRowLines,
   parseRowDom,
+  dateFromText,
+  isDateOnlyLine,
   stripSalary,
   rowOfLink,
   rowOfCompanyLink,

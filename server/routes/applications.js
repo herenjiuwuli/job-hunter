@@ -172,6 +172,39 @@ function normTitle(s) {
 }
 
 /**
+ * 剥掉标题尾巴上的薪资（「测试实习生 3-5K」「数据运营实习生 200-250元/天」）。
+ *
+ * 为什么不并进 normTitle：normTitle 是**主键的一部分**（`sameApply` 直接用它判等），
+ * 改宽了会把「测试实习生 3-5K」和「测试实习生 5-8K」这两条同名不同岗的投递合成一条。
+ * 这里单独做一个更宽松的版本，只给「公司名未知、只能靠标题认人」那一条兜底路径用。
+ *
+ * 来自 2026-11-10 真机：BOSS「一键投递」建记录时标题里带薪资（那是页面上岗位名的原文），
+ * 而「已投简历」列表页采到的标题已经把薪资剥掉了 —— 两边标题不等 → 公司名也对不上
+ * （一边「未知公司」）→ 一条都匹配不上，全被当成新投递，投递日期跟着从记录里消失。
+ */
+function stripSalaryTail(s) {
+  return String(s || '')
+    .replace(/\s*\d+(?:\.\d+)?\s*[-~－]\s*\d+(?:\.\d+)?\s*[kK千]\s*(?:·\s*\d+\s*薪)?\s*$/, '')
+    .replace(/\s*\d+(?:\.\d+)?\s*[-~－]\s*\d+(?:\.\d+)?\s*(?:元)?\s*\/?\s*(?:天|月|小时|时)\s*$/, '')
+    .replace(/\s*(?:面议|\d+(?:\.\d+)?\s*[kK])\s*$/, '')
+    .trim()
+}
+
+/** 宽松标题：剥薪资 + 常规归一化。只用于「靠标题认人」的兜底匹配 */
+function normTitleLoose(s) {
+  return normKey(stripSalaryTail(s)).replace(/(实习招聘|校园招聘|社会招聘|长期招聘|招聘|急招|热招)$/, '')
+}
+
+/**
+ * 公司名是不是「其实没有公司名」的占位值。
+ * 采集端取不到公司时写「未知公司」；老数据还可能是空串。
+ */
+function isPlaceholderCompany(s) {
+  const t = String(s || '').trim()
+  return !t || /^未知/.test(t)
+}
+
+/**
  * 库里这条的标题是不是「压根不是岗位名」——纯届别 / 批次 / 急招这类标签。
  *
  * 来源是真机事故：实习僧岗位名元素里是「27届\n测试实习生」，采集端取了第一行，
@@ -229,7 +262,7 @@ function sameApply(local, remote) {
  * 就是把 A 的进度写到 B 头上。这时宁可 ignored 让界面说出来，也不能猜。
  */
 function matchByTitleOnly(list, remote, userId) {
-  const t = normTitle(remote.jobTitle)
+  const t = normTitleLoose(remote.jobTitle)
   if (!t) return -1
   const hits = []
   for (let i = 0; i < list.length; i++) {
@@ -238,9 +271,43 @@ function matchByTitleOnly(list, remote, userId) {
     const lp = String(a.platform || '')
     const rp = String(remote.platform || '')
     if (lp && rp && lp !== rp) continue
-    if (normTitle(a.jobTitle) === t) hits.push(i)
+    if (normTitleLoose(a.jobTitle) === t) hits.push(i)
   }
   return hits.length === 1 ? hits[0] : -1
+}
+
+/**
+ * 库里那条**没有公司名**时，允许只凭岗位名认领（标题必须全库唯一）。
+ *
+ * 为什么需要（2026-11-10 真机，75 条「未知公司」一条也补不上）：
+ *   BOSS「一键投递」建记录时公司名没取到（当时选择器全是 class 名，见 v0.9.4），
+ *   岗位名却是**页面原文带薪资**（「测试实习生 3-5K」）。
+ *   后来从聊天页 / 投递记录页采到的是「公司真名 + 剥了薪资的标题」——
+ *   公司这一半对不上（「未知公司」vs「银河电力」），标题那一半也对不上（带不带薪资），
+ *   两半全错 → `sameApply` 判不是同一条 → 新建重复记录，**投递日期留在旧记录里 →
+ *   界面看就是「补了公司名的那几条，日期反而没了」**。
+ *
+ * 为什么只在「库里有真名就不许靠标题认」：公司名是硬证据。库里有真名却和本次对不上，
+ * 那就是真的另一家（同一家公司两个岗位也常见），只靠标题认会张冠李戴。
+ * 反过来库里是「未知公司」= 我们本来就不知道是谁，标题唯一命中是此时唯一的线索。
+ *
+ * @returns {{idx:number,hits:number}} hits>1 = 同名多条且都没公司名，认谁都可能错，交给人工
+ */
+function matchByPlaceholderCompany(list, remote, userId) {
+  const t = normTitleLoose(remote.jobTitle)
+  if (!t) return { idx: -1, hits: 0 }
+  const hits = []
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i]
+    if (!isMine(a, userId)) continue
+    if (!isPlaceholderCompany(a.company)) continue
+    const lp = String(a.platform || '')
+    const rp = String(remote.platform || '')
+    if (lp && rp && lp !== rp) continue
+    if (normTitleLoose(a.jobTitle) !== t) continue
+    hits.push(i)
+  }
+  return { idx: hits.length === 1 ? hits[0] : -1, hits: hits.length }
 }
 
 /**
@@ -338,6 +405,22 @@ router.post('/api/applications/collect', async (req, res) => {
         if (idx === -1 && raw.source === 'chat' && !remote.jobId) {
           idx = matchByTitleOnly(next, remote, req.userId)
           if (idx !== -1) viaTitle = true
+        }
+        // 任何来源再退一层：库里那条**没有公司名**时，只能靠岗位名认（标题必须唯一）。
+        // 不加这一层的话，「未知公司 + 标题带薪资」的老记录永远匹配不上任何采集结果 ——
+        // 每同步一次就多一批重复记录，而投递日期留在了旧记录里。
+        let looseHits = 0
+        if (idx === -1) {
+          const m = matchByPlaceholderCompany(next, remote, req.userId)
+          looseHits = m.hits
+          if (m.idx !== -1) idx = m.idx
+        }
+        if (idx === -1 && looseHits > 1) {
+          stats.ignored++
+          note(raw, 'ignored', {
+            reason: `同名 ${looseHits} 条、而且都没有公司名，认不出是哪一条（认错会把别人的进度写上去）`,
+          })
+          continue
         }
 
         if (idx === -1) {
@@ -452,6 +535,18 @@ router.post('/api/applications/collect', async (req, res) => {
             current: cur.stage || null,
             ...(companyFixed ? { companyFixed } : {}),
           })
+        }
+
+        /**
+         * 投递日期：**只补不清**。
+         * 采集端在页面上读得到「投递于 11-08」就补进来；读不到（空串）绝不能拿它冲掉账本里
+         * 已有的时间 —— 一键投递那批记录的时间是**投递那一刻写的**，比任何事后推断都准。
+         * 2026-11-10 真机就是这个表现：补上公司名的那几条，投递日期反而空了。
+         */
+        const remoteAppliedAt = String(raw.appliedAt || '').trim()
+        if (remoteAppliedAt && !cur.appliedAt) {
+          patch.appliedAt = remoteAppliedAt
+          changed = true
         }
 
         // 已读：只记第一次。重复同步不能把时间刷成「今天」

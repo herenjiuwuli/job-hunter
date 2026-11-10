@@ -1717,7 +1717,15 @@ $('#pushAppliedBtn').addEventListener('click', async () => {
     )
     const bad = (data.results || []).filter((x) => x.action === 'ignored')
     if (bad.length) {
-      log(`⚠️ ${bad.length} 条没进去（公司/岗位名为空）：` + bad.map((x) => x.company || '(无公司)').join('、'))
+      // 忽略原因必须照原样打出来：之前写死「公司/岗位名为空」，
+      // 而真正被忽略的原因可能是「同名多条认不出是哪条」「账本里没这条投递」——
+      // 文案不对会让人往错的方向排查。
+      const why = {}
+      for (const x of bad) {
+        const r = String(x.reason || '未说明')
+        why[r] = (why[r] || 0) + 1
+      }
+      log(`⚠️ ${bad.length} 条没进去：` + Object.entries(why).map(([r, n]) => `${r}（${n} 条）`).join('；'))
     }
   } catch (e) {
     log(`❌ 连不上 ${base}（后端没启动？）：${e.message}`)
@@ -2804,8 +2812,12 @@ async function uploadProgress(opts = {}) {
         lines.push(`  · ${x.company || '?'} / ${x.jobTitle || '?'}｜${x.reason || '未匹配'}`)
       }
       if (ignored.length > 12) lines.push(`  … 还有 ${ignored.length - 12} 条`)
-      lines.push('')
-      lines.push('要收进来：点下面的「补录」，或先在 job-hunter 里手动记一条同名投递。')
+      // 「补录」只对「账本里真的没有这条投递」有用。
+      // 「同名多条认不出是哪条」这类**补录也没用**（只会再造一条重复），不能给同样的建议。
+      if (ignored.some((x) => /账本里没有/.test(String(x.reason || '')))) {
+        lines.push('')
+        lines.push('要收进来：点下面的「补录」，或先在 job-hunter 里手动记一条同名投递。')
+      }
     }
 
     // 「补录」按钮：只对「账本里没有」这一类有用（缺字段 / 不属于本账号的补录也建不出来）。

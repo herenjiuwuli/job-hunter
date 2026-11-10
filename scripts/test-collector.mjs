@@ -139,6 +139,23 @@ eq(
 // 缺公司名 → 宁可不报
 eq(C.parseRowLines(['系统测试实习生', '2026-11-02 16:42:21', '投递成功']), null, '只有岗位没有公司 → 返回 null')
 
+// — 投递日期：BOSS 写「11-08 投递」，比「整行就是日期」宽松；但**薪资绝不能被当成日期** —
+eq(C.dateFromText('11-08 投递') !== '', true, '「11-08 投递」要读得出（BOSS 投递记录页的写法）')
+eq(new Date(C.dateFromText('11-08 投递')).getMonth() + 1, 11, '没有年份时补今年，月份不能错位')
+eq(C.dateFromText('投递于 08-05') !== '', true, '「投递于 08-05」也要认')
+eq(C.dateFromText('11月08日') !== '', true, '「11月08日」也要认（带汉字月/日）')
+eq(C.dateFromText('2026-11-09 08:05') !== '', true, '完整日期照旧')
+// 这三条是「宁可漏，不许错」的底线：把薪资当投递日期写进账本，比没有日期坏得多
+eq(C.dateFromText('3-5K'), '', '★ 薪资「3-5K」不是日期')
+eq(C.dateFromText('200-250元/天'), '', '★ 日薪「200-250元/天」不是日期')
+eq(C.dateFromText('15-30K·14薪'), '', '★ 月薪「15-30K·14薪」不是日期')
+// 夹着日期的行不能变成公司名/岗位名
+eq(
+  pick(C.parseRowLines(['测试开发实习生', '11-08 投递', '韶音科技-深圳'])),
+  { company: '韶音科技', city: '深圳', jobTitle: '测试开发实习生', appliedAt: C.dateFromText('11-08 投递'), stage: null },
+  '★ 「11-08 投递」只贡献日期，不许被当成公司名'
+)
+
 // 空行 / 全是噪声
 eq(C.parseRowLines([]), null, '空行返回 null')
 eq(C.parseRowLines(['投递成功', '2026-11-02 16:42:21']), null, '只有状态和时间 → 返回 null')
