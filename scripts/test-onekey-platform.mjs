@@ -124,5 +124,31 @@ const contentSrc = fs.readFileSync(path.join(root, 'extension/content.js'), 'utf
 ok('回显平台名不写死', !/startLogText\(lastOneKeyResult, '实习僧'\)/.test(src), '还在写死实习僧')
 ok('content 上报结果带平台名', /lastOneKeyResult: \{ \.\.\.res, platform: platform\(\)/.test(contentSrc), 'content 没把平台名写进 lastOneKeyResult')
 
+// ===== ④ 人就在搜索结果页上：按页面投，不用表单里的旧词（2026-11-12）=====
+// 真机：主人在 BOSS 上把筛选切到「运营」（页面已经是运营的搜索结果），点一键投递
+// 却被拽回「测试」第一页。原因是旧代码只把当前页当「城市/经验/学历的模板」，
+// 关键词一律取表单上次填的词，再用 buildBossSearchUrl 把页面上的 query=运营 覆盖掉 ——
+// 优先级写反了：表单是**上次的配置**，页面是**此刻的事实**。
+ok('★ 搜索页判定用当前 URL', /const bossOnSearchPage = isBoss && isBossSearchUrl\(curUrl\)/.test(handler))
+ok('★ BOSS 关键词走 bossKwsFor（页面优先）', /bossKwsFor\(\{\s*onSearchPage:/.test(handler), 'BOSS 关键词仍直接取表单')
+ok('★ 队列用 bossKws 而不是 kws', /bossKws\.map\(\(k\) => \(\{ url: buildBossSearchUrl\(bossBase, k\) \}\)\)/.test(handler))
+ok(
+  '★ 页面已有关键词时，「关键词是空的」不许拦',
+  /if \(!final\.keyword && !allowAnyKw && !bossFromPage\)/.test(handler),
+  '页面已经搜好了词，还被「关键词是空的，没有开投」挡住'
+)
+ok('★ 表单词没参与必须写出来', /这次没参与/.test(handler), '静默换了关键词，用户只会觉得插件乱跳')
+
+const kwsSrc = src.match(/function bossKwsFor\(\{ onSearchPage, pageQuery, kws \}\) \{[\s\S]*?\n\}/)?.[0]
+ok('取到 bossKwsFor', !!kwsSrc)
+if (kwsSrc) {
+  const f = new Function(`${kwsSrc}\nreturn bossKwsFor`)()
+  // 页面搜了「运营」、表单里还留着「测试」→ 只投运营。多投一个词是不可撤销的代价。
+  eq('页面搜了运营 → 只投运营，表单里的测试不跟', f({ onSearchPage: true, pageQuery: '运营', kws: ['测试', '测试开发'] }), ['运营'])
+  eq('页面没词（按分类点进来）→ 空串，原样保留页面其他筛选', f({ onSearchPage: true, pageQuery: '', kws: ['测试'] }), [''])
+  eq('详情页/聊天页 → 用表单词表（照旧轮换）', f({ onSearchPage: false, pageQuery: '', kws: ['测试', '运营'] }), ['测试', '运营'])
+  eq('两处都空 → 一个空串（后面有硬拦兜底）', f({ onSearchPage: false, pageQuery: '', kws: [] }), [''])
+}
+
 console.log(`\n结果：${fail ? '失败' : '通过'}（${pass} 通过 / ${fail} 失败）`)
 process.exit(fail ? 1 : 0)

@@ -1084,6 +1084,24 @@ function buildBossSearchUrl(baseUrl, keyword) {
 }
 
 /**
+ * 这次 BOSS 要跑哪几个搜索（纯函数，有单测）。
+ *
+ * 规则只有一条：**人就在 BOSS 的搜索结果页上 → 只跑这一页的搜索，不用表单里的词**。
+ *
+ * 为什么不是「表单词优先、页面词排第一」：投递不可撤销。用户说他这次只想投
+ * 「运营」，如果队列变成 [运营, 测试]，运营投完会自己接着投测试 —— 那是他没要的。
+ * 「顺手多投」的代价远大于「少投一个词」，所以页面优先时直接独占。
+ *
+ * 页面没有 query（他是用分类 / 标签点进来的）→ 返回空串，让 buildBossSearchUrl
+ * 把 query 删掉、其余筛选原样保留：那一刻他想投的是「这套筛选下的全部岗位」，
+ * 凭空塞一个表单里的旧词反而是乱投。
+ */
+function bossKwsFor({ onSearchPage, pageQuery, kws }) {
+  if (onSearchPage) return [String(pageQuery || '').trim()]
+  return Array.isArray(kws) && kws.length ? kws.slice() : ['']
+}
+
+/**
  * 拼出这次要落的搜索页。
  * 有模板 → 在模板上覆盖三个值（用户额外选的筛选条件全部保留）；
  * 没模板 → 用实习僧的标准参数格式（keyword / city / type）。
@@ -1407,21 +1425,6 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     const allowAnyKw = !!(kwAnyEl && kwAnyEl.checked)
     await saveOneKey(final)
 
-    // 关键词留空 ≠ 投「测试」，而是投**该城市全部岗位**。
-    // 2026-11-05 真机：表单只填了城市，一键投递算出的地址是 ?city=深圳&type=intern，
-    // 没有 keyword —— 差一步就开始投深圳所有实习岗。所以这里必须硬拦，不能只靠提示。
-    if (!final.keyword && !allowAnyKw) {
-      log(
-        '❌ 关键词是空的，没有开投。\n' +
-          '留空时这一跳会落到「' +
-          (final.cities.join('/') || '全国') +
-          ' · 全部岗位」，不是你要的岗位方向。\n' +
-          '① 填上关键词（如「测试」）再点；\n' +
-          '② 确实想投该城市全部岗位 → 勾「关键词不限」。'
-      )
-      return
-    }
-
     // ===== 投哪个平台：只看眼前这个页面 =====
     // 2026-11-06 真机：用户在 BOSS 页点「一键」，旧代码硬编码 findLineTab('sx')，
     // 把他从 BOSS 直接拽到实习僧、并按实习僧的关键词/城市开始投 —— 他根本没想投实习僧。
@@ -1437,6 +1440,49 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     const line = plat.key
     const lineName = plat.name
     const isBoss = line === 'boss'
+
+    // ===== 眼前这一页，才是「这次要投什么」的最高证据 =====
+    // 2026-11-12 真机：主人在 BOSS 上把筛选切到「运营」（页面已经是运营的搜索结果），
+    // 回弹窗点一键投递，结果被拽回「测试」的第一页 —— 因为旧代码只把当前页当
+    // 「城市/经验/学历的模板」，关键词一律取表单里上次填的「测试」，
+    // 再用 buildBossSearchUrl 把页面上的 query=运营 覆盖掉。
+    //
+    // 这是优先级写反了：表单是**上次的配置**（可能早就过时），页面是**此刻的事实**。
+    // 用旧配置覆盖眼前所见，用户看到的必然是「插件不听话」。
+    //
+    // 所以规则改成：只要当前标签页就是 BOSS 的搜索结果页，
+    //   ① 关键词取页面 URL 上的 query（不是表单）；
+    //   ② 本次**只投这一个搜索**，不拿表单里的其他词去轮换 ——
+    //      投递不可撤销，「顺手多投几个词」比「少投」代价大得多；
+    //   ③ 想按表单多词轮换 → 到职位详情页 / 聊天页点（那时没有页面筛选可依）。
+    const curUrl = String(plat.tab.url || '')
+    const bossOnSearchPage = isBoss && isBossSearchUrl(curUrl)
+    let bossPageQuery = ''
+    if (bossOnSearchPage) {
+      try {
+        bossPageQuery = String(new URL(curUrl).searchParams.get('query') || '').trim()
+      } catch {
+        bossPageQuery = ''
+      }
+    }
+    const bossFromPage = bossOnSearchPage && !!bossPageQuery
+
+    // 关键词留空 ≠ 投「测试」，而是投**该城市全部岗位**。
+    // 2026-11-05 真机：表单只填了城市，一键投递算出的地址是 ?city=深圳&type=intern，
+    // 没有 keyword —— 差一步就开始投深圳所有实习岗。所以这里必须硬拦，不能只靠提示。
+    // 例外：BOSS 的搜索页上已经有关键词（bossFromPage）—— 这次用的是页面上的词，表单空着没关系。
+    if (!final.keyword && !allowAnyKw && !bossFromPage) {
+      log(
+        '❌ 关键词是空的，没有开投。\n' +
+          '留空时这一跳会落到「' +
+          (final.cities.join('/') || '全国') +
+          ' · 全部岗位」，不是你要的岗位方向。\n' +
+          '① 填上关键词（如「测试」）再点；\n' +
+          '② 确实想投该城市全部岗位 → 勾「关键词不限」；\n' +
+          '③ BOSS 上已经在页面里搜好了 → 停在那张搜索结果页再点（会按页面上的词投）。'
+      )
+      return
+    }
 
     // BOSS 城市是数字编码（实习僧是中文），插件没有可靠城市码表 → 筛选条件全部沿用
     // 「你刚才在 BOSS 上用的那一套」，插件只换关键词。
@@ -1454,7 +1500,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     let bossBase = ''
     let bossBaseSrc = ''
     if (isBoss) {
-      const cur = String(plat.tab.url || '')
+      const cur = curUrl
       if (isBossSearchUrl(cur)) {
         bossBase = stripPageParam(cur)
         bossBaseSrc = '当前页（BOSS 搜索结果页）'
@@ -1510,8 +1556,10 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     // 勾多个 = 跑多轮，顺序是「先把深圳·实习的几个词跑完，再跑深圳·校招，最后才轮到广州」。
     // type 放城市内层（换 type 和换词一样只改 query 不换入口），复用现成轮换机制。
     // ⚠️ BOSS 不展开：城市/类型都写在当前页的 URL 参数里，插件只负责换 query。
+    // ⚠️ BOSS 且在搜索结果页上：关键词只取页面上的那一个（见上面 bossFromPage 的注释）。
+    const bossKws = isBoss ? bossKwsFor({ onSearchPage: bossOnSearchPage, pageQuery: bossPageQuery, kws }) : kws
     const tasks = isBoss
-      ? (kws.length ? kws : ['']).map((k) => ({ url: buildBossSearchUrl(bossBase, k) }))
+      ? bossKws.map((k) => ({ url: buildBossSearchUrl(bossBase, k) }))
       : window.JH_FILTERS && typeof window.JH_FILTERS.expandSearchTasks === 'function'
         ? window.JH_FILTERS.expandSearchTasks(kws, final.cities, final.types, (p) =>
             buildSearchUrl({ ...final, ...p, type: p.type })
@@ -1521,6 +1569,19 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
           }))
     const urls = tasks.map((t) => t.url)
     const startUrl = urls[0]
+
+    // 表单里填的词和页面上实际用的对不上时，必须显式说出来 ——
+    // 否则用户点完发现投的是另一个方向，只会觉得「插件自己乱跳」。
+    let bossPageNote = ''
+    if (bossOnSearchPage && !bossPageQuery) {
+      bossPageNote =
+        `\n  这一页没有关键词（你是按分类 / 标签点进来的）：这次按页面上的筛选投，没加关键词。` +
+        (kws.length ? `\n  ⚠️ 表单里的「${kws.join(' / ')}」这次没参与。` : '')
+    } else if (bossFromPage && !(kws.length === 1 && kws[0] === bossPageQuery)) {
+      bossPageNote = kws.length
+        ? `\n  ⚠️ 表单里填的「${kws.join(' / ')}」这次没参与：你人就在 BOSS 的搜索结果页上，按页面上的筛选走。\n     想按表单里的多个词轮换 → 先投完这一页，再在职位详情页点「继续投」。`
+        : '\n  ⚠️ 关键词取的是你网页上搜的那个词（表单没填关键词）。'
+    }
 
     // 开投前把「这次到底投什么范围」明文写出来：配错了不报错，只能靠显示出来发现。
     // ⚠️ 这段必须拼进**最后那条**日志里 —— log() 是覆盖写，中途 log 一次会被后面的
@@ -1548,9 +1609,13 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
     const scopeText = [
       '本次范围：',
       `  关键词：${
-        kws.length > 1
-          ? `${kws.join(' / ')}（共 ${kws.length} 个，一个投完自动换下一个）`
-          : kws[0] || '⚠️ 不限（该城市全部岗位）'
+        isBoss
+          ? bossKws.length > 1
+            ? `${bossKws.join(' / ')}（共 ${bossKws.length} 个，一个投完自动换下一个）`
+            : bossKws[0] || '⚠️ 不限（你页面上没锁关键词）'
+          : kws.length > 1
+            ? `${kws.join(' / ')}（共 ${kws.length} 个，一个投完自动换下一个）`
+            : kws[0] || '⚠️ 不限（该城市全部岗位）'
       }`,
       `  城市：${
         isBoss
@@ -1565,7 +1630,7 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
       // BOSS 的筛选条件可能来自四个不同地方，必须写出来 —— 用户换城市/学历后
       // 到底哪一份生效，只能靠这一行看（2026-11-09 加的）
       ...(isBoss ? [`  条件来源：${bossBaseSrc}`] : []),
-    ].join('\n')
+    ].join('\n') + bossPageNote
     const noTplTip = isBoss
       ? ''
       : final.templateUrl
@@ -1582,7 +1647,8 @@ document.getElementById('oneKeyBtn').addEventListener('click', async () => {
         ? window.JH_FILTERS.taskNameOf(u)
         : '') || '?'
     // 城市 × 关键词时要说清「一共几轮」：用户勾了 2 个城市以为只搜一次，实际是 8 轮
-    const gridText = final.cities.length > 1 && kws.length ? `${final.cities.length} 城 × ${kws.length} 词` : ''
+    // （BOSS 的城市/类型来自页面，表单里的城市一项都不生效，说「N 城 × M 词」是撒谎）
+    const gridText = !isBoss && final.cities.length > 1 && kws.length ? `${final.cities.length} 城 × ${kws.length} 词` : ''
     const pagingTip =
       urls.length > 1
         ? `\n已排 ${urls.length} 个搜索${gridText ? `（${gridText}）` : ''}：先跑「${nameOf(urls[0])}」，它翻到底后自动换「${nameOf(urls[1])}」，依次往下，不用你再点。${
