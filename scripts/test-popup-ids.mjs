@@ -87,6 +87,34 @@ if (unbound.length) {
   fail++
   console.log(`❌ 这些主流程按钮在 popup.html 里找不到（改名了？）：${unbound.join(', ')}`)
 }
+
+/**
+ * 「投了几家」的口径不能退回只显示本批。
+ *
+ * 2026-11-12 真机：一键投递跑了 4 个搜索、每个 2~3 家，实际投出约 10 家，
+ * 弹窗却一直显示「1/2 成功 1」—— 因为进度条分母只等于**当前这一批**的队列长度，
+ * 每翻一页 / 每换一个搜索都会把队列和 results 一起重建。用户据此以为只投了 1 家，
+ * 差点回头重投一遍（投递不可撤销，重投就是真事故）。
+ *
+ * 三条一起钉住：① 主行必须写「本批」区分口径；② 有跨页/跨词战果时必须带累计数；
+ * ③ 本地账本今天条数必须显示出来（它是「实际投了几家」的唯一真源）。
+ */
+const PROGRESS_RULES = [
+  ['主行标注「本批」', /本批 \$\{done\}\/\$\{total\}/, js],
+  ['跨批战果要带累计数', /okAll > okCount \? `　→ \$\{allWord\}累计 \$\{okAll\} 家`/, js],
+  ['累计口径按搜索个数换词', /const allWord = kwN > 1 \? `本轮 \$\{kwN\} 个搜索` : '本轮'/, js],
+  ['账本行必须有 DOM', /id="ledger-current"/, html],
+  ['账本行要写今天条数', /今天 \$\{tc\} 家/, js],
+  ['账本行必须从 listApplied 取 todayCount', /list\.todayCount/, js],
+]
+for (const [name, re, src] of PROGRESS_RULES) {
+  if (re.test(src)) {
+    console.log(`✅ ${name}`)
+  } else {
+    fail++
+    console.log(`❌ ${name} —— 进度显示口径被改回去了（见 popup.js renderLine / refreshApplied）`)
+  }
+}
 if (!buried.length && !unbound.length) {
   console.log(`✅ ${MUST_VISIBLE.length} 个主流程按钮都在折叠区之外`)
 }

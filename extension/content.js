@@ -2972,7 +2972,10 @@ async function applyBatchResult(target, res, b, opts = {}) {
     const okN = results.filter((r) => r.ok).length
     const skipN = results.filter((r) => r.skipped).length
     const failN = results.length - okN - skipN
-    stopReason = `本批 ${nb.queue.length} 家已全部执行完（成功 ${okN} / 跳过 ${skipN} / 失败 ${failN}）`
+    // 「本批」必须说清楚：队列每翻一页就重建，这句话里的家数只是**这一页**的，
+    // 拿它当「整轮投了多少」会少报（2026-11-12：界面 1/2，实际 10 家）。
+    // kW 是这个搜索跨页累计的成功数，两个数一起给才不会误读。
+    stopReason = `本批 ${nb.queue.length} 家跑完（成功 ${okN} / 跳过 ${skipN} / 失败 ${failN}）｜这个搜索累计投出 ${kwOkNext} 家`
 
     // 本批跑完 → 看还有没有下一页。这里只是**跳过去**，下一页行不行由 bootNextPage 自检，
     // 因为「翻页到底成没成功」只有抓到新页的岗位集合才能判。
@@ -2992,7 +2995,7 @@ async function applyBatchResult(target, res, b, opts = {}) {
           pendingPage: true,
           stopped: '',
         }
-        stopReason = `第 ${p.page} 页投完（成功 ${okN}/跳过 ${skipN}/失败 ${failN}），正在翻到第 ${nextPage} 页`
+        stopReason = `第 ${p.page} 页投完（本页成功 ${okN}/跳过 ${skipN}/失败 ${failN}），这个搜索累计 ${kwOkNext} 家，正在翻到第 ${nextPage} 页`
       } else {
         pagingNext = { ...p, stopped: '翻页地址拼不出来（起始页地址缺失）' }
         stopReason += '｜翻页已停：起始页地址缺失'
@@ -3006,7 +3009,7 @@ async function applyBatchResult(target, res, b, opts = {}) {
         kwNextIndex = nk.index
         // 说「翻满 N 页」而不是「翻到底了」：这个分支是**页数上限**触发的，
         // 不是真的没有下一页了。两者混用会让用户以为「就该这么多岗位」（2026-11-05 真机）
-        stopReason = `「${kwNameOf(nb, nb.kwIndex)}」翻满设定的 ${p.maxPages} 页（本页成功 ${okN}/跳过 ${skipN}/失败 ${failN}），换下一个搜索「${kwNameOf(nb, nk.index)}」（第 ${nk.index + 1}/${nk.total} 个）`
+        stopReason = `「${kwNameOf(nb, nb.kwIndex)}」翻满设定的 ${p.maxPages} 页（本页成功 ${okN}/跳过 ${skipN}/失败 ${failN}，这个搜索累计 ${kwOkNext} 家），换下一个搜索「${kwNameOf(nb, nk.index)}」（第 ${nk.index + 1}/${nk.total} 个）`
         kwFinishedNote = `翻满 ${p.maxPages} 页`
       } else {
         pagingNext = { ...p, stopped: `已翻满设定的 ${p.maxPages} 页` }

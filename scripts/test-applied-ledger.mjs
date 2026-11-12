@@ -35,7 +35,7 @@ const code = fs.readFileSync(BG, 'utf8')
 const ctx = vm.createContext({ chrome, console, Date, Object, String, Number, Array, JSON, Math, isNaN })
 vm.runInContext(
   code +
-    '\n;globalThis.__t = { markApplied, isApplied, listApplied, removeApplied, clearApplied }',
+    '\n;globalThis.__t = { markApplied, isApplied, listApplied, removeApplied, clearApplied, localDayOf }',
   ctx
 )
 const T = ctx.__t
@@ -109,6 +109,42 @@ const run = async () => {
   // 9) 缺 jobId 不能写脏数据
   const bad = await T.markApplied({ platform: '实习僧' })
   check('缺 jobId 拒绝写入', bad.ok === false)
+
+  // 10) 「今天投了几家」—— 用户判断实际投递量靠这个数，
+  //     而进度条上的数字只统计当前这一批（翻页 / 换词都归零）
+  await T.clearApplied()
+  check('空账本 → 今天 0 家', (await T.listApplied(10)).todayCount === 0)
+
+  await T.markApplied({ jobId: 'today_1', platform: 'BOSS直聘', title: '今天的岗位 A' })
+  await T.markApplied({ jobId: 'today_2', platform: 'BOSS直聘', title: '今天的岗位 B' })
+  // 手工塞一条昨天的：只改 at，其余字段照真实结构
+  store.applied['boss:yesterday_1'] = {
+    platform: 'BOSS直聘',
+    jobId: 'yesterday_1',
+    title: '昨天的岗位',
+    at: new Date(Date.now() - 86400000).toISOString(),
+  }
+  const cnt = await T.listApplied(10)
+  check('今天 2 家（昨天那条不算今天）', cnt.todayCount === 2, String(cnt.todayCount))
+  check('总数仍是 3', cnt.total === 3, String(cnt.total))
+
+  // ★ 时区：本地凌晨 00:30 记的投递必须算「今天」。
+  //   用 toISOString().slice(0,10) 会把它算成昨天（UTC 前一天 16:30），
+  //   于是「今天投了几家」在半夜直接少一整天的数。
+  const midnight = new Date()
+  midnight.setHours(0, 30, 0, 0)
+  check(
+    '★ 本地 00:30 算今天（不能按 UTC 日期）',
+    T.localDayOf(midnight) === T.localDayOf(new Date()),
+    `${T.localDayOf(midnight)} vs ${T.localDayOf(new Date())}`
+  )
+  check('★ UTC 口径确实会算错（证明上面那条不是空断言）', midnight.toISOString().slice(0, 10) !== T.localDayOf(midnight) || midnight.getTimezoneOffset() === 0)
+
+  // 11) 时间非法不能让整个账本炸掉
+  check('非法时间返回空串', T.localDayOf('not-a-date') === '')
+  store.applied['boss:bad_at'] = { platform: 'BOSS直聘', jobId: 'bad_at', title: '坏时间', at: 'xxx' }
+  const c2 = await T.listApplied(10)
+  check('坏时间不进今天，但仍在总数里', c2.todayCount === 2 && c2.total === 4, `${c2.todayCount}/${c2.total}`)
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
   process.exit(fail ? 1 : 0)

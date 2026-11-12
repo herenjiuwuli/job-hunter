@@ -249,7 +249,25 @@ async function listApplied(limit = 20) {
   const list = Object.keys(all)
     .map((k) => ({ key: k, ...all[k] }))
     .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-  return { ok: true, total: list.length, list: list.slice(0, Math.max(1, Number(limit) || 20)) }
+  // 今天的条数要单独给：用户判断「到底投了几家」靠的是这个数，
+  // 而批次里的数字只统计**当前这一批**（每翻一页 / 每换一个词都会归零），
+  // 拿它当「今天投了多少家」会少报一大截（2026-11-12 真机：显示 1 家，实际 10 家）。
+  const today = localDayOf(new Date())
+  const todayCount = list.filter((x) => localDayOf(x.at) === today).length
+  return {
+    ok: true,
+    total: list.length,
+    todayCount,
+    list: list.slice(0, Math.max(1, Number(limit) || 20)),
+  }
+}
+
+/** 把 ISO 时间转成**本地**日期串。不能用 toISOString().slice(0,10)：
+ *  那是 UTC，中国凌晨 0-8 点记的投递会被算到前一天。 */
+function localDayOf(v) {
+  const d = v instanceof Date ? v : new Date(v)
+  if (!d || Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 async function removeApplied(key) {

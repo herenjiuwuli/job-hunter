@@ -60,6 +60,9 @@
         <b id="line-current-name">当前页</b>
         <span class="linestate" id="state-current">未启动</span>
       </div>
+      <!-- 本地账本的真实条数。进度条上的「1/2」只统计**当前这一批**（翻页/换词都会归零），
+           被当成「今天只投了 1 家」是必然的误读；这一行才是「实际投了几家」。 -->
+      <div class="ledgerline" id="ledger-current" hidden></div>
       <div class="lineinfo" id="info-current">—</div>
       <details>
         <summary>队列</summary>

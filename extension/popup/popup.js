@@ -319,6 +319,10 @@ function renderLine(line, b) {
   // kwOk 才是当前词的真值（翻页会把 results 清零）；老批次没有 kwOk 就退回数 results，
   // 两者不能相加 —— 那是同一个词的同一批成功数，加两次就是虚报
   const okAll = prevOk + (Number(b.kwOk) || okCount)
+  // 只写「本轮累计」还是「本轮 4 个搜索累计」：单搜索时写「4 个搜索」是噪音，
+  // 但多搜索时不写清个数，用户会以为「累计」等于「这一个词投的」
+  const kwN = (b.kwUrls || []).length || 0
+  const allWord = kwN > 1 ? `本轮 ${kwN} 个搜索` : '本轮'
 
   // 卡住检测：BOSS 正常间隔 30~60s，阈值要比实习僧宽，否则一直误报
   const lastMs = b.lastAt ? new Date(b.lastAt).getTime() : new Date(b.startedAt || Date.now()).getTime()
@@ -345,9 +349,15 @@ function renderLine(line, b) {
       : // 队列从头就是空的（翻页也没找到活）→ 别显示「0/0 成功 0」，那看着像跑完了
         !total
         ? okAll > 0
-          ? `— 当前这轮没开投；本轮 ${(b.kwUrls || []).length || ''} 个搜索已合计投出 ${okAll} 家（明细见「本轮明细」）`
+          ? `— 当前这轮没开投；${allWord}已合计投出 ${okAll} 家（明细见「本轮明细」）`
           : '— 本批没有开投：这一页没有可投的岗位'
-        : `${progressBar(done, total)} ${done}/${total}　成功 ${okCount} · 跳过 ${skipCount} · 失败 ${failCount}${b.force ? '　[跳过风控]' : ''}`,
+        : `${progressBar(done, total)} 本批 ${done}/${total}　成功 ${okCount} · 跳过 ${skipCount} · 失败 ${failCount}${
+            // 「本批」和「本轮」必须分开写。进度条的分母只等于**这一批**的队列长度，
+            // 而每翻一页 / 每换一个搜索都会把队列和 results 一起重置 ——
+            // 于是「4 个搜索各投 2~3 家」在界面上永远只显示「1/2」，
+            // 用户以为整轮只投了 1 家，实际投了 10 家（2026-11-12 真机）。
+            okAll > okCount ? `　→ ${allWord}累计 ${okAll} 家` : ''
+          }${b.force ? '　[跳过风控]' : ''}`,
     // 整批的范围：长跑期间一直挂着，投错了能立刻看出「当初是按什么范围抓的」
     b.scope ? `范围：${truncate(b.scope, 90)}${b.scopeRisky ? '　⚠️ 不限关键词' : ''}` : '',
     // 多关键词轮换：现在跑到第几个词、下一个是什么 —— 不然用户不知道还剩几个词没跑
@@ -770,6 +780,24 @@ async function refreshApplied() {
     })
     if (total > rows.length) lines.push(`… 还有 ${total - rows.length} 条`)
     listEl.textContent = lines.join('\n')
+
+    // ③ 本地账本真实条数 → 进度条上方一行。
+    // 为什么必须单独显示：进度条上的「本批 1/2」只统计当前这一批（翻页 / 换词都会归零），
+    // 用户拿它当「今天投了几家」会少报一大截 —— 2026-11-12 真机显示 1 家、实际投了约 10 家。
+    // 本地账本是「发送成功就先记」的，不依赖后端，所以它是唯一可信的数。
+    const ledEl = document.getElementById('ledger-current')
+    if (ledEl) {
+      const tc = Number(list && list.todayCount) || 0
+      if (!total) {
+        ledEl.hidden = true
+        ledEl.textContent = ''
+      } else {
+        ledEl.hidden = false
+        ledEl.className = 'ledgerline' + (tc > 0 ? '' : ' warn')
+        ledEl.textContent = `本地账本 ${total} 条${tc ? `｜今天 ${tc} 家` : '｜今天 0 家'}`
+        ledEl.title = '投递成功即刻记在这里，不依赖后端。后端缺的，点「补传账本到后端」补上。'
+      }
+    }
   } catch {
     curEl.textContent = '—'
     listEl.textContent = '—'
