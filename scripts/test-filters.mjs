@@ -279,6 +279,19 @@ eq(
   )
   eq(F.taskNameOf('not a url'), '', '地址不合法时返回空串，不抛错')
 
+  // BOSS 用 query + 数字城市码。读不出来就会出现「搜索：第 2/4 个「?」」——
+  // 多个词的轮换全靠这一行显示跑到哪，全是问号等于没有。
+  eq(
+    F.taskNameOf('https://www.zhipin.com/web/geek/job?query=%E8%BD%AF%E4%BB%B6%E6%B5%8B%E8%AF%95&city=101280600'),
+    '城市·软件测试',
+    '★ BOSS 的 query 也要能读出词名（否则多词轮换全显示「?」）'
+  )
+  eq(
+    F.taskNameOf('https://www.zhipin.com/web/geek/job?city=101280600&page=2'),
+    '城市',
+    '★ 只有城市码时给个中性占位，不把 101280600 当城市名显示'
+  )
+
   const t1 = F.expandSearchTasks(['软件测试', 'SDET'], ['深圳', '广州'], ['intern', 'school'], u)
   eq(t1.length, 8, '2 城 × 2 类型 × 2 词 = 8 个搜索任务')
   eq(

@@ -394,8 +394,12 @@
   function taskNameOf(url) {
     try {
       const u = new URL(String(url || ''))
-      const k = u.searchParams.get('keyword') || ''
-      const c = u.searchParams.get('city') || ''
+      // 关键词：实习僧叫 keyword，BOSS 叫 query。只认 keyword 的话，
+      // BOSS 的多词轮换会全程显示「搜索：第 2/4 个「?」」—— 用户根本不知道跑到哪个词
+      const k = u.searchParams.get('keyword') || u.searchParams.get('query') || ''
+      const rawCity = u.searchParams.get('city') || ''
+      // BOSS 的城市是数字码，插件里没有可靠码表 → 不译名（猜错比不译更糟），标成「城」占位
+      const c = /^\d{5,}$/.test(rawCity) ? '城市' : rawCity
       const t = u.searchParams.get('type') || ''
       const typeShort = { intern: '实习', school: '校招', company: '企业' }[t] || ''
       const parts = [c, typeShort, k].filter(Boolean)

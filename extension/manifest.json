@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "求职自动化助手 job-hunter",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "实习僧 / BOSS 直聘半自动投递：自动填打招呼语 + 投递记录回写本地后端",
   "permissions": ["storage"],
   "host_permissions": [

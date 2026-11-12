@@ -428,6 +428,34 @@ eq(
 eq(C.searchScopeOf('not a url').text, '', '地址不合法返回空，不抛错')
 eq(C.searchScopeOf('https://www.shixiseng.com/interns?keyword=%E6%B5%8B&type=company').typeName, '企业', 'type=company 也认得')
 
+// BOSS 的参数名和实习僧不一样（query / 数字城市码）。只认 keyword 的话，
+// BOSS 上一键投递会全程显示「关键词 ⚠️ 不限」，而它其实有词 —— 用户会以为在整城全投。
+eq(
+  C.searchScopeOf('https://www.zhipin.com/web/geek/job?query=%E6%B5%8B%E8%AF%95&city=101280600').keyword,
+  '测试',
+  '★ BOSS 的 query 也当关键词读，不再误报「不限」'
+)
+eq(
+  C.searchScopeOf('https://www.zhipin.com/web/geek/job?query=%E6%B5%8B%E8%AF%95&city=101280600').risky,
+  '',
+  '★ 有 query 就不算风险范围（这是 2026-11-12 误报的那一条）'
+)
+eq(
+  C.searchScopeOf('https://www.zhipin.com/web/geek/job?query=%E6%B5%8B%E8%AF%95&city=101280600').text,
+  '关键词 测试｜城市 已锁(101280600)｜类型 ⚠️ 未指定',
+  '★ 城市码不译成中文：只如实说「锁了」，猜错城市比不猜更糟'
+)
+eq(
+  C.searchScopeOf('https://www.zhipin.com/web/geek/job').risky,
+  '关键词为空：这一批是「该城市全部岗位」，不是某个方向',
+  'BOSS 连 query 都没有时才该标红'
+)
+eq(
+  C.searchScopeOf('https://www.zhipin.com/web/geek/job?query=%E6%B5%8B&jobType=1901').typeName,
+  '已选(1901)',
+  'BOSS 的 jobType 不认识就原样显示，不假装是「实习」'
+)
+
 // ===== 一页全投不了时，原因要说全（emptyPageReason） =====
 eq(
   C.emptyPageReason({ total: 20, appliedSkip: 15, blockedCount: 3, pendingCount: 2, blockedFirst: '城市不符（岗位在 北京）' }),

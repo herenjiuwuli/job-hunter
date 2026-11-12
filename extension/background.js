@@ -98,6 +98,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'backendPost':
       backendPost(msg.path, msg.body).then(sendResponse)
       return true
+    // 开投前探一次登录态。为什么值得单开一个 action：
+    // 投递是**不可撤销**的动作，账本却是可选的 —— token 过期时整批照投不误，
+    // 只是每家都带一句「没写进后端」，用户看的是数字（1/2 成功）而不是缺记录。
+    // 2026-11-12 真机：token 7 天到期，一整天投的岗位全都没进账本。
+    case 'backendCheck':
+      backendCheck().then(sendResponse)
+      return true
     default:
       return false
   }
@@ -135,6 +142,32 @@ async function backendPost(path, body) {
   } catch (e) {
     // fetch 抛错 = 后端没启动 / 地址写错。和 HTTP 4xx 区分开，否则用户会去查 token
     return { ok: false, status: 0, error: `连不上后端（${e.message}）` }
+  }
+}
+
+/**
+ * 登录态预检。返回 { ok, status, username, error }。
+ *
+ * 三种失败要分得开，因为修法完全不同：
+ *   status 0   → 后端没起 / 地址错（去启动后端）
+ *   status 401 → token 没配 或 过期（去扩展下方「后端连接」点登录）
+ *   其他        → 后端在但报错
+ * 「没配」和「过期」在 401 里是同一个码，所以这里把有没有 token 一起带回去，
+ * 界面上才能说「没填过」还是「填了但过期了」—— 前者要去找账号，后者点一下就好。
+ */
+async function backendCheck() {
+  const { jhBackend, jhToken } = await chrome.storage.local.get(['jhBackend', 'jhToken'])
+  const base = String(jhBackend || 'http://localhost:3100').replace(/\/+$/, '')
+  const token = String(jhToken || '').trim()
+  if (!token) return { ok: false, status: 401, hasToken: false, error: '扩展里从来没填过 token' }
+  try {
+    const r = await fetch(`${base}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+    if (r.status === 401) return { ok: false, status: 401, hasToken: true, error: 'token 已过期（有效期 7 天）' }
+    if (!r.ok) return { ok: false, status: r.status, hasToken: true, error: `后端返回 ${r.status}` }
+    const u = await r.json().catch(() => ({}))
+    return { ok: true, status: 200, hasToken: true, username: (u && u.username) || '' }
+  } catch (e) {
+    return { ok: false, status: 0, hasToken: true, error: `连不上后端（${e.message}）` }
   }
 }
 

@@ -825,6 +825,45 @@ function fillGreeting(el, text) {
 }
 
 /**
+ * 开投前的登录态预检。返回 { ok, error }。
+ *
+ * 判定标准：**只有确定登录有效才放行**。
+ *   - 401 / 没填 token → 拦（投了不记账，等于白投）
+ *   - 连不上后端     → 拦（同上，而且多半是后端没起，投了也没人用）
+ *   - 扩展环境缺失   → 放行（控制台粘贴 / 单测，本来就没有 background 可问）
+ *
+ * 为什么不像以前那样「投完在结果里带个 ⚠️ 就行」：
+ * 那句话挂在每一家的结果里，用户扫一眼进度条（1/2 成功）就走了，
+ * 不会去读每条后面的小字。不可撤销的动作必须在**动手前**拦，事后再提示已经晚了。
+ */
+async function checkBackendAuth() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'backendCheck' })
+    if (!r || typeof r.ok !== 'boolean') return { ok: true } // 不是扩展环境：无从判断，不拦
+    if (r.ok) return { ok: true }
+    if (r.status === 401) {
+      return {
+        ok: false,
+        error:
+          `后端登录已失效（${r.error}）—— 这一批**没开投**。` +
+          `\n投递不可撤销、账本可不行：带着失效的 token 投，岗位会真的发出去，但 job-hunter 里一条都记不上` +
+          `（2026-11-12 就这么丢了一整天的记录）。` +
+          `\n修法：① 打开扩展 → 下面「后端连接」→ 填用户名密码点「登录」（token 会自动换上）；` +
+          `② 登录成功后，展开「高级 · 补传 / 清空 / 页面结构」→ 点「补传账本到后端」，` +
+          `把已经投出去但那段时间没记上的补进账本（账本按 jobId 去重，重复点不会造重复记录）。` +
+          `\n然后回来再点投递。`,
+      }
+    }
+    return {
+      ok: false,
+      error: `连不上后端（${r.error}）—— 这一批没开投。先把 job-hunter 后端起起来（npm run dev），或在「后端连接」里改对地址。`,
+    }
+  } catch (_) {
+    return { ok: true }
+  }
+}
+
+/**
  * 把这条投递回写到后端。
  *
  * ⚠️ 走 background 转发，不在页面里直接 fetch：content script 的 fetch 受**页面 CSP** 管辖，
@@ -2576,6 +2615,14 @@ async function jumpToNextKeyword({ nk, prev, limit, force, from, kwUrls }) {
 }
 
 async function startBatch(limit, force, opts = {}) {
+  // 开投前先确认账本能记上。投递不可撤销、账本是可选的 —— 两者顺序反了，代价最大：
+  // token 过期时整批照投不误，每家只带一句「没写进后端」，而用户看的是「1/2 成功」。
+  // 2026-11-12 真机：token 满 7 天到期，一天投出去的岗位一条都没进账本。
+  // 放在这里（而不是 popup 的按钮回调）是因为启动入口有好几个：
+  // 首次启动 / 翻页续跑 / 换关键词 / 「继续投」，漏掉任何一个就又能静默丢记录。
+  const auth = await checkBackendAuth()
+  if (!auth.ok) return { ok: false, error: auth.error, authFailed: true }
+
   // 关键词队列：一键投递时 popup 把每个词算成一条搜索页地址传进来，
   // 这里只负责带着它走（这个词投完了由 applyBatchResult / bootNextPage 接力换下一个）
   const kwUrls = Array.isArray(opts.kwUrls) ? opts.kwUrls.filter(Boolean).slice(0, 20) : []
@@ -2864,7 +2911,11 @@ let batchBusy = false
 // 单家结果入库 → 判断整批还跑不跑 → 跑就跳下一家。
 // 抽成独立函数的原因：BOSS 点「立即沟通」会整页跳到聊天页，那家的收尾（发送 + 判定 + 入账 + 推进）
 // 只能由聊天页的脚本完成。若只写在 resumeBatch 里，聊天页投完就没人推进，整批停在同一格。
-async function applyBatchResult(target, res, b) {
+//
+// opts.stopAfter：这家**已经投出去了**，但用户在这期间点了停止。
+// 账必须记（投递不可撤销），只是不再往下推进。不记的后果是界面写「1/2 成功」
+// 而实际两家都投了 —— 用户会以为漏了一家，回头又投一遍（2026-11-12 真机）。
+async function applyBatchResult(target, res, b, opts = {}) {
   const nb = (await getBatch()) || b
   const results = [
     ...(nb.results || []),
@@ -2898,6 +2949,13 @@ async function applyBatchResult(target, res, b) {
   } else if (failStreak >= 2) {
     running = false
     stopReason = `连续 2 家失败，已停止（查页面结构 / 额度 / 补充信息三项）${nb.results && nb.results.length ? `｜最后一次：${truncate(results[results.length - 1].message, 80)}` : ''}`
+  }
+
+  if (opts.stopAfter) {
+    // 「当前这家投完就停」里的这家投完了 —— 前面算出的 running 只代表「还能不能继续」，不能决定记不记账
+    const why = res.risk || res.fatal ? stopReason : ''
+    running = false
+    stopReason = `${why ? why + '｜' : ''}已手动停止｜这一家${res.ok ? '已投出' : '没投成'}，已记账（别回头再投一次）`
   }
 
   const nextIndex = nb.index + 1
@@ -3131,8 +3189,10 @@ async function bootPendingBoss() {
   const fail = async (error, extra) => {
     await clearPendingBoss()
     const b = await getBatch()
-    if (b && b.running) {
-      await applyBatchResult(p.url, { ok: false, error, ...(extra || {}) }, b)
+    if (b) {
+      // 同一条原则：尝试过就要留痕。停止后失败的那家也要记，
+      // 否则「0 失败」会让人以为没动过手（实际已经点开过那家的会话）
+      await applyBatchResult(p.url, { ok: false, error, ...(extra || {}) }, b, { stopAfter: !b.running })
     } else {
       await chrome.storage.local.set({
         lastBossResult: { ok: false, company: p.company, jobTitle: p.jobTitle, message: error, at: new Date().toISOString() },
@@ -3216,9 +3276,11 @@ async function bootPendingBoss() {
     })
 
     const b = await getBatch()
-    if (b && b.running) {
-      // 收尾这家的记账 + 推进下一家（含 30~60s 间隔）
-      await applyBatchResult(p.url, res, b)
+    if (b) {
+      // 消息已经发出去了 —— 不管批次还在不在跑，都要记账。
+      // 旧代码是 if (b.running)：用户在聊天页发送的同一秒点「停止」，
+      // 招呼照发不误、结果却被这一行吞掉 → 界面写「1/2 成功」，实际两家都投了（2026-11-12 真机）。
+      await applyBatchResult(p.url, res, b, { stopAfter: !b.running })
     }
   } finally {
     pendingBusy = false

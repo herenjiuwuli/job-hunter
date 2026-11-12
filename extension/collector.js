@@ -261,13 +261,23 @@ function searchScopeOf(href) {
     return out
   }
   const get = (k) => String(u.searchParams.get(k) || '').trim()
-  out.keyword = get('keyword')
+  // ⚠️ 两个平台的参数名**不一样**，只认一套就会把 BOSS 的搜索页读成「全都不限」：
+  //   实习僧：keyword=软件测试 & city=深圳 & type=intern
+  //   BOSS  ：query=软件测试  & city=101280600 & jobType=…（city 是数字码，不是中文）
+  // 2026-11-12 真机：BOSS 上一键投递，日志写着「关键词 ⚠️ 不限｜城市 ⚠️ 不限｜类型 ⚠️ 未指定」，
+  // 明明是从带 query 的搜索页开的 —— 用户会以为这批是「整城全投」，而它其实有词。
+  out.keyword = get('keyword') || get('query')
   out.city = get('city')
-  out.type = get('type')
-  out.typeName = { intern: '实习', school: '校招', company: '企业' }[out.type] || out.type || '未指定'
+  const typeRaw = get('type') || get('jobType')
+  out.type = typeRaw
+  out.typeName = { intern: '实习', school: '校招', company: '企业' }[typeRaw] || (typeRaw ? `已选(${typeRaw})` : '未指定')
+
+  // 城市码不译成中文：插件里没有可靠的 BOSS 城市码表，猜错比不猜更糟
+  //（显示成「深圳」而实际是别处，用户就不会去看第二眼）。只如实说「锁了」还是「没锁」。
+  const cityText = !out.city ? '⚠️ 不限' : /^\d{5,}$/.test(out.city) ? `已锁(${out.city})` : out.city
 
   const parts = [`关键词 ${out.keyword || '⚠️ 不限'}`]
-  parts.push(`城市 ${out.city || '⚠️ 不限'}`)
+  parts.push(`城市 ${cityText}`)
   parts.push(out.typeName === '未指定' ? '类型 ⚠️ 未指定' : `类型 ${out.typeName}`)
   out.text = parts.join('｜')
 

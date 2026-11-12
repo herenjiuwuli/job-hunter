@@ -306,5 +306,50 @@ const mkBatch = (url, n = 2) => ({
   check('测试岗放行', hit.blocked, false)
 }
 
+// ---- 停止之后才投出去的那一家，账必须记 ----
+// 2026-11-12 真机：界面写「1/2 成功」，BOSS 后台两家都在 ——
+// 原因是用户点停止时，聊天页正把这家的招呼发出去；旧代码写着
+// `if (b && b.running) applyBatchResult(...)`，发送照发、记账被吞。
+// 投递不可撤销，账不能跟着「还跑不跑」一起丢。
+{
+  const store = makeStore()
+  const boss = makeContext(BOSS_URL, store)
+  const b = { ...mkBatch(BOSS_URL, 2), running: false, stopReason: '已手动停止', index: 1 }
+  await boss.setBatch(b)
+
+  const cur = await boss.getBatch()
+  await boss.applyBatchResult(cur.queue[1], { ok: true, message: '已发送招呼语' }, cur, { stopAfter: true })
+  const after = await boss.getBatch()
+
+  check('★ 停止后才投出的那家仍然记账', after.results.length, 1)
+  check('★ 记账后不会自己继续投下一家', after.running, false)
+  check('★ 停止原因里点名「已记账，别重复投」', /已记账/.test(after.stopReason || ''), true)
+  check('★ 结果本身仍算成功（不能因为停止就写成失败）', after.results[0].ok, true)
+}
+
+// 结构断言：光有 applyBatchResult 的新参数还不够 —— 调用点必须真的用上它。
+// 旧 bug 就在调用点（`if (b && b.running)`），只测 applyBatchResult 会漏掉它。
+{
+  const src = fs.readFileSync(path.join(root, 'extension/content.js'), 'utf8')
+  const at = src.indexOf('async function bootPendingBoss')
+  const body = at > 0 ? src.slice(at, at + 9000) : ''
+  check('找到 bootPendingBoss', body.length > 0, true)
+  // 「批次还在跑」不能当记账的前提。这条断言必须容忍中间夹杂注释，
+  // 否则就变成恒 false 的空转断言（写的时候踩过一次：正则要求紧跟 await，实际中间隔了 4 行注释）
+  check(
+    '★ 聊天页不许用「批次还在跑」当记账前提',
+    /if\s*\(\s*b\s*&&\s*b\.running\s*\)\s*\{[^}]{0,400}?applyBatchResult/.test(body),
+    false
+  )
+  const calls = [...body.matchAll(/await applyBatchResult\(/g)].map((m) => body.slice(m.index, m.index + 260))
+  check('找到聊天页的两处记账调用', calls.length >= 2, true)
+  check(
+    '★ 聊天页每处记账都带 stopAfter',
+    calls.length > 0 && calls.every((s) => /stopAfter:\s*!b\.running/.test(s)),
+    true
+  )
+  check('★ 开投前必须过鉴权预检', /checkBackendAuth\(\)/.test(src), true)
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)
