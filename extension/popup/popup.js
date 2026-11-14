@@ -1846,13 +1846,19 @@ const EXP_LABEL = {
 const EDU_OPTIONS = [3, 4, 5, 6]
 
 let jobFilters = { ...F.DEFAULT_FILTERS }
+// 「从当前页抓到的岗位名」候选池（不持久化在 filters 里，因为它会随页面变）
+let titleCandidates = []
 
 function loadJobFilters() {
   return new Promise((resolve) => {
-    chrome.storage.local.get('filters', (r) => {
+    chrome.storage.local.get(['filters', 'titleCandidates'], (r) => {
       jobFilters = { ...F.DEFAULT_FILTERS, ...(r.filters || {}) }
       if (!Array.isArray(jobFilters.cities)) jobFilters.cities = []
       if (!Array.isArray(jobFilters.directions)) jobFilters.directions = []
+      // 老配置里没有这一项 → 补空数组（不然 screenJob 那边要防 undefined 两次）
+      if (!Array.isArray(jobFilters.onlyTitles)) jobFilters.onlyTitles = []
+      // 候选池是「上次从页面抓到的岗位名」，不清空就一直留着，方便隔几天再勾
+      titleCandidates = Array.isArray(r.titleCandidates) ? r.titleCandidates : []
       resolve(jobFilters)
     })
   })
@@ -1939,6 +1945,86 @@ function renderDirList() {
   })
 }
 
+/**
+ * 岗位名白名单 / 候选池（2026-11-14）。
+ *
+ * 为什么要有：方向表是插件写死的九组，用户换方向后「现有分类里没有我想投的岗位」。
+ * 与其让插件继续猜，不如把这一页真实的岗位名抓出来，他自己勾。
+ *
+ * 候选池与已选**分开**：候选随页面变（翻一页再抓会合并），已选是用户的决定，
+ * 不会因为换了页面就消失 —— 否则「勾完忘了选，抓一次全没了」。
+ */
+function renderTitlePicked() {
+  const el = $('#titlePicked')
+  if (!el) return
+  const pick = jobFilters.onlyTitles || []
+  el.textContent = pick.length
+    ? `已选 ${pick.length} 个：${pick.join('、')}｜只按这些名字放行（上面的方向已忽略）`
+    : '已选：—（不选 = 按上面的方向筛）'
+}
+
+function renderTitleCands() {
+  const box = $('#titleCandList')
+  if (!box) return
+  box.innerHTML = ''
+  if (!titleCandidates.length) {
+    const hint = document.createElement('div')
+    hint.className = 'picked'
+    hint.textContent = '还没有候选：先停在 BOSS / 实习僧的搜索结果页，点上面的「从当前页抓岗位名」'
+    box.appendChild(hint)
+    return
+  }
+  titleCandidates.forEach((c) => {
+    const on = (jobFilters.onlyTitles || []).includes(c.title)
+    const label = document.createElement('label')
+    label.className = 'chip' + (on ? ' on' : '')
+    label.title = c.title
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = on
+    const span = document.createElement('span')
+    // 同一页出现多次（不同公司同名岗位）→ 标 ×N，让用户知道这个词覆盖面有多大
+    span.textContent = c.n > 1 ? `${c.title} ×${c.n}` : c.title
+    label.append(input, span)
+    input.addEventListener('change', (e) => {
+      const list = (jobFilters.onlyTitles || []).slice()
+      if (e.target.checked) {
+        if (!list.includes(c.title)) list.push(c.title)
+        jobFilters.onlyTitles = list
+      } else {
+        jobFilters.onlyTitles = list.filter((x) => x !== c.title)
+      }
+      label.classList.toggle('on', e.target.checked)
+      renderTitlePicked()
+      saveJobFilters()
+    })
+    box.appendChild(label)
+  })
+}
+
+/** 从当前标签页抓岗位名，合并进候选池（同一岗位名取较大出现次数） */
+async function grabTitlesFromPage() {
+  const tab = await activeTab()
+  const r = await chrome.tabs
+    .sendMessage(tab.id, { action: 'grabTitles' })
+    .catch(() => null)
+  if (!r || !r.ok) {
+    return { ok: false, error: (r && r.error) || '页面上没有响应（刷新一下页面再点，或这页不是搜索结果页）' }
+  }
+  if (!r.count) {
+    return { ok: false, error: '这一页没找到岗位（要在搜索结果列表页，详情页 / 聊天页抓不到）' }
+  }
+  const merged = new Map(titleCandidates.map((x) => [x.title, x]))
+  for (const x of r.titles) {
+    const old = merged.get(x.title)
+    if (!old || x.n > old.n) merged.set(x.title, { title: x.title, n: x.n })
+  }
+  titleCandidates = [...merged.values()].sort((a, b) => b.n - a.n || a.title.localeCompare(b.title))
+  await new Promise((resolve) => chrome.storage.local.set({ titleCandidates }, resolve))
+  renderTitleCands()
+  return { ok: true, count: r.count, total: titleCandidates.length, platform: r.platform }
+}
+
 function fillSelect(el, list, cur, fmt) {
   el.innerHTML = list.map((v) => `<option value="${v}">${fmt(v)}</option>`).join('')
   el.value = String(cur)
@@ -1977,6 +2063,8 @@ async function initJobFilters() {
   renderCityList()
   renderPicked()
   renderDirList()
+  renderTitleCands()
+  renderTitlePicked()
 
   // 方向快捷预设。为什么需要：勾着全部方向时，「前端开发 / 数据分析」等也会被放行，
   // 搜索结果里混进来的非目标岗就会被投出去。一个个取消勾选容易漏，所以给一键入口。
@@ -1998,6 +2086,40 @@ async function initJobFilters() {
       renderDirList()
       await saveJobFilters()
       log('✅ 方向已清空 = 不限方向（任何岗位都放行，只靠关键词 + 城市把关）')
+    })
+  }
+
+  // 岗位名白名单：抓 → 勾 → 只投这些。方向表里没有的岗位也能投（2026-11-14）
+  const grabBtn = document.getElementById('grabTitles')
+  if (grabBtn) {
+    grabBtn.addEventListener('click', async () => {
+      grabBtn.disabled = true
+      try {
+        const r = await grabTitlesFromPage()
+        if (!r.ok) {
+          log(`❌ 抓不到岗位名：${r.error}`)
+          return
+        }
+        log(
+          `✅ 从当前页抓到 ${r.count} 个岗位名（合计候选 ${r.total} 个，平台：${r.platform || '—'}）\n` +
+            '点下面带 ×N 的标签，勾出你要投的那些；勾了就只投名字带这些词的岗位（城市 / 经验 / 学历仍生效）。\n' +
+            '想多抓几页：翻一页再点一次，候选会合并去重。'
+        )
+      } catch (e) {
+        log(`❌ 抓取失败：${e.message}`)
+      } finally {
+        grabBtn.disabled = false
+      }
+    })
+  }
+  const clearTitleBtn = document.getElementById('clearTitles')
+  if (clearTitleBtn) {
+    clearTitleBtn.addEventListener('click', async () => {
+      jobFilters.onlyTitles = []
+      renderTitleCands()
+      renderTitlePicked()
+      await saveJobFilters()
+      log('✅ 已清空岗位名白名单，回到「按方向筛」')
     })
   }
   fillSelect($('#daysSel'), DAY_OPTIONS, jobFilters.daysPerWeek || 4, (v) => `${v} 天/周`)

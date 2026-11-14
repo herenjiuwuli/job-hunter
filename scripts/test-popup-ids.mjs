@@ -119,5 +119,37 @@ if (!buried.length && !unbound.length) {
   console.log(`✅ ${MUST_VISIBLE.length} 个主流程按钮都在折叠区之外`)
 }
 
+// ===== 岗位名白名单（2026-11-14）：抓页面岗位名 → 用户自己勾 =====
+// 用户换方向后「现有方向分类里没有我想投的岗位」，于是改成他直接从页面上选。
+// 这几条断言守的是「抓 → 勾 → 判定 → 日志」这条链路每一环都在，缺一环功能就是死的。
+{
+  const contentJs = readFileSync(join(ROOT, 'extension/content.js'), 'utf8')
+  const RULES = [
+    ['候选容器存在', /id="titleCandList"/, html],
+    ['已选行存在', /id="titlePicked"/, html],
+    ['抓取按钮存在', /id="grabTitles"/, html],
+    ['清空按钮存在', /id="clearTitles"/, html],
+    ['弹窗有候选渲染', /function renderTitleCands\(\)/, js],
+    ['弹窗有已选渲染', /function renderTitlePicked\(\)/, js],
+    ['弹窗有抓取函数', /async function grabTitlesFromPage\(\)/, js],
+    ['抓取走 grabTitles 消息', /action: 'grabTitles'/, js],
+    ['初始化时渲染候选', /renderTitleCands\(\)\n\s*renderTitlePicked\(\)/, js],
+    ['白名单非空要说明「方向已忽略」', /上面的方向已忽略/, js],
+    ['content 有抓取实现', /function collectPageTitles\(\)/, contentJs],
+    ['content 有 grabTitles 消息分支', /msg\.action === 'grabTitles'/, contentJs],
+    ['★ 白名单命中要短路方向判定', /if \(!pickedTitle && f\.directions\.length\)/, contentJs],
+    ['★ 不在白名单要说明勾的是什么', /不在你勾的岗位名里/, contentJs],
+    ['筛选描述里写岗位名而不是方向', /岗位名 \$\{head\}/, contentJs],
+  ]
+  for (const [name, re, src] of RULES) {
+    if (re.test(src)) {
+      console.log(`✅ ${name}`)
+    } else {
+      fail++
+      console.log(`❌ ${name} —— 岗位名白名单链路断了（见 popup.js / content.js）`)
+    }
+  }
+}
+
 console.log(fail ? `\n结果：${fail} 项失败` : '\n结果：通过')
 process.exit(fail ? 1 : 0)

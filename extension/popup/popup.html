@@ -224,6 +224,14 @@
       <button class="mini" id="dirClearAll">全不选（不限方向）</button>
     </div>
 
+    <label class="lbl">岗位名白名单（勾了就只投名字带这些词的岗位；从页面抓，不用手打）</label>
+    <div class="row" style="margin-top: 4px">
+      <button class="mini" id="grabTitles">从当前页抓岗位名</button>
+      <button class="mini" id="clearTitles">清空已选</button>
+    </div>
+    <div id="titleCandList" class="chips scroll"></div>
+    <div id="titlePicked" class="picked">已选：—（不选 = 按上面的方向筛）</div>
+
     <label class="lbl">BOSS 专用（实习僧卡片上没有这两项，互不影响）</label>
     <div class="grid2">
       <div>

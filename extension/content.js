@@ -463,7 +463,12 @@ function describeFilters(f) {
   if (!f || !f.enabled) return '⚠️ 筛选已关闭（全部放行）'
   const parts = []
   parts.push(f.cities && f.cities.length ? `城市 ${f.cities.join('/')}` : '⚠️ 城市不限')
-  if (f.directions && f.directions.length) {
+  if (f.onlyTitles && f.onlyTitles.length) {
+    // 白名单生效时方向表已经不参与判定了 —— 日志必须说「岗位名 N 个」，
+    // 否则用户看到「方向 测试/运营」会以为方向还在生效，明明勾的是别的岗
+    const head = f.onlyTitles.slice(0, 2).join('/')
+    parts.push(`岗位名 ${head}${f.onlyTitles.length > 2 ? ` 等 ${f.onlyTitles.length} 个` : ''}`)
+  } else if (f.directions && f.directions.length) {
     parts.push(`方向 ${dirShort(f.directions)}`)
   } else {
     parts.push('⚠️ 方向不限')
@@ -643,8 +648,21 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
     }
   }
 
-  // 3) 方向：标题优先，标题看不出再看 JD 前 1500 字
-  if (f.directions.length) {
+  // 3) 岗位名白名单：用户自己从页面上勾的具体岗位名。
+  //    勾了就只看它 —— 方向表（DIRECTIONS）和「其他方向词」都不再参与。
+  //    为什么必须短路：方向表是写死的九组，用户换方向后「现有分类里没有我想投的岗位」
+  //    （2026-11-14 真机），而这类岗位往往会被「其他方向词」误拦（如「算法」）。
+  //    城市 / 经验 / 学历仍然生效：那是硬约束，白名单只回答「投什么岗位」。
+  const onlyTitles = Array.isArray(f.onlyTitles) ? f.onlyTitles.filter(Boolean) : []
+  const pickedTitle =
+    onlyTitles.length && typeof F.titleMatchesAny === 'function' ? F.titleMatchesAny(title, onlyTitles) : ''
+  if (onlyTitles.length && !pickedTitle) {
+    const shown = onlyTitles.slice(0, 2).join('/') + (onlyTitles.length > 2 ? ' 等' : '')
+    return { blocked: true, reason: `不在你勾的岗位名里（勾的是${shown}）`, meta }
+  }
+
+  // 4) 方向：标题优先，标题看不出再看 JD 前 1500 字（勾了岗位名就跳过这一段）
+  if (!pickedTitle && f.directions.length) {
     const inTitle = matchedDirections(title)
     // 先查「其他方向词」：标题已经明确是**别的**方向（如「量化交易分析师」里的
     // 「量化/交易」），就直接拦，别再退回 JD 全文 —— 否则 JD 里提一嘴「测试」，
@@ -704,7 +722,7 @@ function screenJob({ jobTitle, company, jdText, metaText }, f, allowUnknown = fa
     }
   }
 
-  // 4) BOSS 专属：经验 / 学历门槛
+  // 5) BOSS 专属：经验 / 学历门槛
   // 为什么单列一条：BOSS 卡片上**没有**「x天/周」「x个月」，上面两条对它形同虚设；
   // 但它明确写「经验不限 / 1-3年 / 3-5年」和「本科 / 硕士」，这两项才是 BOSS 上真正能筛的。
   // 实习僧卡片读不到这些词 → 不拦，对那条线零影响（宁可少拦，不可误杀）。
@@ -943,6 +961,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 没有这个探针就只能「发一次失败 → 猜是不是没注入」，页慢一点就误报。
   if (msg.action === 'ping') {
     sendResponse({ ok: true, platform: platform() })
+    return
+  }
+
+  // 抓当前页岗位名清单：用户用来勾「只投这些岗位」（现有方向分类里没有他要的岗）
+  if (msg.action === 'grabTitles') {
+    try {
+      sendResponse(collectPageTitles())
+    } catch (e) {
+      sendResponse({ ok: false, error: e.message || '抓取失败' })
+    }
     return
   }
 
@@ -2092,6 +2120,34 @@ function linkTitleOf(a) {
   // 多行时第一行通常是岗位名
   const firstLine = raw.split(/[\n\r]/)[0].trim()
   return firstLine || raw
+}
+
+/**
+ * 抓当前页的岗位名清单（「岗位名白名单」用）。
+ *
+ * 用户的原话是「扒一下 BOSS 有什么岗位，然后让用户自己去选择筛选条件」：
+ * 方向表是插件写死的九组，他换方向后就再也选不到想投的岗 —— 与其让插件猜，
+ * 不如把这一页真实存在的岗位名列出来，他自己勾。
+ *
+ * 只扫当前页。翻页后再点一次会合并去重（合并逻辑在 popup，因为候选池活在那儿）。
+ * 顺带过滤掉「查看职位 / 立即沟通」这类按钮文字：BOSS 有些卡片的链接文字就是按钮。
+ */
+function collectPageTitles() {
+  const pf = platform()
+  const linkRe = pf === 'BOSS直聘' ? /zhipin\.com\/job_detail\//i : /shixiseng\.com\/intern\/inn_/i
+  const BTN_LIKE = /^(查看职位|查看详情|立即沟通|立即投递|投递简历|收藏|举报|继续沟通)$/
+  const map = new Map()
+  document.querySelectorAll('a[href]').forEach((a) => {
+    if (!linkRe.test(a.href || '')) return
+    const t = String(linkTitleOf(a) || '').replace(/\s+/g, ' ').trim()
+    if (!t || t.length < 2 || t.length > 40) return
+    if (BTN_LIKE.test(t)) return
+    map.set(t, (map.get(t) || 0) + 1)
+  })
+  const titles = [...map.entries()]
+    .map(([title, n]) => ({ title, n }))
+    .sort((x, y) => y.n - x.n || x.title.localeCompare(y.title))
+  return { ok: true, platform: pf, count: titles.length, titles: titles.slice(0, 120), url: location.href }
 }
 
 // 从列表页抓岗位链接，并顺手按 A 方案粗筛（不合条件的不进队列）

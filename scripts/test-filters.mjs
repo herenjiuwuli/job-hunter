@@ -319,6 +319,22 @@ eq(
   eq(F.expandSearchTasks(['测试'], ['深圳'], ['intern'], null), [], '没给拼接函数时返回空数组，不抛错')
 }
 
+// —————————————— 岗位名白名单（2026-11-14）——————————————
+// 用途：方向表里没有用户想投的岗位时，让他从页面上抓岗位名自己勾。
+// 匹配必须是**子串**：BOSS 标题常带后缀 / 城市 / 括号，全等会让勾完一个都匹配不上。
+{
+  eq(F.titleMatchesAny('AI训练师', ['AI训练师']), 'AI训练师', '完全一致 → 命中')
+  eq(F.titleMatchesAny('AI训练师（双休）', ['AI训练师']), 'AI训练师', '标题带后缀也命中（子串）')
+  eq(F.titleMatchesAny('数据标注专员-深圳', ['数据标注']), '数据标注', '标题带城市后缀也命中')
+  eq(F.titleMatchesAny('python开发', ['Python']), 'Python', '大小写不敏感')
+  eq(F.titleMatchesAny('Python开发', ['AI训练师']), '', '不在白名单 → 空串')
+  eq(F.titleMatchesAny('AI训练师', []), '', '没设白名单（空数组）→ 空串，调用方走方向表')
+  eq(F.titleMatchesAny('AI训练师', null), '', '白名单是 null 也不抛错')
+  eq(F.titleMatchesAny('', ['AI训练师']), '', '标题为空 → 空串')
+  eq(F.titleMatchesAny('测试开发', [' 测试 ']), ' 测试 ', '词两边的空格不影响命中')
+  eq(F.DEFAULT_FILTERS.onlyTitles, [], '默认白名单为空（不改变旧行为）')
+}
+
 // ——————————————————————————————————————————————
 console.log('')
 if (fails.length) {

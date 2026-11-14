@@ -154,6 +154,31 @@
   }
 
   /**
+   * 岗位名白名单判定（纯函数，有单测）：用户从页面上自己勾的岗位名。
+   *
+   * 为什么需要它：方向表（DIRECTIONS）是写死的九组，用户换方向后经常「现有的分类里
+   * 根本没有我想投的岗位」（2026-11-14 真机）。所以让插件把当前页的岗位名抓出来，
+   * 用户勾哪个就只投哪个 —— 不再靠插件猜他属于哪一类。
+   *
+   * 用**子串**而不是全等：BOSS 的标题常带后缀/城市/括号
+   * （「AI训练师（双休）」「数据标注专员-深圳」），全等会让勾完一个都匹配不上。
+   *
+   * @param {string} title 岗位标题
+   * @param {string[]} onlyTitles 用户勾的岗位名
+   * @returns {string} 命中的那个词（空串 = 没命中 / 没设白名单）
+   */
+  function titleMatchesAny(title, onlyTitles) {
+    const list = Array.isArray(onlyTitles) ? onlyTitles : []
+    const t = String(title || '').trim().toLowerCase()
+    if (!t || !list.length) return ''
+    for (const raw of list) {
+      const k = String(raw || '').trim().toLowerCase()
+      if (k && t.includes(k)) return String(raw)
+    }
+    return ''
+  }
+
+  /**
    * 标题命中了哪些「其他方向词」（明确不是测试/开发方向）。
    *
    * 用途：方向判断「标题优先、标题无词才退回 JD」里，先拿这个判断标题是不是
@@ -450,6 +475,9 @@
     // 主战场转 BOSS，同时投运营和测试两个方向）。
     // 只留测试类时前端 / 产品 / 数据分析这些也会混进来放行，所以这里显式圈定方向。
     directions: ['qa', 'auto', 'api', 'game', 'ops'],
+    // 用户从页面上勾的具体岗位名（白名单）。非空时只看它，方向表不再参与判定。
+    // 这是「现有方向里没有我想投的岗位」的唯一出口，所以留空 = 按方向表（旧行为）。
+    onlyTitles: [],
     minScore: 0, // 0 = 不用 B 方案打分门槛
     resumeId: '', // B 方案用哪份简历打分
     strictMeta: false, // true = 城市/天数/月数识别不到时也拦截
@@ -468,6 +496,7 @@
     firstCity,
     checkCity,
     hitKeyword,
+    titleMatchesAny,
     otherDirectionOf,
     detectMeta,
     detectBossMeta,

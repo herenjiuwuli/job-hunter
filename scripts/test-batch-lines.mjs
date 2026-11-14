@@ -351,5 +351,69 @@ const mkBatch = (url, n = 2) => ({
   check('★ 开投前必须过鉴权预检', /checkBackendAuth\(\)/.test(src), true)
 }
 
+// ---- 岗位名白名单（2026-11-14）----
+// 用户换方向后「现有九组方向里没有我想投的岗位」，于是让他从页面上勾具体岗位名。
+// 关键不是「能不能命中」，而是**勾了名字之后方向表和排除词都不许再插嘴** ——
+// 否则「算法工程师」「AI训练师」这类会被「其他方向词」误拦，白名单等于白设。
+{
+  // ⚠️ screenJob 是同步函数、直接吃 f 参数（真正去 storage 读的是 applyFilters 里的
+  // getJobFilters），所以这里必须显式传 f —— 只传 job 会命中 `if (!f) 放行` 那条早返回，
+  // 得到「全部放行」的假绿（写测试时踩过）。
+  const ctx = makeContext(BOSS_URL, makeStore(), true)
+  const baseF = (onlyTitles, cities = []) => ({
+    enabled: true,
+    cities,
+    daysPerWeek: 4,
+    months: 3,
+    directions: ['qa', 'auto', 'api', 'game', 'ops'],
+    onlyTitles,
+    maxExperience: 99,
+    maxEduRank: 6,
+    strictMeta: false,
+  })
+  const job = (title, meta = '经验不限 本科') => ({ jobTitle: title, company: '', jdText: '', metaText: meta })
+
+  // 没设白名单 → 老行为：不在方向表里的岗位被拦
+  check('没设白名单：方向表里没有的岗位仍被拦', ctx.screenJob(job('AI训练师'), baseF([]), true).blocked, true)
+
+  // 设了白名单 → 只认名字
+  check(
+    '★ 白名单命中 → 放行（方向表里根本没有这一类）',
+    ctx.screenJob(job('AI训练师'), baseF(['AI训练师']), true).blocked,
+    false
+  )
+  check(
+    '★ 白名单没命中 → 拦，并说清勾的是什么',
+    /不在你勾的岗位名里/.test(ctx.screenJob(job('Python开发'), baseF(['AI训练师']), true).reason),
+    true
+  )
+
+  // 关键：白名单要压过「其他方向词」（算法 / 机器学习 等）
+  check(
+    '★ 白名单命中时不受「其他方向词」干扰',
+    ctx.screenJob(job('算法工程师'), baseF(['算法工程师']), true).blocked,
+    false
+  )
+  check(
+    '★ 白名单外仍会被排除词拦住',
+    ctx.screenJob(job('量化交易分析师'), baseF(['算法工程师']), true).blocked,
+    true
+  )
+
+  // 子串匹配：标题常带后缀 / 城市
+  check(
+    '★ 子串命中（标题带后缀也算）',
+    ctx.screenJob(job('数据标注专员-深圳'), baseF(['数据标注']), true).blocked,
+    false
+  )
+
+  // 硬约束仍然生效：白名单只回答「投什么岗位」，城市照筛
+  check(
+    '★ 白名单不豁免城市：外地岗位照样拦',
+    ctx.screenJob(job('AI训练师', '北京·朝阳 经验不限'), baseF(['AI训练师'], ['深圳']), true).blocked,
+    true
+  )
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 if (fail) process.exit(1)

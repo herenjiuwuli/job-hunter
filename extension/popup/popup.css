@@ -915,6 +915,13 @@ details details {
   margin-bottom: 8px;
 }
 
+/* 岗位名候选可能几十条（一页 30 个岗位）→ 限高滚动，否则把下面的设置全推走 */
+.chips.scroll {
+  max-height: 140px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
